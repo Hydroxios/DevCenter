@@ -1,0 +1,63 @@
+[package]
+name = "devcenter"
+version = "0.1.0"
+description = "DevCenter — centre de contrôle pour développeur"
+authors = []
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "devcenter_lib"
+# Application desktop uniquement : pas de bibliothèque statique/dynamique (iOS/Android), builds plus légers.
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = "1"
+rusqlite = { version = "0.43.0", features = ["bundled"] }
+sysinfo = "0.40.3"
+thiserror = "2.0.21"
+tauri-plugin-single-instance = "2.5.5"
+tauri-plugin-dialog = "2.8.4"
+portable-pty = "0.9.0"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+tauri-plugin-notification = "2.8.1"
+getrandom = "0.3"
+sha2 = "0.10"
+hex = "0.4"
+tiny_http = "0.12.0"
+p256 = { version = "0.13", default-features = false, features = ["ecdh", "ecdsa", "std"] }
+hkdf = "0.12"
+aes-gcm = "0.10"
+tauri-plugin-log = "2"
+log = "0.4"
+
+
+# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
+
+# Builds de dev plus légers sur disque : pas de symboles de debug pour les dépendances.
+[profile.dev]
+debug = "line-tables-only"
+# Cache incrémental désactivé : plusieurs centaines de Mo économisés sur disque.
+incremental = false
+
+[profile.dev.package."*"]
+debug = false
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"

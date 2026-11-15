@@ -1,0 +1,412 @@
+//! Sauvegarde / synchronisation de la configuration via un fichier JSON.
+//!
+//! Le fichier peut être placé dans un dossier synchronisé (OneDrive, Dropbox…) pour retrouver
+//! sa configuration sur un autre PC. Il ne contient aucun secret : chemins de clés SSH oui,
+//! clés elles-mêmes non ; les appareils appairés ne sont pas exportés.
+//!
+//! À l'import (fusion) : projets et applications sont dédoublonnés par chemin, serveurs par
+//! hôte/port/utilisateur, workspaces et automatisations par nom. Les identifiants internes
+//! référencés dans les étapes sont réécrits vers ceux de la machine cible.
+
+use std::collections::HashMap;
+use std::path::Path;
+
+use rusqlite::{OptionalExtension, params};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+use crate::database::Database;
+use crate::error::{AppError, AppResult};
+
+const FORMAT: &str = "devcenter-config";
+const VERSION: u32 = 1;
+
+#[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Bundle {
+    pub format: String,
+    pub version: u32,
+    pub exported_at: i64,
+    #[serde(default)]
+    pub settings: Vec<(String, String)>,
+    #[serde(default)]
+    pub apps: Vec<AppRow>,
+    #[serde(default)]
+    pub projects: Vec<ProjectRow>,
+    #[serde(default)]
+    pub servers: Vec<ServerRow>,
+    #[serde(default)]
+    pub workspaces: Vec<WorkspaceRow>,
+    #[serde(default)]
+    pub automations: Vec<AutomationRow>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppRow {
+    pub id: i64,
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectRow {
+    pub id: i64,
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerRow {
+    pub id: i64,
+    pub name: String,
+    pub host: String,
+    pub port: i64,
+    pub user: Option<String>,
+    pub key_path: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceRow {
+    pub id: i64,
+    pub name: String,
+    pub description: String,
+    pub favorite: bool,
+    pub steps: Vec<Value>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationRow {
+    pub name: String,
+    pub description: String,
+    pub enabled: bool,
+    pub trigger: Value,
+    pub steps: Vec<Value>,
+    pub on_error: Value,
+    pub timeout_minutes: i64,
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSummary {
+    pub added: HashMap<String, u32>,
+    pub skipped: HashMap<String, u32>,
+}
+
+impl ImportSummary {
+    fn add(&mut self, kind: &str) {
+        *self.added.entry(kind.into()).or_default() += 1;
+    }
+    fn skip(&mut self, kind: &str) {
+        *self.skipped.entry(kind.into()).or_default() += 1;
+    }
+}
+
+fn check_json_path(path: &str) -> AppResult<&Path> {
+    let p = Path::new(path);
+    let ext_ok = p.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("json"));
+    if !p.is_absolute() || !ext_ok {
+        return Err(AppError::InvalidInput("choisissez un fichier .json".into()));
+    }
+    Ok(p)
+}
+
+pub fn build(db: &Database) -> AppResult<Bundle> {
+    db.with(|conn| {
+        let collect = |sql: &str| -> rusqlite::Result<Vec<Vec<Value>>> {
+            let mut stmt = conn.prepare(sql)?;
+            let n = stmt.column_count();
+            let rows = stmt.query_map([], |r| {
+                (0..n)
+                    .map(|i| {
+                        Ok(match r.get_ref(i)? {
+                            rusqlite::types::ValueRef::Null => Value::Null,
+                            rusqlite::types::ValueRef::Integer(v) => Value::from(v),
+                            rusqlite::types::ValueRef::Real(v) => Value::from(v),
+                            rusqlite::types::ValueRef::Text(t) => Value::from(String::from_utf8_lossy(t).into_owned()),
+                            rusqlite::types::ValueRef::Blob(_) => Value::Null,
+                        })
+                    })
+                    .collect()
+            })?;
+            rows.collect()
+        };
+        let s = |v: &Value| v.as_str().unwrap_or_default().to_string();
+        let i = |v: &Value| v.as_i64().unwrap_or_default();
+        let parse = |v: &Value| serde_json::from_str::<Value>(v.as_str().unwrap_or("null")).unwrap_or(Value::Null);
+
+        let mut bundle = Bundle {
+            format: FORMAT.into(),
+            version: VERSION,
+            exported_at: crate::modules::automations::now(),
+            ..Default::default()
+        };
+        // Paramètres : l'éditeur et le thème ; pas les réglages propres à la machine (accès distant).
+        bundle.settings = collect("SELECT key, value FROM settings WHERE key IN ('theme', 'closeToTray', 'editorPath')")?
+            .iter()
+            .map(|r| (s(&r[0]), s(&r[1])))
+            .collect();
+        bundle.apps = collect("SELECT id, name, path FROM app_shortcuts")?.iter().map(|r| AppRow { id: i(&r[0]), name: s(&r[1]), path: s(&r[2]) }).collect();
+        bundle.projects = collect("SELECT id, name, path FROM projects")?.iter().map(|r| ProjectRow { id: i(&r[0]), name: s(&r[1]), path: s(&r[2]) }).collect();
+        bundle.servers = collect("SELECT id, name, host, port, user, key_path FROM servers")?
+            .iter()
+            .map(|r| ServerRow { id: i(&r[0]), name: s(&r[1]), host: s(&r[2]), port: i(&r[3]), user: r[4].as_str().map(str::to_string), key_path: r[5].as_str().map(str::to_string) })
+            .collect();
+        let steps_of = |ws_id: i64| -> rusqlite::Result<Vec<Value>> {
+            let mut stmt = conn.prepare("SELECT action FROM workspace_steps WHERE workspace_id = ?1 ORDER BY position")?;
+            let rows = stmt.query_map(params![ws_id], |r| r.get::<_, String>(0))?;
+            Ok(rows.filter_map(|r| r.ok()).filter_map(|j| serde_json::from_str(&j).ok()).collect())
+        };
+        for r in collect("SELECT id, name, description, favorite FROM workspaces")? {
+            bundle.workspaces.push(WorkspaceRow { id: i(&r[0]), name: s(&r[1]), description: s(&r[2]), favorite: i(&r[3]) != 0, steps: steps_of(i(&r[0]))? });
+        }
+        bundle.automations = collect("SELECT name, description, enabled, trigger, steps, on_error, timeout_minutes FROM automations")?
+            .iter()
+            .map(|r| AutomationRow {
+                name: s(&r[0]),
+                description: s(&r[1]),
+                enabled: i(&r[2]) != 0,
+                trigger: parse(&r[3]),
+                steps: parse(&r[4]).as_array().cloned().unwrap_or_default(),
+                on_error: parse(&r[5]),
+                timeout_minutes: i(&r[6]),
+            })
+            .collect();
+        Ok(bundle)
+    })
+}
+
+pub fn export(db: &Database, path: &str) -> AppResult<()> {
+    let p = check_json_path(path)?;
+    let bundle = build(db)?;
+    let json = serde_json::to_string_pretty(&bundle).map_err(|e| AppError::InvalidInput(e.to_string()))?;
+    std::fs::write(p, json)?;
+    Ok(())
+}
+
+/// Réécrit récursivement les identifiants (`projectId`, `appId`, `workspaceId`, `serverId`).
+fn remap(value: &mut Value, maps: &HashMap<&str, HashMap<i64, i64>>) -> bool {
+    let mut ok = true;
+    match value {
+        Value::Object(obj) => {
+            for (key, v) in obj.iter_mut() {
+                if let Some(map) = maps.get(key.as_str()) {
+                    match v.as_i64().and_then(|old| map.get(&old)) {
+                        Some(new) => *v = Value::from(*new),
+                        None => ok = false, // référence vers un élément absent du fichier
+                    }
+                } else {
+                    ok &= remap(v, maps);
+                }
+            }
+        }
+        Value::Array(arr) => {
+            for v in arr {
+                ok &= remap(v, maps);
+            }
+        }
+        _ => {}
+    }
+    ok
+}
+
+pub fn import(db: &Database, path: &str) -> AppResult<ImportSummary> {
+    let p = check_json_path(path)?;
+    let meta = std::fs::metadata(p)?;
+    if meta.len() > 10 * 1024 * 1024 {
+        return Err(AppError::InvalidInput("fichier trop volumineux".into()));
+    }
+    let bundle: Bundle = serde_json::from_str(&std::fs::read_to_string(p)?)
+        .map_err(|e| AppError::InvalidInput(format!("fichier invalide : {e}")))?;
+    if bundle.format != FORMAT || bundle.version > VERSION {
+        return Err(AppError::InvalidInput("ce fichier n'est pas une sauvegarde DevCenter compatible".into()));
+    }
+
+    let mut summary = ImportSummary::default();
+    db.with(|conn| {
+        let tx = conn.unchecked_transaction()?;
+        let find = |sql: &str, args: &[&dyn rusqlite::ToSql]| -> rusqlite::Result<Option<i64>> {
+            tx.query_row(sql, args, |r| r.get(0)).optional()
+        };
+
+        for (key, value) in &bundle.settings {
+            if ["theme", "closeToTray", "editorPath"].contains(&key.as_str()) {
+                tx.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?1, ?2)", params![key, value])?;
+            }
+        }
+
+        let mut apps = HashMap::new();
+        for a in &bundle.apps {
+            let id = match find("SELECT id FROM app_shortcuts WHERE path = ?1 COLLATE NOCASE", &[&a.path])? {
+                Some(id) => {
+                    summary.skip("applications");
+                    id
+                }
+                None => {
+                    tx.execute("INSERT INTO app_shortcuts (name, path) VALUES (?1, ?2)", params![a.name, a.path])?;
+                    summary.add("applications");
+                    tx.last_insert_rowid()
+                }
+            };
+            apps.insert(a.id, id);
+        }
+
+        let mut projects = HashMap::new();
+        for pr in &bundle.projects {
+            let id = match find("SELECT id FROM projects WHERE path = ?1", &[&pr.path])? {
+                Some(id) => {
+                    summary.skip("projets");
+                    id
+                }
+                None => {
+                    tx.execute(
+                        "INSERT INTO projects (name, path, added_at) VALUES (?1, ?2, ?3)",
+                        params![pr.name, pr.path, crate::modules::automations::now()],
+                    )?;
+                    summary.add("projets");
+                    tx.last_insert_rowid()
+                }
+            };
+            projects.insert(pr.id, id);
+        }
+
+        let mut servers = HashMap::new();
+        for s in &bundle.servers {
+            let existing = find(
+                "SELECT id FROM servers WHERE host = ?1 AND port = ?2 AND COALESCE(user, '') = COALESCE(?3, '')",
+                &[&s.host, &s.port, &s.user],
+            )?;
+            let id = match existing {
+                Some(id) => {
+                    summary.skip("serveurs");
+                    id
+                }
+                None => {
+                    tx.execute(
+                        "INSERT INTO servers (name, host, port, user, key_path) VALUES (?1, ?2, ?3, ?4, ?5)",
+                        params![s.name, s.host, s.port, s.user, s.key_path],
+                    )?;
+                    summary.add("serveurs");
+                    tx.last_insert_rowid()
+                }
+            };
+            servers.insert(s.id, id);
+        }
+
+        let mut maps: HashMap<&str, HashMap<i64, i64>> = HashMap::new();
+        maps.insert("appId", apps);
+        maps.insert("projectId", projects);
+        maps.insert("serverId", servers);
+
+        let mut workspaces = HashMap::new();
+        for w in &bundle.workspaces {
+            if let Some(id) = find("SELECT id FROM workspaces WHERE name = ?1", &[&w.name])? {
+                workspaces.insert(w.id, id);
+                summary.skip("workspaces");
+                continue;
+            }
+            let mut steps = w.steps.clone();
+            let ok = steps.iter_mut().all(|s| remap(s, &maps));
+            if !ok {
+                summary.skip("workspaces");
+                continue;
+            }
+            tx.execute(
+                "INSERT INTO workspaces (name, description, favorite, created_at) VALUES (?1, ?2, ?3, ?4)",
+                params![w.name, w.description, w.favorite as i64, crate::modules::automations::now()],
+            )?;
+            let id = tx.last_insert_rowid();
+            for (pos, step) in steps.iter().enumerate() {
+                tx.execute(
+                    "INSERT INTO workspace_steps (workspace_id, position, action) VALUES (?1, ?2, ?3)",
+                    params![id, pos as i64, step.to_string()],
+                )?;
+            }
+            workspaces.insert(w.id, id);
+            summary.add("workspaces");
+        }
+        maps.insert("workspaceId", workspaces);
+
+        for a in &bundle.automations {
+            if find("SELECT id FROM automations WHERE name = ?1", &[&a.name])?.is_some() {
+                summary.skip("automatisations");
+                continue;
+            }
+            let mut steps = Value::Array(a.steps.clone());
+            if !remap(&mut steps, &maps) {
+                summary.skip("automatisations");
+                continue;
+            }
+            // Désactivée à l'import : l'utilisateur la vérifie avant qu'elle ne se déclenche.
+            tx.execute(
+                "INSERT INTO automations (name, description, enabled, trigger, steps, on_error, timeout_minutes, created_at)
+                 VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6, ?7)",
+                params![a.name, a.description, a.trigger.to_string(), steps.to_string(), a.on_error.to_string(), a.timeout_minutes.clamp(1, 1440), crate::modules::automations::now()],
+            )?;
+            summary.add("automatisations");
+        }
+
+        tx.commit()?;
+        Ok(())
+    })?;
+    Ok(summary)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_db(tag: &str) -> (Database, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!("devcenter-backup-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        (Database::open(&dir.join(format!("{tag}.db"))).unwrap(), dir)
+    }
+
+    #[test]
+    fn export_import_round_trip_remaps_ids() {
+        let (src, dir) = temp_db("src");
+        let proj = dir.join("proj");
+        std::fs::create_dir_all(&proj).unwrap();
+        let p = proj.display().to_string();
+        src.with(|c| {
+            // Décale les identifiants pour vérifier la réécriture.
+            c.execute("INSERT INTO projects (id, name, path, added_at) VALUES (7, 'proj', ?1, 0)", params![p])?;
+            c.execute("INSERT INTO workspaces (id, name, description, favorite, created_at) VALUES (3, 'Front', '', 1, 0)", [])?;
+            c.execute("INSERT INTO workspace_steps (workspace_id, position, action) VALUES (3, 0, '{\"kind\":\"editor\",\"projectId\":7}')", [])?;
+            c.execute(
+                "INSERT INTO automations (name, description, enabled, trigger, steps, on_error, timeout_minutes, created_at)
+                 VALUES ('Matin', '', 1, '{\"kind\":\"manual\"}', '[{\"kind\":\"startWorkspace\",\"workspaceId\":3}]', '\"stop\"', 30, 0)",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+        let file = dir.join("backup.json");
+        export(&src, file.to_str().unwrap()).unwrap();
+
+        let (dst, _) = temp_db("dst");
+        let summary = import(&dst, file.to_str().unwrap()).unwrap();
+        assert_eq!(summary.added.get("projets"), Some(&1));
+        assert_eq!(summary.added.get("workspaces"), Some(&1));
+        assert_eq!(summary.added.get("automatisations"), Some(&1));
+
+        let (pid, wid): (i64, i64) = dst
+            .with(|c| Ok((c.query_row("SELECT id FROM projects", [], |r| r.get(0))?, c.query_row("SELECT id FROM workspaces", [], |r| r.get(0))?)))
+            .unwrap();
+        let step: String = dst.with(|c| Ok(c.query_row("SELECT action FROM workspace_steps", [], |r| r.get(0))?)).unwrap();
+        assert!(step.contains(&format!("\"projectId\":{pid}")));
+        let (steps, enabled): (String, i64) = dst.with(|c| Ok(c.query_row("SELECT steps, enabled FROM automations", [], |r| Ok((r.get(0)?, r.get(1)?)))?)).unwrap();
+        assert!(steps.contains(&format!("\"workspaceId\":{wid}")));
+        assert_eq!(enabled, 0);
+
+        // Second import : tout est déjà présent.
+        let again = import(&dst, file.to_str().unwrap()).unwrap();
+        assert!(again.added.is_empty());
+        assert!(import(&dst, "relatif.json").is_err());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}

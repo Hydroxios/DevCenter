@@ -1,0 +1,1032 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="DevCenter">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<title>DevCenter</title>
+<style>
+  /* Charte PowerBack : noir, filets fins, un seul accent cyan, étiquettes et chiffres en mono. */
+  :root {
+    --bg:#000; --card:#0c0c0d; --raised:#161618; --fg:#fff; --muted:#8b8b92; --line:#232326;
+    --primary:#22d3ee; --primary-fg:#000; --ok:#34d399; --warn:#fbbf24; --bad:#f87171;
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --tabbar: 64px;
+    color-scheme: dark;
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.45 var(--sans); -webkit-font-smoothing:antialiased; }
+  body { padding-bottom:calc(var(--tabbar) + env(safe-area-inset-bottom)); }
+  button { font:inherit; color:inherit; background:none; border:0; padding:0; cursor:pointer; }
+  [hidden] { display:none !important; }
+
+  /* En-tête */
+  header { position:sticky; top:0; z-index:5; background:rgba(0,0,0,.86); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+           border-bottom:1px solid var(--line); padding:calc(10px + env(safe-area-inset-top)) 16px 10px; display:flex; align-items:center; gap:10px; }
+  .logo { display:flex; align-items:center; gap:8px; font:500 14px var(--mono); letter-spacing:-.01em; }
+  .logo svg { width:20px; height:20px; }
+  .host { margin-left:auto; text-align:right; min-width:0; }
+  .host b { display:block; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .host span { font:11px var(--mono); color:var(--muted); display:inline-flex; align-items:center; gap:6px; }
+  .live { width:7px; height:7px; border-radius:50%; background:var(--muted); }
+  .live.on { background:var(--ok); box-shadow:0 0 0 3px rgba(52,211,153,.15); }
+  .live.off { background:var(--bad); }
+
+  main { max-width:620px; margin:0 auto; padding:16px; display:grid; gap:12px; }
+  h2 { font:11px var(--mono); text-transform:uppercase; letter-spacing:.14em; color:var(--muted); margin:10px 2px 0; font-weight:400; display:flex; justify-content:space-between; align-items:center; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .muted { color:var(--muted); }
+  .small { font-size:13px; }
+  .mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+  .eyebrow { font:11px var(--mono); text-transform:uppercase; letter-spacing:.14em; color:var(--muted); }
+  .empty { color:var(--muted); font-size:14px; text-align:center; padding:18px 8px; }
+
+  /* Métriques */
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .big { font:600 26px/1.1 var(--mono); font-variant-numeric:tabular-nums; margin-top:4px; }
+  .stat { font:600 18px/1.2 var(--mono); margin-top:4px; }
+  .spark { width:100%; height:44px; display:block; margin-top:8px; }
+  .bar { height:4px; border-radius:2px; background:var(--raised); overflow:hidden; margin-top:8px; }
+  .bar > span { display:block; height:100%; background:var(--primary); transition:width .5s; border-radius:2px; }
+  .bar > span.warn { background:var(--warn); } .bar > span.bad { background:var(--bad); }
+  .cores { display:flex; align-items:flex-end; gap:2px; height:28px; margin-top:10px; }
+  .cores span { flex:1; background:rgba(34,211,238,.75); border-radius:1px; min-height:2px; transition:height .5s; }
+  .kv { display:flex; justify-content:space-between; gap:10px; font-size:13px; margin-top:8px; }
+  .kv > :last-child { font-family:var(--mono); color:var(--muted); white-space:nowrap; }
+
+  /* Listes */
+  .list { display:grid; }
+  .row { display:flex; align-items:center; gap:10px; padding:11px 0; border-top:1px solid var(--line); min-width:0; }
+  .row:first-child { border-top:0; padding-top:2px; }
+  .row:last-child { padding-bottom:2px; }
+  .grow { flex:1; min-width:0; }
+  .title { font-size:15px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sub { font-size:12.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--line); flex:none; }
+  .dot.on { background:var(--ok); } .dot.bad { background:var(--bad); } .dot.run { background:var(--primary); animation:pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity:.35; } }
+  .chip { display:inline-flex; align-items:center; gap:5px; font:11px var(--mono); padding:2px 7px; border-radius:6px; background:var(--raised); color:var(--muted); white-space:nowrap; }
+  .chip.ok { background:rgba(52,211,153,.12); color:var(--ok); }
+  .chip.bad { background:rgba(248,113,113,.12); color:var(--bad); }
+  .chip.warn { background:rgba(251,191,36,.12); color:var(--warn); }
+  .chip.cyan { background:rgba(34,211,238,.12); color:var(--primary); }
+  .star { color:var(--warn); }
+  .err { color:var(--bad); font-size:12.5px; margin-top:4px; }
+  .link { color:var(--primary); font:12.5px var(--mono); text-decoration:none; display:inline-flex; gap:4px; align-items:center; margin-top:3px; max-width:100%; }
+  .link svg { width:12px; height:12px; flex:none; }
+  svg { flex-shrink:0; }
+  .actions { display:flex; gap:8px; flex:none; }
+
+  /* Boutons (PowerBack) */
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:36px; padding:0 14px; border-radius:8px;
+         background:var(--primary); color:var(--primary-fg); font-weight:500; font-size:14px; transition:background .15s, transform .1s; white-space:nowrap; }
+  .btn:active { transform:scale(.97); }
+  .btn.secondary { background:var(--raised); color:var(--fg); border:1px solid var(--line); }
+  .btn.danger { background:var(--raised); color:var(--bad); border:1px solid rgba(248,113,113,.35); }
+  .btn.block { width:100%; min-height:44px; }
+  .btn:disabled { opacity:.45; }
+  .btn svg { width:15px; height:15px; }
+
+  /* Barre d'onglets */
+  nav.tabs { position:fixed; left:0; right:0; bottom:0; z-index:6; display:grid; grid-template-columns:repeat(6,1fr);
+             background:rgba(0,0,0,.92); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border-top:1px solid var(--line);
+             padding-bottom:env(safe-area-inset-bottom); height:calc(var(--tabbar) + env(safe-area-inset-bottom)); }
+  nav.tabs button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; color:var(--muted); font:9.5px var(--mono); letter-spacing:.04em; text-transform:uppercase; position:relative; min-width:0; }
+  nav.tabs button svg { width:21px; height:21px; }
+  nav.tabs button[aria-selected="true"] { color:var(--fg); }
+  nav.tabs button[aria-selected="true"] svg { color:var(--primary); }
+  nav.tabs button[aria-selected="true"]::before { content:""; position:absolute; top:-1px; left:30%; right:30%; height:1px; background:var(--primary); }
+  .badge { position:absolute; top:8px; left:calc(50% + 6px); min-width:16px; height:16px; padding:0 4px; border-radius:8px; background:var(--primary); color:#000; font:600 10px/16px var(--mono); }
+
+  /* Appairage */
+  .pair { min-height:100vh; display:grid; place-items:center; padding:24px 16px calc(24px + env(safe-area-inset-bottom)); }
+  .pair .card { width:100%; max-width:400px; padding:22px; display:grid; gap:14px; }
+  input { font:inherit; width:100%; padding:12px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--fg); outline:none; }
+  input:focus { border-color:var(--primary); box-shadow:0 0 0 3px rgba(34,211,238,.15); }
+  #code { font:600 30px var(--mono); letter-spacing:.35em; text-align:center; padding:14px 6px 14px 16px; }
+
+  /* Feuille de logs */
+  .sheet { position:fixed; inset:0; z-index:20; background:rgba(0,0,0,.7); display:flex; align-items:flex-end; }
+  .sheet .panel { width:100%; max-height:88vh; background:var(--card); border-top:1px solid var(--line); border-radius:16px 16px 0 0;
+                  display:flex; flex-direction:column; padding:14px 14px calc(14px + env(safe-area-inset-bottom)); animation:up .18s ease-out; }
+  @keyframes up { from { transform:translateY(24px); opacity:0; } }
+  .sheet pre { flex:1; margin:10px 0 0; overflow:auto; background:#000; border:1px solid var(--line); border-radius:8px; padding:10px;
+               font:11.5px/1.5 var(--mono); color:#d4d4d8; white-space:pre-wrap; word-break:break-word; min-height:40vh; user-select:text; }
+
+  .iconbtn { width:36px; height:36px; display:inline-grid; place-items:center; border-radius:8px; color:var(--muted); border:1px solid var(--line); background:var(--card); flex:none; position:relative; }
+  .iconbtn svg { width:18px; height:18px; }
+  .iconbtn.on { color:var(--primary); border-color:rgba(34,211,238,.4); }
+  .iconbtn .pip { position:absolute; top:6px; right:6px; width:6px; height:6px; border-radius:50%; background:var(--primary); }
+  .settings { display:grid; gap:12px; margin-top:12px; }
+  .step { display:flex; gap:10px; align-items:flex-start; font-size:14px; }
+  .step b.n { flex:none; width:22px; height:22px; border-radius:50%; display:grid; place-items:center; background:var(--raised); border:1px solid var(--line); font:600 11px var(--mono); }
+  .note { font-size:12.5px; color:var(--muted); line-height:1.5; }
+  .tags { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+  .field { display:grid; gap:6px; }
+  .field label { font:11px var(--mono); text-transform:uppercase; letter-spacing:.14em; color:var(--muted); }
+  .check { display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-top:1px solid var(--line); }
+  .check:first-child { border-top:0; }
+  .check input { width:18px; height:18px; margin-top:2px; accent-color:var(--primary); flex:none; }
+  .seg { display:flex; gap:6px; flex-wrap:wrap; }
+  .seg button { font:12.5px var(--mono); padding:7px 10px; border-radius:8px; border:1px solid var(--line); background:var(--raised); color:var(--fg); text-align:left; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .seg button[aria-pressed="true"] { border-color:rgba(34,211,238,.5); color:var(--primary); }
+  select { font:inherit; font-size:15px; width:100%; padding:12px 38px 12px 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--fg);
+           outline:none; -webkit-appearance:none; appearance:none; text-overflow:ellipsis;
+           background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b8b92' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+           background-repeat:no-repeat; background-position:right 12px center; background-size:16px; }
+  select:focus { border-color:var(--primary); box-shadow:0 0 0 3px rgba(34,211,238,.15); }
+  select[multiple] { padding:6px; background-image:none; min-height:44px; }
+  .detail { font-size:12.5px; color:var(--muted); line-height:1.5; min-height:1.5em; }
+  .hist { position:relative; }
+  .hist svg.graph { position:absolute; left:0; top:0; pointer-events:none; }
+  .crow { display:flex; align-items:center; gap:6px; width:100%; text-align:left; height:44px; padding-right:4px; border-top:1px solid rgba(35,35,38,.6); min-width:0; }
+  .crow:first-child { border-top:0; }
+  .crow .s { flex:1; min-width:0; }
+  .crow .s b { display:block; font-weight:400; font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .crow .s i { display:block; font-style:normal; font-size:11.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ref { font:10px var(--mono); padding:1px 5px; border-radius:4px; background:rgba(34,211,238,.12); color:var(--primary); white-space:nowrap; max-width:110px; overflow:hidden; text-overflow:ellipsis; flex:none; }
+  .ref.head { background:var(--primary); color:#000; }
+  .ref.tag { background:rgba(251,191,36,.14); color:var(--warn); }
+  .ref.remote { background:var(--raised); color:var(--muted); }
+  .file { border-top:1px solid var(--line); }
+  .file:first-child { border-top:0; }
+  .file > button { display:flex; align-items:center; gap:8px; width:100%; text-align:left; padding:10px 0; font:12.5px var(--mono); min-width:0; }
+  .file > button .p { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; direction:rtl; text-align:left; }
+  .st { width:18px; height:18px; border-radius:4px; display:grid; place-items:center; font:600 10px var(--mono); flex:none; }
+  .st.added { background:rgba(52,211,153,.15); color:var(--ok); } .st.deleted { background:rgba(248,113,113,.15); color:var(--bad); }
+  .st.modified { background:rgba(251,191,36,.15); color:var(--warn); } .st.renamed { background:rgba(34,211,238,.12); color:var(--primary); }
+  .st.binary { background:var(--raised); color:var(--muted); }
+  .diff { margin:0 0 10px; background:#000; border:1px solid var(--line); border-radius:8px; overflow-x:auto; font:11px/1.55 var(--mono); padding:6px 0; user-select:text; }
+  .diff div { white-space:pre; padding:0 10px; color:#a1a1aa; }
+  .diff .a { background:rgba(52,211,153,.1); color:#86efac; } .diff .d { background:rgba(248,113,113,.1); color:#fca5a5; } .diff .h { background:rgba(34,211,238,.08); color:rgba(34,211,238,.8); }
+  .toast { position:fixed; left:16px; right:16px; bottom:calc(var(--tabbar) + 12px + env(safe-area-inset-bottom)); z-index:30; max-width:560px; margin:0 auto;
+           background:var(--fg); color:var(--bg); padding:11px 14px; border-radius:10px; font-size:14px; opacity:0; transform:translateY(6px); transition:.2s; pointer-events:none; }
+  .toast.show { opacity:1; transform:none; }
+  .toast.bad { background:var(--bad); color:#000; }
+</style>
+</head>
+<body>
+
+<!-- Icônes -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-home" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" d="M4 10.5 12 4l8 6.5V20h-5.5v-6h-5v6H4z"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" d="m12 3 9 5-9 5-9-5zM3 13l9 5 9-5"/></symbol>
+    <symbol id="i-term" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="m7 10 3 2.5L7 15M12.5 15H17"/></g></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="4" width="17" height="7" rx="1.5"/><rect x="3.5" y="13" width="17" height="7" rx="1.5"/><path stroke-linecap="round" d="M7 7.5h.01M7 16.5h.01"/></g></symbol>
+    <symbol id="i-flow" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3.5" y="3.5" width="6" height="6" rx="1"/><rect x="14.5" y="14.5" width="6" height="6" rx="1"/><path d="M6.5 9.5v3.5a3 3 0 0 0 3 3h5"/></g></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.5 2h-15zM10 20.5a2.2 2.2 0 0 0 4 0"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" d="M3.5 6.5a1.5 1.5 0 0 1 1.5-1.5h4.2l2 2.2H19a1.5 1.5 0 0 1 1.5 1.5v9.3A1.5 1.5 0 0 1 19 19.5H5A1.5 1.5 0 0 1 3.5 18z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M8 7.5 3.5 12 8 16.5M16 7.5 20.5 12 16 16.5"/></symbol>
+    <symbol id="i-gh" viewBox="0 0 16 16"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="9" r="2.2"/><path d="M6 8.2v7.6M18 11.2c0 3-3 4-7.5 4.6L8 16.4"/></g></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5.5v13l10.5-6.5z"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect fill="currentColor" x="6.5" y="6.5" width="11" height="11" rx="1.5"/></symbol>
+    <symbol id="i-out" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+  </defs>
+</svg>
+
+<!-- Appairage -->
+<section id="pair" class="pair" hidden>
+  <div class="card">
+    <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7.5 3.5 12 8 16.5M16 7.5 20.5 12 16 16.5" stroke="#fff" stroke-width="2"/><path d="M13.6 5.5 10.4 18.5" stroke="#22d3ee" stroke-width="2"/></svg><span>Dev<span style="color:var(--primary)">Center</span></span></div>
+    <div>
+      <div class="eyebrow">appairage</div>
+      <p class="small muted" style="margin:6px 0 0">Dans DevCenter : <b style="color:var(--fg)">Paramètres › Accès à distance › Appairer un appareil</b>, puis saisissez le code à 6 chiffres.</p>
+    </div>
+    <form id="pairForm" style="display:grid; gap:10px">
+      <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="······" aria-label="Code d'appairage">
+      <input id="device" maxlength="60" placeholder="Nom de cet appareil (ex. iPhone)" aria-label="Nom de l'appareil">
+      <button class="btn block" type="submit">Appairer</button>
+      <div class="err" id="pairError" role="alert"></div>
+    </form>
+  </div>
+</section>
+
+<!-- Application -->
+<div id="app" hidden>
+  <header>
+    <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7.5 3.5 12 8 16.5M16 7.5 20.5 12 16 16.5" stroke="#fff" stroke-width="2"/><path d="M13.6 5.5 10.4 18.5" stroke="#22d3ee" stroke-width="2"/></svg><span>Dev<span style="color:var(--primary)">Center</span></span></div>
+    <div class="host"><b id="host">—</b><span><i class="live" id="live"></i><span id="updated">connexion…</span></span></div>
+    <button class="iconbtn" id="bell" type="button" aria-label="Notifications et réglages"><svg><use href="#i-bell"/></svg></button>
+  </header>
+  <main id="view"></main>
+  <nav class="tabs" role="tablist" id="tabs"></nav>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(() => {
+  "use strict";
+  const KEY = "devcenter.token";
+  const $ = (id) => document.getElementById(id);
+  let token = null;
+  try { token = localStorage.getItem(KEY); } catch (e) {}
+
+  // ---------------------------------------------------------------- utilitaires
+  /** Crée un élément ; les chaînes deviennent du texte (jamais du HTML). */
+  function h(tag, props, ...kids) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(props || {})) {
+      if (v == null || v === false) continue;
+      if (k === "class") el.className = v;
+      else if (k === "style") el.style.cssText = v;
+      else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? "" : v);
+    }
+    for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid.nodeType ? kid : String(kid));
+    return el;
+  }
+  function icon(name) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    // Taille par défaut = taille du texte (les boutons et la barre d'onglets la redéfinissent en CSS).
+    svg.setAttribute("width", "1em");
+    svg.setAttribute("height", "1em");
+    svg.setAttribute("aria-hidden", "true");
+    const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    use.setAttribute("href", "#i-" + name);
+    svg.append(use);
+    return svg;
+  }
+  const pct = (v) => Math.round(v) + " %";
+  const gb = (b) => b >= 1099511627776 ? (b / 1099511627776).toFixed(1) + " To" : (b / 1073741824).toFixed(1) + " Go";
+  const mb = (b) => b >= 1073741824 ? gb(b) : Math.round(b / 1048576) + " Mo";
+  const dur = (s) => { s = Math.max(0, Math.floor(s)); const d = Math.floor(s / 86400), h_ = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+    return d ? `${d} j ${h_} h` : h_ ? `${h_} h ${m} min` : m ? `${m} min` : `${s} s`; };
+  const ago = (ts) => { const s = Date.now() / 1000 - ts; return s < 60 ? "à l'instant" : "il y a " + dur(s); };
+  const level = (v) => v >= 90 ? "bad" : v >= 75 ? "warn" : "";
+  const bar = (v) => h("div", { class: "bar" }, h("span", { class: level(v), style: `width:${Math.min(100, Math.max(0, v))}%` }));
+  /** Les URL « localhost » du PC sont réécrites vers son adresse sur le réseau. */
+  const lanUrl = (u) => u.replace(/^(https?:\/\/)(localhost|127\.0\.0\.1)/, "$1" + location.hostname);
+  const DAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+  function triggerLabel(t) {
+    if (!t) return "";
+    if (t.kind === "manual") return "Manuel";
+    if (t.kind === "appStart") return "Au démarrage";
+    if (t.kind === "interval") return t.minutes % 60 === 0 ? `Toutes les ${t.minutes / 60} h` : `Toutes les ${t.minutes} min`;
+    if (t.kind === "daily") {
+      const d = t.days || [];
+      const days = !d.length || d.length === 7 ? "tous les jours" : d.length === 5 && [0,1,2,3,4].every((x) => d.includes(x)) ? "en semaine" : [...d].sort().map((x) => DAYS[x]).join(", ");
+      return `${t.time}, ${days}`;
+    }
+    return "";
+  }
+  const STATUS = {
+    success: ["Réussie", "ok"], failed: ["Échec", "bad"], stopped: ["Condition non remplie", ""], timeout: ["Délai dépassé", "warn"], running: ["En cours", "cyan"],
+    completed: ["Terminée", ""], partial: ["Avec erreurs", "warn"], interrupted: ["Interrompue", ""], exited: ["Terminé", ""],
+  };
+  const chip = (status) => { const [l, c] = STATUS[status] || [status, ""]; return h("span", { class: "chip " + c }, l); };
+
+  function toast(msg, bad) {
+    const t = $("toast"); t.textContent = msg; t.className = "toast show" + (bad ? " bad" : "");
+    clearTimeout(t._h); t._h = setTimeout(() => t.className = "toast", 2600);
+  }
+
+  async function api(path, opts = {}) {
+    const res = await fetch(path, { ...opts, headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) } });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401 && path !== "/api/pair") { forget(); throw new Error(data.error || "non autorisé"); }
+    if (!res.ok) throw new Error(data.error || "erreur " + res.status);
+    return data;
+  }
+
+  /** Bouton d'action : désactivé pendant l'appel, message en retour, rafraîchit l'état. */
+  function action(label, cls, fn, opts = {}) {
+    const b = h("button", { class: "btn " + (cls || ""), type: "button" }, opts.icon ? icon(opts.icon) : null, label);
+    b.onclick = async () => {
+      if (opts.confirm && !confirm(opts.confirm)) return;
+      b.disabled = true;
+      try { const msg = await fn(); if (msg) toast(msg); } catch (e) { toast(e.message, true); }
+      b.disabled = false;
+      refresh();
+    };
+    return b;
+  }
+
+  // ---------------------------------------------------------------- état
+  let S = null;                 // dernier /api/status
+  let history = null;           // dernier /api/history
+  const cpuHist = [], ramHist = [];
+  const HIST = 60;
+  let lastOk = 0;
+  let tab = (location.hash || "#home").slice(1);
+  const pings = {};             // serverId -> { ms } | { error } | "…"
+
+  const TABS = [
+    ["home", "Accueil", "home"], ["projects", "Projets", "folder"], ["workspaces", "Espaces", "layers"],
+    ["scripts", "Scripts", "term"], ["servers", "Serveurs", "server"], ["auto", "Auto", "flow"],
+  ];
+  let projects = null;          // dernier /api/projects
+  let projectsError = null;
+
+  function renderTabs() {
+    const nav = $("tabs"); nav.replaceChildren();
+    const running = S ? S.runs.filter((r) => r.status === "running").length : 0;
+    const activeWs = S ? S.workspaces.filter((w) => w.active).length : 0;
+    for (const [id, label, ic] of TABS) {
+      const b = h("button", { role: "tab", "aria-selected": String(tab === id), onclick: () => go(id) }, icon(ic), label);
+      const cloning = S ? (S.cloneJobs || []).filter((j) => j.status === "running").length : 0;
+      const n = id === "scripts" ? running : id === "workspaces" ? activeWs : id === "projects" ? cloning : 0;
+      if (n) b.append(h("span", { class: "badge" }, n));
+      nav.append(b);
+    }
+  }
+
+  function go(id) {
+    tab = id;
+    history_replace();
+    render();
+    if (id === "auto") loadHistory();
+    if (id === "projects") loadProjects();
+    window.scrollTo({ top: 0 });
+  }
+  function history_replace() { try { window.history.replaceState(null, "", "#" + tab); } catch (e) {} }
+
+  // ---------------------------------------------------------------- graphiques
+  function spark(values, color) {
+    const w = 300, hgt = 44, n = Math.max(values.length, 2);
+    const pts = values.map((v, i) => [((i + (HIST - values.length)) / (HIST - 1)) * w, hgt - 2 - (Math.min(100, v) / 100) * (hgt - 4)]);
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", `0 0 ${w} ${hgt}`); svg.setAttribute("preserveAspectRatio", "none"); svg.setAttribute("class", "spark");
+    for (const y of [hgt * 0.25, hgt * 0.5, hgt * 0.75]) {
+      const l = document.createElementNS(NS, "line");
+      l.setAttribute("x1", 0); l.setAttribute("x2", w); l.setAttribute("y1", y); l.setAttribute("y2", y);
+      l.setAttribute("stroke", "#232326"); l.setAttribute("stroke-width", "1"); l.setAttribute("vector-effect", "non-scaling-stroke");
+      svg.append(l);
+    }
+    if (pts.length >= 2) {
+      const d = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+      const area = document.createElementNS(NS, "path");
+      area.setAttribute("d", `${d} L${pts[pts.length - 1][0]} ${hgt} L${pts[0][0]} ${hgt} Z`);
+      area.setAttribute("fill", color); area.setAttribute("fill-opacity", ".12");
+      const line = document.createElementNS(NS, "path");
+      line.setAttribute("d", d); line.setAttribute("fill", "none"); line.setAttribute("stroke", color); line.setAttribute("stroke-width", "1.6");
+      line.setAttribute("vector-effect", "non-scaling-stroke"); line.setAttribute("stroke-linejoin", "round");
+      svg.append(area, line);
+    }
+    void n;
+    return svg;
+  }
+
+  // ---------------------------------------------------------------- vues
+  function viewHome() {
+    const ram = S.memoryTotal ? S.memoryUsed / S.memoryTotal * 100 : 0;
+    const running = S.runs.filter((r) => r.status === "running").length;
+    const out = [
+      h("div", { class: "grid2" },
+        h("div", { class: "card" }, h("div", { class: "eyebrow" }, "cpu"), h("div", { class: "big" }, pct(S.cpuUsage)), spark(cpuHist, "#22d3ee"),
+          h("div", { class: "cores", title: "Charge par cœur" }, S.cpuPerCore.map((v) => h("span", { style: `height:${Math.max(4, v)}%` })))),
+        h("div", { class: "card" }, h("div", { class: "eyebrow" }, "mémoire"), h("div", { class: "big" }, pct(ram)), spark(ramHist, "#a78bfa"),
+          h("div", { class: "kv" }, h("span", { class: "muted" }, "utilisée"), h("span", {}, `${gb(S.memoryUsed)} / ${gb(S.memoryTotal)}`)),
+          S.swapTotal ? h("div", { class: "kv", style: "margin-top:2px" }, h("span", { class: "muted" }, "swap"), h("span", {}, gb(S.swapUsed))) : null)),
+      h("div", { class: "grid3" },
+        h("div", { class: "card" }, h("div", { class: "eyebrow" }, "en ligne"), h("div", { class: "stat" }, dur(S.uptimeSecs))),
+        h("div", { class: "card", onclick: () => go("scripts"), style: "cursor:pointer" }, h("div", { class: "eyebrow" }, "scripts"), h("div", { class: "stat", style: running ? "color:var(--primary)" : "" }, running)),
+        h("div", { class: "card", onclick: () => go("workspaces"), style: "cursor:pointer" }, h("div", { class: "eyebrow" }, "sessions"), h("div", { class: "stat", style: S.workspaces.some((w) => w.active) ? "color:var(--ok)" : "" }, S.workspaces.filter((w) => w.active).length))),
+    ];
+    if (S.gpus.length) {
+      out.push(h("h2", {}, "carte graphique"), h("div", { class: "card list" }, S.gpus.map((g) =>
+        h("div", { class: "row", style: "display:block" },
+          h("div", { class: "kv", style: "margin-top:0" }, h("span", { class: "title", style: "font-size:14px" }, g.name), h("span", {}, g.usage != null ? pct(g.usage) : "n/d")),
+          g.usage != null ? bar(g.usage) : null,
+          g.memoryTotal ? h("div", { class: "sub", style: "margin-top:6px" }, "VRAM " + gb(g.memoryTotal)) : null))));
+    }
+    out.push(h("h2", {}, "stockage"), h("div", { class: "card list" }, S.disks.length ? S.disks.map((d) => {
+      const used = (d.totalBytes - d.availableBytes) / d.totalBytes * 100;
+      return h("div", { class: "row", style: "display:block" },
+        h("div", { class: "kv", style: "margin-top:0" }, h("span", { style: "font-weight:500" }, d.mount), h("span", {}, `${gb(d.availableBytes)} libres / ${gb(d.totalBytes)}`)),
+        bar(used));
+    }) : h("div", { class: "empty" }, "Aucun disque.")));
+    out.push(h("h2", {}, "processus les plus actifs"), h("div", { class: "card list" }, S.topProcesses.map((p) =>
+      h("div", { class: "row" },
+        h("div", { class: "grow" }, h("div", { class: "title", style: "font-size:14px" }, p.name), h("div", { class: "sub mono" }, "PID " + p.pid)),
+        h("div", { class: "mono small", style: "text-align:right" }, h("div", {}, p.cpuUsage.toFixed(1) + " %"), h("div", { class: "muted" }, mb(p.memory)))))));
+    out.push(h("p", { class: "muted small", style: "text-align:center; margin:4px 0 0" }, `${S.cpuBrand} · ${S.cpuCores} threads${S.os ? " · " + S.os : ""}`));
+    return out;
+  }
+
+  function runRow(r, compact) {
+    const running = r.status === "running";
+    const sub = running ? `en cours depuis ${dur(Date.now() / 1000 - r.startedAt)}` : r.status === "failed" ? `échec (code ${r.exitCode ?? "?"})` : r.status === "stopped" ? "arrêté" : "terminé";
+    return h("div", { class: "row" },
+      h("span", { class: "dot " + (running ? "run" : r.status === "failed" ? "bad" : "") }),
+      h("div", { class: "grow" },
+        h("div", { class: "title" }, compact ? r.script : `${r.project} › ${r.script}`),
+        h("div", { class: "sub" }, sub),
+        r.url && running ? h("a", { class: "link", href: lanUrl(r.url), target: "_blank", rel: "noopener" }, lanUrl(r.url).replace(/^https?:\/\//, ""), icon("out")) : null),
+      h("div", { class: "actions" },
+        h("button", { class: "btn secondary", type: "button", onclick: () => openLogs(r) }, "Logs"),
+        running ? action("", "danger", async () => { await api(`/api/runs/${r.id}/stop`, { method: "POST" }); return "Script arrêté"; }, { icon: "stop", confirm: `Arrêter ${r.project} › ${r.script} ?` }) : null));
+  }
+
+  async function loadProjects() {
+    try { projects = await api("/api/projects"); projectsError = null; }
+    catch (e) { projectsError = e.message; }
+    if (tab === "projects" && !document.querySelector(".sheet")) render();
+  }
+
+  function cloneJobRow(j) {
+    const st = j.status === "running" ? h("span", { class: "chip cyan" }, "clonage…") : j.status === "done" ? h("span", { class: "chip ok" }, "cloné") : h("span", { class: "chip bad" }, "échec");
+    return h("div", { class: "row" },
+      h("span", { class: "dot " + (j.status === "running" ? "run" : j.status === "done" ? "on" : "bad") }),
+      h("div", { class: "grow" }, h("div", { class: "title", style: "font-size:14px" }, j.name), h("div", { class: "sub mono" }, j.url.replace(/^https:\/\//, "")),
+        j.error ? h("div", { class: "err", style: "white-space:normal" }, j.error) : null),
+      st);
+  }
+
+  function viewProjects() {
+    const jobs = (S.cloneJobs || []).slice().reverse();
+    const out = [h("button", { class: "btn block", type: "button", onclick: openImport }, icon("plus"), "Importer un projet")];
+    if (jobs.length) out.push(h("h2", {}, "clonages"), h("div", { class: "card list" }, jobs.map(cloneJobRow)));
+    out.push(h("h2", {}, projects ? `projets · ${projects.length}` : "projets"));
+    if (projectsError && !projects) out.push(h("div", { class: "card empty" }, projectsError));
+    else if (!projects) out.push(h("div", { class: "card empty" }, "Chargement…"));
+    else if (!projects.length) out.push(h("div", { class: "card empty" }, "Aucun projet. Importez-en avec le bouton ci-dessus."));
+    else out.push(h("div", { class: "card list" }, projects.map((p) => {
+      const runs = S.runs.filter((r) => r.status === "running" && r.project === p.name).length;
+      return h("button", { class: "row", type: "button", style: "width:100%; text-align:left", onclick: () => openProject(p) },
+        h("span", { class: "dot " + (runs ? "run" : p.exists ? "" : "bad") }),
+        h("div", { class: "grow" },
+          h("div", { class: "title" }, p.name),
+          h("div", { class: "sub" }, [p.frameworks[0] || p.languages[0], p.branch ? "⎇ " + p.branch : null].filter(Boolean).join(" · ") || (p.exists ? "—" : "dossier introuvable"))),
+        p.changes ? h("span", { class: "chip warn" }, "●" + p.changes) : null,
+        p.ahead ? h("span", { class: "chip" }, "↑" + p.ahead) : null,
+        p.behind ? h("span", { class: "chip warn" }, "↓" + p.behind) : null);
+    })));
+    return out;
+  }
+
+  function sheetShell(eyebrow, title, content) {
+    const close = () => sheet.remove();
+    const sheet = h("div", { class: "sheet", onclick: (e) => { if (e.target === sheet) close(); } },
+      h("div", { class: "panel", style: "overflow:auto" },
+        h("div", { style: "display:flex; align-items:center; gap:10px; margin-bottom:12px" },
+          h("div", { class: "grow" }, h("div", { class: "eyebrow" }, eyebrow), h("div", { class: "title" }, title)),
+          h("button", { class: "btn secondary", type: "button", onclick: close }, "Fermer")),
+        content));
+    document.body.append(sheet);
+    return close;
+  }
+
+  function openProject(p) {
+    const body = h("div", { class: "settings", style: "margin-top:0" });
+    const close = sheetShell("projet", p.name, body);
+    body.append(
+      h("div", { class: "card" },
+        h("div", { class: "sub mono", style: "white-space:normal; word-break:break-all" }, p.path),
+        h("div", { class: "tags" },
+          p.frameworks.map((f) => h("span", { class: "chip cyan" }, f)),
+          p.languages.map((l) => h("span", { class: "chip" }, l)),
+          p.packageManager ? h("span", { class: "chip" }, p.packageManager) : null),
+        p.branch ? h("div", { class: "kv" }, h("span", {}, "⎇ " + p.branch), h("span", {}, [p.changes ? `${p.changes} modif.` : "propre", p.ahead ? `↑${p.ahead}` : "", p.behind ? `↓${p.behind}` : ""].filter(Boolean).join(" "))) : null,
+        p.lastCommit ? h("div", { class: "sub", style: "margin-top:6px; white-space:normal" }, `« ${p.lastCommit} » · ${ago(p.lastCommitAt)}`) : null,
+        p.exists ? h("div", { style: "margin-top:12px; display:grid; gap:8px" },
+          p.branch ? h("button", { class: "btn secondary block", type: "button", onclick: () => openHistory(p) }, icon("history"), "Historique et commits") : null,
+          action("Ouvrir dans l'éditeur sur le PC", "secondary block", async () => { await api(`/api/projects/${p.id}/open`, { method: "POST" }); return "Ouvert sur le PC"; }, { icon: "code" })) : null));
+    if (p.scripts.length) {
+      const order = ["dev", "start", "serve", "tauri", "build", "test", "lint"];
+      const scripts = [...p.scripts].sort((a, b) => ((order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99)) || a.localeCompare(b));
+      body.append(h("h2", {}, "scripts"), h("div", { class: "card list" }, scripts.map((sc) => {
+        const run = S.runs.find((r) => r.project === p.name && r.script === sc && r.status === "running");
+        return h("div", { class: "row" },
+          h("span", { class: "dot " + (run ? "run" : "") }),
+          h("div", { class: "grow" }, h("div", { class: "title mono", style: "font-size:14px" }, sc), run ? h("div", { class: "sub" }, "en cours") : null),
+          run
+            ? h("button", { class: "btn secondary", type: "button", onclick: () => { close(); go("scripts"); } }, "Voir")
+            : action("Lancer", "secondary", async () => { await api(`/api/projects/${p.id}/run`, { method: "POST", body: JSON.stringify({ script: sc }) }); setTimeout(() => { close(); go("scripts"); }, 300); return `${sc} lancé`; }, { icon: "play" }));
+      })));
+    }
+  }
+
+  const BRANCH_COLORS = ["#22d3ee", "#a78bfa", "#34d399", "#fbbf24", "#f472b6", "#60a5fa", "#fb923c", "#a3e635"];
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const svgEl = (tag, attrs) => { const el = document.createElementNS(SVGNS, tag); for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v); return el; };
+
+  function refChip(name) {
+    const head = name.startsWith("HEAD -> "), tag = name.startsWith("tag: ");
+    const label = name.replace(/^HEAD -> /, "").replace(/^tag: /, "");
+    const remote = !head && !tag && label.includes("/");
+    return h("span", { class: "ref" + (head ? " head" : tag ? " tag" : remote ? " remote" : ""), title: name }, (tag ? "◆ " : "") + label);
+  }
+
+  /** Graphe des commits (placement calculé par DevCenter) + liste. */
+  function graphView(log, onPick) {
+    const ROW = 44, LANE = 12, PAD = 9;
+    const x = (c) => PAD + c * LANE;
+    const width = PAD * 2 + Math.max(0, log.width - 1) * LANE;
+    const svg = svgEl("svg", { class: "graph", width, height: log.commits.length * ROW });
+    log.commits.forEach((c, r) => {
+      for (const e of c.edges) {
+        const x1 = x(e.from), y1 = r * ROW + ROW / 2, x2 = x(e.to), y2 = y1 + ROW;
+        const d = x1 === x2 ? `M${x1} ${y1}V${y2}` : `M${x1} ${y1}C${x1} ${y1 + ROW * 0.6},${x2} ${y2 - ROW * 0.6},${x2} ${y2}`;
+        svg.append(svgEl("path", { d, fill: "none", stroke: BRANCH_COLORS[e.color], "stroke-width": "1.6" }));
+      }
+    });
+    log.commits.forEach((c, r) => {
+      const merge = c.parents.length > 1;
+      svg.append(svgEl("circle", { cx: x(c.column), cy: r * ROW + ROW / 2, r: merge ? 3 : 4, fill: merge ? "#000" : BRANCH_COLORS[c.color], stroke: BRANCH_COLORS[c.color], "stroke-width": merge ? 2 : 0 }));
+    });
+    const rows = log.commits.map((c) =>
+      h("button", { class: "crow", type: "button", style: `padding-left:${width + 2}px`, onclick: () => onPick(c) },
+        c.refs.slice(0, 2).map(refChip),
+        h("span", { class: "s" }, h("b", { style: c.parents.length > 1 ? "color:var(--muted)" : "" }, c.subject), h("i", {}, `${c.author} · ${ago(c.timestamp)} · ${c.short}`))));
+    return h("div", { class: "hist" }, svg, h("div", {}, rows));
+  }
+
+  async function openHistory(p) {
+    const body = h("div", { class: "settings", style: "margin-top:0" }, h("div", { class: "card empty" }, "Lecture de l'historique…"));
+    sheetShell("historique", p.name, body);
+    let log;
+    try { log = await api(`/api/projects/${p.id}/log?limit=150`); }
+    catch (e) { body.replaceChildren(h("div", { class: "card err" }, e.message)); return; }
+    if (!log.commits.length) { body.replaceChildren(h("div", { class: "card empty" }, "Aucun commit.")); return; }
+    body.replaceChildren(
+      h("div", { class: "note" }, `${log.commits.length}${log.truncated ? "+" : ""} commits · toutes les branches · touchez un commit pour son détail`),
+      h("div", { class: "card", style: "padding:6px 10px; overflow-x:auto" }, graphView(log, (c) => openCommit(p, c))));
+  }
+
+  function diffEl(patch) {
+    const pre = h("div", { class: "diff" });
+    for (const l of patch.split("\n")) {
+      pre.append(h("div", { class: l.startsWith("@@") ? "h" : l.startsWith("+") ? "a" : l.startsWith("-") ? "d" : "" }, l || " "));
+    }
+    return pre;
+  }
+
+  async function openCommit(p, c) {
+    const body = h("div", { class: "settings", style: "margin-top:0" }, h("div", { class: "card empty" }, "Chargement du commit…"));
+    sheetShell("commit " + c.short, c.subject, body);
+    let d;
+    try { d = await api(`/api/projects/${p.id}/commits/${c.hash}`); }
+    catch (e) { body.replaceChildren(h("div", { class: "card err" }, e.message)); return; }
+    const LETTER = { added: "A", deleted: "D", modified: "M", renamed: "R", binary: "B" };
+    const files = h("div", { class: "card", style: "padding:4px 14px" }, d.files.length ? d.files.map((f) => {
+      const box = h("div", { class: "file" });
+      let open = d.files.length <= 2;
+      const paint = () => {
+        box.replaceChildren(
+          h("button", { type: "button", onclick: () => { open = !open; paint(); } },
+            h("span", { class: "st " + f.status }, LETTER[f.status] || "M"),
+            h("span", { class: "p", title: f.path }, (f.oldPath ? f.oldPath + " → " : "") + f.path),
+            h("span", { style: "flex:none" }, h("span", { style: "color:var(--ok)" }, "+" + f.additions), " ", h("span", { style: "color:var(--bad)" }, "−" + f.deletions))),
+          ...(open ? [f.patch ? diffEl(f.patch) : h("div", { class: "note", style: "margin-bottom:10px" }, f.status === "binary" ? "Fichier binaire." : "Pas de différence textuelle."),
+            f.truncated ? h("div", { class: "note", style: "margin-bottom:10px" }, "Diff tronqué (fichier trop long).") : null].filter(Boolean) : []));
+      };
+      paint();
+      return box;
+    }) : h("div", { class: "empty" }, "Aucun fichier modifié."));
+    body.replaceChildren(...[
+      h("div", { class: "card", style: "display:grid; gap:8px" },
+        d.refs.length ? h("div", { class: "tags", style: "margin:0" }, d.refs.map(refChip)) : null,
+        h("div", { class: "small" }, h("b", {}, d.author), h("span", { class: "muted" }, " · " + new Date(d.authoredAt * 1000).toLocaleString("fr-FR"))),
+        h("div", { class: "sub mono", style: "white-space:normal; word-break:break-all" }, d.hash),
+        d.parents.length > 1 ? h("span", { class: "chip" }, `fusion de ${d.parents.length} parents`) : null,
+        d.body ? h("div", { class: "small", style: "white-space:pre-wrap; color:var(--muted); border-top:1px solid var(--line); padding-top:8px" }, d.body) : null,
+        h("div", { class: "mono small" }, `${d.files.length} fichier${d.files.length > 1 ? "s" : ""} · `, h("span", { style: "color:var(--ok)" }, "+" + d.additions), " ", h("span", { style: "color:var(--bad)" }, "−" + d.deletions))),
+      h("h2", {}, "fichiers modifiés"),
+      files,
+      d.diffTruncated ? h("div", { class: "note" }, "Diff très volumineux : certains fichiers ne sont pas détaillés.") : null,
+    ].filter(Boolean));
+  }
+
+  async function openImport() {
+    const body = h("div", { class: "settings", style: "margin-top:0" });
+    sheetShell("projets", "Importer un projet", body);
+    body.append(h("div", { class: "card empty" }, "Chargement…"));
+    let info;
+    try { info = await api("/api/projects/import"); }
+    catch (e) { body.replaceChildren(h("div", { class: "card err" }, e.message)); return; }
+
+    // --- Cloner depuis Git
+    const url = h("input", { type: "url", inputmode: "url", autocapitalize: "off", autocorrect: "off", spellcheck: "false", placeholder: "https://github.com/moi/projet" });
+    const name = h("input", { autocapitalize: "off", autocorrect: "off", spellcheck: "false", placeholder: "nom du dossier (facultatif)" });
+    url.addEventListener("input", () => { name.placeholder = (url.value.trim().replace(/\/+$/, "").split("/").pop() || "").replace(/\.git$/, "") || "nom du dossier (facultatif)"; });
+    const cloneCard = h("div", { class: "card", style: "display:grid; gap:10px" },
+      h("div", { class: "eyebrow" }, "cloner un dépôt git"),
+      h("div", { class: "field" }, url),
+      h("div", { class: "field" }, name),
+      h("div", { class: "note" }, "Cloné sur le PC dans ", h("span", { class: "mono", style: "color:var(--fg); word-break:break-all" }, info.defaultRoot), ". Dépôts privés GitHub : via le compte connecté sur le PC ; autres hébergeurs : identifiants git déjà enregistrés sur le PC."),
+      action("Cloner sur le PC", "block", async () => {
+        const job = await api("/api/projects/clone", { method: "POST", body: JSON.stringify({ url: url.value.trim(), name: name.value.trim() || null }) });
+        url.value = ""; name.value = "";
+        return `Clonage de ${job.name} lancé : vous serez prévenu à la fin`;
+      }, { icon: "plus" }));
+    // --- Détecter dans un dossier : sélecteur de dossier, puis sélection multiple des projets trouvés
+    const results = h("div", { style: "display:grid; gap:10px" });
+    const rootSelect = h("select", { "aria-label": "Dossier de projets" },
+      h("option", { value: "", disabled: true, selected: true }, "Choisir un dossier…"),
+      info.roots.map((r) => h("option", { value: r }, r)));
+    rootSelect.onchange = () => { if (rootSelect.value) scan(rootSelect.value); };
+    async function scan(root) {
+      results.replaceChildren(h("div", { class: "empty" }, "Analyse du dossier…"));
+      let found;
+      try { found = await api("/api/projects/scan", { method: "POST", body: JSON.stringify({ root }) }); }
+      catch (e) { results.replaceChildren(h("div", { class: "err" }, e.message)); return; }
+      if (!found.length) { results.replaceChildren(h("div", { class: "empty" }, "Aucun nouveau projet dans ce dossier.")); return; }
+      // Sélection multiple native : sur iPhone, une liste à cocher du système.
+      const multi = h("select", { multiple: true, "aria-label": "Projets à importer", size: String(Math.min(found.length, 6)) },
+        found.map((c) => h("option", { value: c.path, selected: true },
+          c.name + ([...c.frameworks, ...c.languages].length ? "  ·  " + [...c.frameworks, ...c.languages].slice(0, 2).join(", ") : ""))));
+      const btn = h("button", { class: "btn block", type: "button" });
+      const sync = () => {
+        const n = [...multi.selectedOptions].length;
+        btn.textContent = n ? `Importer ${n} projet${n > 1 ? "s" : ""}` : "Choisir des projets";
+        btn.disabled = !n;
+      };
+      multi.onchange = sync;
+      sync();
+      btn.onclick = async () => {
+        const paths = [...multi.selectedOptions].map((o) => o.value);
+        btn.disabled = true;
+        try {
+          await api("/api/projects/import", { method: "POST", body: JSON.stringify({ paths }) });
+          toast(`${paths.length} projet(s) importé(s)`);
+          loadProjects();
+          scan(root);
+        } catch (e) { toast(e.message, true); sync(); }
+      };
+      results.replaceChildren(
+        h("div", { class: "note" }, `${found.length} projet${found.length > 1 ? "s" : ""} trouvé${found.length > 1 ? "s" : ""}, tous sélectionnés :`),
+        multi, btn);
+    }
+    const scanCard = h("div", { class: "card", style: "display:grid; gap:10px" },
+      h("div", { class: "eyebrow" }, "détecter sur le pc"),
+      info.roots.length
+        ? h("div", { style: "display:grid; gap:10px" }, h("div", { class: "note" }, "DevCenter repère les projets du dossier qui ne sont pas encore importés."), rootSelect)
+        : h("div", { class: "note" }, "Aucun dossier de projets : choisissez-en un dans DevCenter › Paramètres."),
+      results);
+
+    // --- Mes dépôts GitHub (compte gh du PC) : un sélecteur, puis « Cloner »
+    const ghCard = h("div", { class: "card", style: "display:grid; gap:10px" },
+      h("div", { class: "eyebrow", style: "display:flex; align-items:center; gap:6px" }, icon("gh"), "mes dépôts github"),
+      h("div", { class: "empty" }, "Chargement des dépôts…"));
+    body.replaceChildren(ghCard, cloneCard, scanCard);
+
+    let gh;
+    try { gh = await api("/api/github/repos"); }
+    catch (e) { ghCard.replaceChildren(ghCard.firstChild, h("div", { class: "err" }, e.message)); return; }
+    if (!gh.login) {
+      ghCard.replaceChildren(ghCard.firstChild, h("div", { class: "note" }, gh.installed
+        ? "Aucun compte GitHub connecté sur le PC : DevCenter › Paramètres › Compte GitHub › Se connecter."
+        : "GitHub CLI (gh) n'est pas installé sur le PC."));
+      return;
+    }
+    const launched = new Set();
+    const jobFor = (r) => (S.cloneJobs || []).slice().reverse().find((j) => j.url.toLowerCase() === r.cloneUrl.toLowerCase());
+    const stateOf = (r) => {
+      const job = jobFor(r);
+      if (r.projectId != null || (job && job.status === "done")) return "imported";
+      if (launched.has(r.fullName) || (job && job.status === "running")) return "cloning";
+      return job && job.status === "failed" ? "failed" : "available";
+    };
+    const repoSelect = h("select", { "aria-label": "Dépôt GitHub" });
+    const detail = h("div", { class: "detail" });
+    const cloneBtn = h("button", { class: "btn block", type: "button" }, icon("plus"), "Cloner sur le PC");
+    const paintRepos = () => {
+      const keep = repoSelect.value;
+      // Groupes : vos dépôts d'abord, puis par organisation / propriétaire.
+      const owners = [gh.login, ...new Set(gh.repos.map((r) => r.owner).filter((o) => o !== gh.login))];
+      repoSelect.replaceChildren(h("option", { value: "", disabled: true, selected: !keep }, `Choisir parmi ${gh.repos.length} dépôts…`),
+        ...owners.map((owner) => {
+          const repos = gh.repos.filter((r) => r.owner === owner);
+          if (!repos.length) return null;
+          return h("optgroup", { label: owner === gh.login ? "Mes dépôts" : owner }, repos.map((r) => {
+            const st = stateOf(r);
+            const suffix = st === "imported" ? " — importé" : st === "cloning" ? " — clonage…" : "";
+            return h("option", { value: r.fullName, disabled: st === "imported" || st === "cloning", selected: r.fullName === keep },
+              r.name + (r.private ? " 🔒" : "") + suffix);
+          }));
+        }).filter(Boolean));
+      if (keep && ![...repoSelect.options].some((o) => o.value === keep && !o.disabled)) repoSelect.value = "";
+      paintDetail();
+    };
+    const paintDetail = () => {
+      const r = gh.repos.find((x) => x.fullName === repoSelect.value);
+      if (!r) { detail.textContent = ""; cloneBtn.disabled = true; return; }
+      const job = jobFor(r);
+      detail.replaceChildren(...[
+        h("span", { class: "mono", style: "color:var(--fg)" }, r.fullName),
+        " · " + [r.private ? "privé" : "public", r.language, r.pushedAt ? "modifié " + ago(Date.parse(r.pushedAt) / 1000) : null].filter(Boolean).join(" · "),
+        r.description ? h("div", {}, r.description) : null,
+        job && job.status === "failed" ? h("div", { class: "err" }, job.error) : null,
+      ].filter(Boolean));
+      cloneBtn.disabled = stateOf(r) !== "available" && stateOf(r) !== "failed";
+    };
+    repoSelect.onchange = paintDetail;
+    cloneBtn.onclick = async () => {
+      const r = gh.repos.find((x) => x.fullName === repoSelect.value);
+      if (!r) return;
+      cloneBtn.disabled = true;
+      try {
+        launched.add(r.fullName);
+        await api("/api/projects/clone", { method: "POST", body: JSON.stringify({ url: r.cloneUrl }) });
+        toast(`Clonage de ${r.name} lancé : vous serez prévenu à la fin`);
+        repoSelect.value = "";
+        paintRepos();
+      } catch (e) {
+        launched.delete(r.fullName);
+        toast(e.message, true);
+        paintDetail();
+      }
+    };
+    ghCard.replaceChildren(ghCard.firstChild,
+      h("div", { class: "note" }, "Compte ", h("b", { style: "color:var(--fg)" }, gh.login), " · clonés dans ", h("span", { class: "mono", style: "color:var(--fg); word-break:break-all" }, info.defaultRoot)),
+      repoSelect, detail, cloneBtn);
+    paintRepos();
+  }
+
+  function viewWorkspaces() {
+    if (!S.workspaces.length) return [h("div", { class: "card empty" }, "Aucun workspace. Créez-en dans DevCenter › Workspaces.")];
+    const sorted = [...S.workspaces].sort((a, b) => (b.active - a.active) || (b.favorite - a.favorite) || a.name.localeCompare(b.name));
+    return sorted.map((w) => {
+      const runs = w.runIds.map((id) => S.runs.find((r) => r.id === id)).filter(Boolean);
+      return h("div", { class: "card", style: w.active ? "border-color:rgba(52,211,153,.4)" : "" },
+        h("div", { style: "display:flex; gap:10px; align-items:flex-start" },
+          h("div", { class: "grow" },
+            h("div", { class: "title" }, w.favorite ? h("span", { class: "star" }, "★ ") : null, w.name),
+            w.description ? h("div", { class: "sub", style: "white-space:normal" }, w.description) : null,
+            h("div", { style: "margin-top:6px; display:flex; gap:6px; flex-wrap:wrap" },
+              w.active ? h("span", { class: "chip ok" }, "● session " + dur(Date.now() / 1000 - w.startedAt)) : h("span", { class: "chip" }, w.lastStartedAt ? "dernière " + ago(w.lastStartedAt) : "jamais démarré"),
+              h("span", { class: "chip" }, `${w.steps} étape${w.steps > 1 ? "s" : ""}`))),
+          w.active
+            ? action("Arrêter", "danger", async () => { await api(`/api/workspaces/${w.id}/stop`, { method: "POST" }); return "Session arrêtée"; }, { icon: "stop", confirm: `Arrêter la session « ${w.name} » ? Ses scripts seront coupés.` })
+            : action("Démarrer", "", async () => { await api(`/api/workspaces/${w.id}/start`, { method: "POST" }); return "Session démarrée"; }, { icon: "play" })),
+        runs.length ? h("div", { class: "list", style: "margin-top:10px; border-top:1px solid var(--line); padding-top:4px" }, runs.map((r) => runRow(r, false))) : null,
+        w.failures.map((f) => h("div", { class: "err" }, "⚠ " + f)));
+    });
+  }
+
+  function viewScripts() {
+    const runs = [...S.runs].sort((a, b) => (b.status === "running") - (a.status === "running") || b.startedAt - a.startedAt);
+    if (!runs.length) return [h("div", { class: "card empty" }, "Aucun script lancé depuis DevCenter.")];
+    const active = runs.filter((r) => r.status === "running"), done = runs.filter((r) => r.status !== "running");
+    const out = [];
+    if (active.length) out.push(h("h2", {}, `en cours · ${active.length}`), h("div", { class: "card list" }, active.map((r) => runRow(r))));
+    if (done.length) out.push(h("h2", {}, "terminés"), h("div", { class: "card list" }, done.map((r) => runRow(r))));
+    return out;
+  }
+
+  function viewServers() {
+    if (!S.servers.length) return [h("div", { class: "card empty" }, "Aucun serveur. Ajoutez-en dans DevCenter › Serveurs.")];
+    return [h("div", { class: "card list" }, S.servers.map((s) => {
+      const p = pings[s.id];
+      const state = p === "…" ? h("span", { class: "chip cyan" }, "test…") : p ? (p.ok ? h("span", { class: "chip ok" }, p.ms + " ms") : h("span", { class: "chip bad" }, "injoignable")) : null;
+      return h("div", { class: "row" },
+        h("span", { class: "dot " + (p && p !== "…" ? (p.ok ? "on" : "bad") : "") }),
+        h("div", { class: "grow" }, h("div", { class: "title" }, s.name), h("div", { class: "sub mono" }, s.destination),
+          p && p !== "…" && !p.ok ? h("div", { class: "err", style: "white-space:normal" }, p.error) : null),
+        state,
+        h("button", { class: "btn secondary", type: "button", disabled: p === "…", onclick: async () => {
+          pings[s.id] = "…"; render();
+          try { pings[s.id] = await api(`/api/servers/${s.id}/ping`, { method: "POST" }); } catch (e) { pings[s.id] = { ok: false, error: e.message }; }
+          render();
+        } }, "Tester"));
+    })), h("p", { class: "muted small", style: "text-align:center" }, "Terminal, services et Docker : depuis DevCenter sur le PC.")];
+  }
+
+  function viewAuto() {
+    const list = [...S.automations].sort((a, b) => (b.enabled - a.enabled) || a.name.localeCompare(b.name));
+    const out = [h("div", { class: "card list" }, list.length ? list.map((a) =>
+      h("div", { class: "row", style: a.enabled ? "" : "opacity:.55" },
+        h("span", { class: "dot " + (a.running ? "run" : a.lastStatus === "failed" ? "bad" : a.lastStatus === "success" ? "on" : "") }),
+        h("div", { class: "grow" },
+          h("div", { class: "title" }, a.name),
+          h("div", { class: "sub" }, triggerLabel(a.trigger) + (a.enabled ? "" : " · désactivée")),
+          a.lastStatus ? h("div", { style: "margin-top:4px; display:flex; gap:6px; align-items:center" }, chip(a.running ? "running" : a.lastStatus), h("span", { class: "sub", style: "margin:0" }, a.lastStartedAt ? ago(a.lastStartedAt) : "")) : null),
+        action("", "secondary", async () => { await api(`/api/automations/${a.id}/run`, { method: "POST" }); return "Exécution lancée"; }, { icon: "play" }))) : h("div", { class: "empty" }, "Aucune automatisation."))];
+    out.push(h("h2", {}, "historique"));
+    if (!history) out.push(h("div", { class: "card empty" }, "Chargement…"));
+    else if (!history.length) out.push(h("div", { class: "card empty" }, "Aucune exécution pour l'instant."));
+    else out.push(h("div", { class: "card list" }, history.map((it) =>
+      h("div", { class: "row" },
+        h("div", { class: "grow" },
+          h("div", { class: "title", style: "font-size:14px" }, it.name),
+          h("div", { class: "sub" }, (it.kind === "workspace" ? "session" : ({ manual: "manuel", schedule: "planifié", startup: "démarrage" }[it.origin] || "")) + " · " + ago(it.startedAt)),
+          it.failures.slice(0, 2).map((f) => h("div", { class: "err" }, f))),
+        chip(it.status)))));
+    return out;
+  }
+
+  function render() {
+    renderTabs();
+    if (!S) { $("view").replaceChildren(h("div", { class: "card empty" }, "Connexion à DevCenter…")); return; }
+    const views = { home: viewHome, projects: viewProjects, workspaces: viewWorkspaces, scripts: viewScripts, servers: viewServers, auto: viewAuto };
+    $("view").replaceChildren(...(views[tab] || viewHome)());
+  }
+
+  // ---------------------------------------------------------------- appli installée et notifications
+  const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const pushSupported = window.isSecureContext && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  let swReg = null;
+  let pushState = { subscribed: false, publicKey: null };
+
+  if (window.isSecureContext && "serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js", { scope: "/" }).then((r) => { swReg = r; }).catch(() => {});
+  }
+  // Ouvrir l'appli efface la pastille de l'icône.
+  const clearBadge = () => { try { navigator.clearAppBadge && navigator.clearAppBadge(); } catch (e) {} };
+  clearBadge();
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) clearBadge(); });
+
+  const b64ToBytes = (b64) => {
+    const s = atob(b64.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((b64.length + 3) % 4));
+    return Uint8Array.from(s, (c) => c.charCodeAt(0));
+  };
+
+  async function loadPushState() {
+    try { pushState = await api("/api/push"); } catch (e) {}
+    updateBell();
+  }
+  function updateBell() {
+    const b = $("bell");
+    b.classList.toggle("on", !!pushState.subscribed);
+    b.querySelector(".pip")?.remove();
+    if (!pushState.subscribed && pushSupported && standalone) b.append(h("span", { class: "pip" }));
+  }
+
+  async function enablePush() {
+    if (!pushSupported) throw new Error("notifications indisponibles ici");
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") throw new Error("autorisation refusée : réglages iPhone › Notifications › DevCenter");
+    const reg = swReg || (await navigator.serviceWorker.ready);
+    const existing = await reg.pushManager.getSubscription();
+    const sub = existing || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(pushState.publicKey) }));
+    await api("/api/push/subscribe", { method: "POST", body: JSON.stringify(sub.toJSON()) });
+    pushState.subscribed = true;
+  }
+  async function disablePush() {
+    try {
+      const reg = swReg || (await navigator.serviceWorker.ready);
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) await sub.unsubscribe();
+    } catch (e) {}
+    await api("/api/push/unsubscribe", { method: "POST" });
+    pushState.subscribed = false;
+  }
+
+  function openSettings() {
+    const close = () => sheet.remove();
+    const body = h("div", { class: "settings" });
+    const paint = () => {
+      body.replaceChildren();
+      // 1. Notifications
+      const notif = h("div", { class: "card" }, h("div", { class: "eyebrow" }, "notifications"));
+      if (!window.isSecureContext) {
+        notif.append(h("p", { class: "note", style: "margin:8px 0 0" },
+          "Les notifications et l'installation demandent une connexion HTTPS. Dans DevCenter sur le PC : Paramètres › Accès à distance › HTTPS via Tailscale, puis ouvrez l'adresse https://… sur ce téléphone (avec l'app Tailscale connectée)."));
+      } else if (isIOS && !standalone) {
+        notif.append(
+          h("p", { class: "note", style: "margin:8px 0 10px" }, "Sur iPhone, les notifications fonctionnent une fois DevCenter ajouté à l'écran d'accueil :"),
+          h("div", { class: "step" }, h("b", { class: "n" }, "1"), h("span", {}, "Touchez ", h("b", {}, "Partager"), " dans Safari (carré avec une flèche).")),
+          h("div", { class: "step", style: "margin-top:8px" }, h("b", { class: "n" }, "2"), h("span", {}, "Choisissez ", h("b", {}, "Sur l'écran d'accueil"), ", puis ", h("b", {}, "Ajouter"), ".")),
+          h("div", { class: "step", style: "margin-top:8px" }, h("b", { class: "n" }, "3"), h("span", {}, "Ouvrez DevCenter depuis son icône et revenez ici.")));
+      } else if (!pushSupported) {
+        notif.append(h("p", { class: "note", style: "margin:8px 0 0" }, "Ce navigateur ne prend pas en charge les notifications push."));
+      } else if (pushState.subscribed) {
+        notif.append(
+          h("p", { class: "note", style: "margin:8px 0 10px" }, "Activées sur cet appareil : échecs d'automatisations, scripts qui plantent, erreurs au démarrage d'un workspace, et étapes « Notifier »."),
+          h("div", { style: "display:flex; gap:8px" },
+            action("Envoyer un test", "secondary", async () => { await api("/api/push/test", { method: "POST" }); return "Notification envoyée"; }),
+            action("Désactiver", "danger", async () => { await disablePush(); paint(); updateBell(); return "Notifications désactivées"; })));
+      } else {
+        notif.append(
+          h("p", { class: "note", style: "margin:8px 0 10px" }, "Recevez une alerte quand une automatisation échoue, qu'un script plante ou qu'un workspace démarre avec des erreurs — même téléphone verrouillé."),
+          action("Activer les notifications", "block", async () => { await enablePush(); paint(); updateBell(); return "Notifications activées"; }));
+      }
+      body.append(notif);
+
+      // 2. Installation (hors iOS non installé, déjà expliqué plus haut)
+      if (!standalone && !(isIOS && window.isSecureContext)) {
+        body.append(h("div", { class: "card" }, h("div", { class: "eyebrow" }, "appli"),
+          h("p", { class: "note", style: "margin:8px 0 0" }, isIOS
+            ? "Ajoutez DevCenter à l'écran d'accueil (Partager › Sur l'écran d'accueil) pour l'ouvrir en plein écran comme une appli."
+            : "Menu du navigateur › « Installer l'application » ou « Ajouter à l'écran d'accueil » pour l'ouvrir en plein écran.")));
+      }
+
+      // 3. Appareil
+      body.append(h("div", { class: "card" }, h("div", { class: "eyebrow" }, "cet appareil"),
+        h("p", { class: "note", style: "margin:8px 0 10px" }, `Connecté à ${location.host}${window.isSecureContext ? " (HTTPS)" : " (HTTP, réseau local)"}.`),
+        h("button", { class: "btn danger", type: "button", onclick: () => { if (confirm("Oublier cet appareil ? Il faudra l'appairer à nouveau.")) { close(); disablePush().catch(() => {}); forget(); } } }, "Oublier cet appareil")));
+    };
+    const sheet = h("div", { class: "sheet", onclick: (e) => { if (e.target === sheet) close(); } },
+      h("div", { class: "panel", style: "overflow:auto" },
+        h("div", { style: "display:flex; align-items:center; gap:10px" },
+          h("div", { class: "grow" }, h("div", { class: "eyebrow" }, "réglages"), h("div", { class: "title" }, "Notifications et appli")),
+          h("button", { class: "btn secondary", type: "button", onclick: close }, "Fermer")),
+        body));
+    paint();
+    document.body.append(sheet);
+    loadPushState().then(paint);
+  }
+
+  // ---------------------------------------------------------------- logs
+  let logsTimer = null;
+  function openLogs(r) {
+    const pre = h("pre", {}, "Chargement…");
+    const close = () => { clearInterval(logsTimer); sheet.remove(); };
+    const sheet = h("div", { class: "sheet", onclick: (e) => { if (e.target === sheet) close(); } },
+      h("div", { class: "panel" },
+        h("div", { style: "display:flex; align-items:center; gap:10px" },
+          h("div", { class: "grow" }, h("div", { class: "eyebrow" }, "logs"), h("div", { class: "title" }, `${r.project} › ${r.script}`)),
+          h("button", { class: "btn secondary", type: "button", onclick: close }, "Fermer")),
+        pre));
+    document.body.append(sheet);
+    let stick = true;
+    pre.addEventListener("scroll", () => { stick = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 30; });
+    const load = async () => {
+      try {
+        const { lines } = await api(`/api/runs/${r.id}/logs`);
+        pre.textContent = lines.length ? lines.join("\n") : "(aucune sortie pour l'instant)";
+        if (stick) pre.scrollTop = pre.scrollHeight;
+      } catch (e) { pre.textContent = e.message; clearInterval(logsTimer); }
+    };
+    load();
+    logsTimer = setInterval(() => { if (!document.hidden) load(); }, 2000);
+  }
+
+  // ---------------------------------------------------------------- données
+  let timer = null, historyTimer = null, inflight = false;
+  async function refresh() {
+    if (inflight) return;
+    inflight = true;
+    try {
+      const prevCloning = S ? (S.cloneJobs || []).filter((j) => j.status === "running").length : 0;
+      S = await api("/api/status");
+      const nowCloning = (S.cloneJobs || []).filter((j) => j.status === "running").length;
+      if (nowCloning < prevCloning) loadProjects();
+      lastOk = Date.now();
+      cpuHist.push(S.cpuUsage); if (cpuHist.length > HIST) cpuHist.shift();
+      ramHist.push(S.memoryTotal ? S.memoryUsed / S.memoryTotal * 100 : 0); if (ramHist.length > HIST) ramHist.shift();
+      $("host").textContent = S.host;
+      $("live").className = "live on";
+      $("updated").textContent = "en direct";
+      // Ne pas reconstruire la vue pendant une saisie ou une feuille ouverte.
+      if (!document.querySelector(".sheet")) render(); else renderTabs();
+    } catch (e) {
+      $("live").className = "live off";
+      $("updated").textContent = lastOk ? "hors ligne · " + ago(lastOk / 1000) : "hors ligne";
+      if (!S) render();
+    } finally { inflight = false; }
+  }
+  async function loadHistory() {
+    try { history = await api("/api/history"); if (tab === "auto" && !document.querySelector(".sheet")) render(); } catch (e) {}
+  }
+
+  function start() {
+    $("pair").hidden = true; $("app").hidden = false;
+    $("bell").onclick = openSettings;
+    loadPushState();
+    render(); refresh();
+    clearInterval(timer); clearInterval(historyTimer);
+    timer = setInterval(() => { if (!document.hidden) refresh(); }, 3000);
+    historyTimer = setInterval(() => {
+      if (document.hidden) return;
+      if (tab === "auto") loadHistory();
+      if (tab === "projects") loadProjects();
+    }, 15000);
+    if (tab === "projects") loadProjects();
+    if (tab === "auto") loadHistory();
+  }
+  function showPair() {
+    clearInterval(timer); clearInterval(historyTimer);
+    $("app").hidden = true; $("pair").hidden = false;
+    setTimeout(() => $("code").focus(), 50);
+  }
+  function forget() {
+    token = null;
+    try { localStorage.removeItem(KEY); } catch (e) {}
+    showPair();
+  }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && token) refresh(); });
+
+  $("code").addEventListener("input", (e) => { e.target.value = e.target.value.replace(/\D/g, "").slice(0, 6); });
+  $("pairForm").onsubmit = async (e) => {
+    e.preventDefault();
+    $("pairError").textContent = "";
+    try {
+      const name = $("device").value.trim() || (navigator.userAgent.match(/\(([^;)]+)/) || [, "Appareil"])[1];
+      const r = await api("/api/pair", { method: "POST", body: JSON.stringify({ code: $("code").value.trim(), name }) });
+      token = r.token;
+      try { localStorage.setItem(KEY, token); } catch (err) {}
+      start();
+    } catch (err) { $("pairError").textContent = err.message; }
+  };
+
+  if (!TABS.some(([id]) => id === tab)) tab = "home";
+  if (token) start(); else showPair();
+})();
+</script>
+</body>
+</html>

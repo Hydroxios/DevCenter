@@ -1,0 +1,61 @@
+# Publie une version : pousser un tag `v0.1.0` (identique à la version de tauri.conf.json).
+# Construit l'installeur Windows signé, crée une Release GitHub en brouillon avec `latest.json`
+# (lu par la mise à jour automatique de DevCenter). Publier le brouillon la rend disponible.
+#
+# Secrets du dépôt requis (Settings › Secrets and variables › Actions) :
+#   TAURI_SIGNING_PRIVATE_KEY           contenu du fichier devcenter.key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  mot de passe de la clé (vide si aucun)
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Dépendances
+        run: pnpm install --frozen-lockfile
+
+      # `generate_context!` embarque le front : il doit être construit avant de compiler les tests.
+      - name: Front
+        run: pnpm build
+
+      - name: Tests Rust
+        working-directory: src-tauri
+        run: cargo test --lib
+
+      - name: Build et Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "DevCenter ${{ github.ref_name }}"
+          releaseBody: "Voir les notes ci-dessous. Installation : télécharger le fichier *_x64-setup.exe."
+          releaseDraft: true
+          prerelease: true

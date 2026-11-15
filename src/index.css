@@ -1,0 +1,191 @@
+@import "tailwindcss";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Charte PowerBack : noir pur, surfaces quasi noires, filets fins, un seul accent cyan,
+ * Geist + Geist Mono (étiquettes et chiffres en mono).
+ * Les noms de jetons suivent la convention shadcn/ui pour garder les composants existants.
+ */
+
+/* Variante claire : mêmes proportions, accent cyan assombri pour le contraste. */
+:root {
+  --radius: 0.625rem;
+  --background: #ffffff;
+  --foreground: #0a0a0b;
+  --card: #f7f7f8;
+  --card-foreground: #0a0a0b;
+  --primary: #0891b2;
+  --primary-foreground: #ffffff;
+  --secondary: #efeff1;
+  --secondary-foreground: #0a0a0b;
+  --muted: #efeff1;
+  --muted-foreground: #6b6b73;
+  --accent: #ececef;
+  --accent-foreground: #0a0a0b;
+  --destructive: #dc2626;
+  --success: #059669;
+  --warning: #d97706;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #0891b2;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #6b6b73;
+}
+
+/* Variante sombre = PowerBack. */
+.dark {
+  --background: #000000;
+  --foreground: #ffffff;
+  --card: #0c0c0d;
+  --card-foreground: #ffffff;
+  --primary: #22d3ee;
+  --primary-foreground: #000000;
+  --secondary: #161618;
+  --secondary-foreground: #ffffff;
+  --muted: #161618;
+  --muted-foreground: #8b8b92;
+  --accent: #161618;
+  --accent-foreground: #ffffff;
+  --destructive: #f87171;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --border: #232326;
+  --input: #232326;
+  --ring: #22d3ee;
+  --sidebar: #000000;
+  --sidebar-foreground: #8b8b92;
+}
+
+@theme inline {
+  --font-sans: "Geist Variable", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", "Cascadia Mono", Consolas, monospace;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 2px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body,
+  #root {
+    @apply h-full;
+  }
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+    user-select: none;
+  }
+  .dark {
+    color-scheme: dark;
+  }
+  input,
+  textarea,
+  [contenteditable] {
+    user-select: text;
+  }
+  /* Tailwind 4 ne met plus de curseur « main » sur les boutons : on le rétablit partout. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="switch"],
+  [role="radio"],
+  [role="tab"],
+  a[href],
+  label:has(input[type="checkbox"]),
+  input[type="checkbox"],
+  select {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  /* Chiffres (tailles, durées, pourcentages) en mono, comme dans PowerBack. */
+  .tabular-nums {
+    font-family: var(--font-mono);
+  }
+  ::selection {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+  /* Barres de défilement discrètes */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--muted-foreground);
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
+
+@layer components {
+  /* Petites capitales mono : titres de sections et en-têtes de colonnes */
+  .eyebrow {
+    @apply font-mono text-[11px] font-normal tracking-[0.14em] text-muted-foreground uppercase;
+  }
+  /* Métadonnées chiffrées : tailles, dates, compteurs */
+  .meta {
+    @apply font-mono text-xs text-muted-foreground tabular-nums;
+  }
+}
+
+/* Fenêtres modales : fondu à l'ouverture et à la fermeture (Radix attend la fin de l'animation
+   de sortie avant de démonter la fenêtre). */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+.dialog-content[data-state="open"],
+.dialog-overlay[data-state="open"] {
+  animation: fade-in 180ms ease-out;
+}
+.dialog-content[data-state="closed"],
+.dialog-overlay[data-state="closed"] {
+  animation: fade-out 140ms ease-in forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dialog-content,
+  .dialog-overlay {
+    animation-duration: 1ms !important;
+  }
+}
