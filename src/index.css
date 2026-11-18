@@ -189,3 +189,78 @@
     animation-duration: 1ms !important;
   }
 }
+
+/* Tableau de bord : grille de widgets (react-grid-layout) aux couleurs de l'app. */
+.dashboard-grid .react-grid-item.react-grid-placeholder {
+  background: var(--primary);
+  opacity: 0.08;
+  border-radius: var(--radius-xl);
+  outline: 1px dashed var(--primary);
+}
+.dashboard-grid .react-grid-item > .react-resizable-handle {
+  width: 18px;
+  height: 18px;
+  opacity: 1;
+}
+.dashboard-grid .react-grid-item > .react-resizable-handle::after {
+  right: 5px;
+  bottom: 5px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--primary);
+  border-bottom: 2px solid var(--primary);
+}
+.dashboard-grid .react-grid-item.react-draggable-dragging > * {
+  box-shadow: 0 12px 32px -12px color-mix(in srgb, var(--primary) 35%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-grid .react-grid-item {
+    transition: none;
+  }
+}
+/* Hors édition : pas d'animation (sinon les widgets « volent » en place au chargement). */
+.dashboard-grid:not(.is-editing) .react-grid-item {
+  transition: none;
+}
+/* En édition : trame de points aux intersections de la grille, et place pour déposer en dessous. */
+.dashboard-grid.is-editing .react-grid-layout {
+  min-height: 100%;
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--primary) 35%, transparent) 1px, transparent 1.5px);
+  background-size: var(--cell-w) var(--cell-h);
+  /* Point au milieu de la gouttière (16 px) entre les cases. */
+  background-position: calc(var(--cell-w) / 2 - 8px) calc(var(--cell-h) / 2 - 8px);
+}
+/* Zones qui défilent sans barre visible (tableau de bord, contenu des widgets). */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Couleurs d'accent des widgets du tableau de bord (remplacent le cyan sur la carte). */
+.accent-cyan { --primary: #0891b2; }
+.accent-green { --primary: #059669; }
+.accent-amber { --primary: #d97706; }
+.accent-violet { --primary: #7c3aed; }
+.accent-rose { --primary: #e11d48; }
+.accent-blue { --primary: #2563eb; }
+.dark .accent-cyan { --primary: #22d3ee; }
+.dark .accent-green { --primary: #34d399; }
+.dark .accent-amber { --primary: #fbbf24; }
+.dark .accent-violet { --primary: #a78bfa; }
+.dark .accent-rose { --primary: #fb7185; }
+.dark .accent-blue { --primary: #60a5fa; }
+
+/* Widget très bas : marges et espacements réduits pour laisser la place au contenu. */
+.widget-card {
+  container-type: size;
+}
+@container (max-height: 140px) {
+  .widget-inner:not(.is-bare) {
+    padding: 8px 12px;
+  }
+  .widget-inner {
+    gap: 6px;
+  }
+}

@@ -5,12 +5,50 @@ import { api, isTauri } from "@/services/tauri";
 import type { RunInfo } from "@/types";
 
 const MAX_LINES = 2000;
+const RECENT_KEY = "devcenter.runs.recent";
+const MAX_RECENT = 12;
+
+/** Script lancé récemment (gardé d'une session à l'autre pour le relancer en un clic). */
+export interface RecentScript {
+  projectId: number;
+  script: string;
+  /** Horodatage Unix (secondes) du dernier lancement. */
+  lastRunAt: number;
+}
+
+function loadRecent(): RecentScript[] {
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]") as RecentScript[];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecent(recent: RecentScript[]) {
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(recent));
+  } catch {
+    /* stockage indisponible */
+  }
+}
+
+/** Place le script en tête des récents (sans doublon), en gardant les plus récents. */
+function withRecent(recent: RecentScript[], run: RunInfo): RecentScript[] {
+  const others = recent.filter((r) => !(r.projectId === run.projectId && r.script === run.script));
+  const prev = recent.find((r) => r.projectId === run.projectId && r.script === run.script);
+  const lastRunAt = Math.max(run.startedAt, prev?.lastRunAt ?? 0);
+  return [{ projectId: run.projectId, script: run.script, lastRunAt }, ...others]
+    .sort((a, b) => b.lastRunAt - a.lastRunAt)
+    .slice(0, MAX_RECENT);
+}
 
 interface RunsState {
   runs: Record<number, RunInfo>;
   logs: Record<number, string[]>;
   error: string | null;
+  recent: RecentScript[];
   init: () => Promise<void>;
+  forgetRecent: (projectId: number, script: string) => void;
   loadLogs: (runId: number) => Promise<void>;
   start: (projectId: number, script: string) => Promise<RunInfo | null>;
   stop: (runId: number) => Promise<void>;
@@ -24,6 +62,7 @@ export const useRuns = create<RunsState>((set, get) => ({
   runs: {},
   logs: {},
   error: null,
+  recent: loadRecent(),
 
   init: async () => {
     if (initialized || !isTauri()) return;
@@ -32,13 +71,15 @@ export const useRuns = create<RunsState>((set, get) => ({
     await listen<RunInfo>("runner://status", ({ payload }) => {
       set((s) => {
         const runs = { ...s.runs, [payload.id]: payload };
+        const recent = payload.status === "running" ? withRecent(s.recent, payload) : s.recent;
+        if (recent !== s.recent) saveRecent(recent);
         // Rust remplace l'ancienne exécution terminée d'un même script : on fait pareil ici.
         for (const r of Object.values(runs)) {
           if (r.id !== payload.id && r.projectId === payload.projectId && r.script === payload.script && r.status !== "running") {
             delete runs[r.id];
           }
         }
-        return { runs };
+        return { runs, recent };
       });
     });
 
@@ -52,7 +93,9 @@ export const useRuns = create<RunsState>((set, get) => ({
 
     try {
       const list = await api.runner.list();
-      set({ runs: Object.fromEntries(list.map((r) => [r.id, r])) });
+      const recent = list.reduce(withRecent, get().recent);
+      saveRecent(recent);
+      set({ runs: Object.fromEntries(list.map((r) => [r.id, r])), recent });
     } catch (e) {
       set({ error: String(e) });
     }
@@ -70,7 +113,11 @@ export const useRuns = create<RunsState>((set, get) => ({
   start: async (projectId, script) => {
     try {
       const run = await api.runner.run(projectId, script);
-      set((s) => ({ runs: { ...s.runs, [run.id]: run }, logs: { ...s.logs, [run.id]: s.logs[run.id] ?? [] }, error: null }));
+      set((s) => {
+        const recent = withRecent(s.recent, run);
+        saveRecent(recent);
+        return { runs: { ...s.runs, [run.id]: run }, logs: { ...s.logs, [run.id]: s.logs[run.id] ?? [] }, recent, error: null };
+      });
       return run;
     } catch (e) {
       set({ error: String(e) });
@@ -84,6 +131,12 @@ export const useRuns = create<RunsState>((set, get) => ({
     } catch (e) {
       set({ error: String(e) });
     }
+  },
+
+  forgetRecent: (projectId, script) => {
+    const recent = get().recent.filter((r) => !(r.projectId === projectId && r.script === script));
+    saveRecent(recent);
+    set({ recent });
   },
 
   dismiss: async (runId) => {

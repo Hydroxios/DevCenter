@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import { open } from "@tauri-apps/plugin-dialog";
 import { FolderGit2, FolderPlus, Search, TriangleAlert } from "lucide-react";
 
@@ -38,8 +39,21 @@ function ProjectsView() {
   const { projects, details, error, setError, apply, refreshOne, setOne } = useProjects();
   const runs = useRuns((s) => s.runs);
   const initRuns = useRuns((s) => s.init);
-  const [selectedId, setSelectedId] = useState<number | null>(readSelected);
+  // `?project=<id>` (lien depuis le tableau de bord) l'emporte sur la dernière sélection.
+  const [params, setParams] = useSearchParams();
+  const linked = Number(params.get("project")) || null;
+  const [selectedId, setSelectedId] = useState<number | null>(() => linked ?? readSelected());
   const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    if (linked === null) return;
+    setSelectedId(linked);
+    // On retire le paramètre : la sélection vit ensuite normalement (et reste en mémoire).
+    setParams((p) => {
+      p.delete("project");
+      return p;
+    }, { replace: true });
+  }, [linked, setParams]);
 
   useEffect(() => {
     initRuns();
