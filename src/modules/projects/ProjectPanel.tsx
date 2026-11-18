@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   ArrowDown,
@@ -33,6 +33,7 @@ import {
 import { cn, formatRelative } from "@/lib/utils";
 import { api } from "@/services/tauri";
 import { runsForProject, useRuns } from "@/stores/runs";
+import { LinkifiedLine } from "@/components/LinkifiedText";
 import type { GitStatus, Project, ProjectDetails, RunInfo } from "@/types";
 import { BranchDialog } from "./BranchDialog";
 import { GitHistory } from "./GitHistory";
@@ -147,7 +148,17 @@ function LogViewer({ run }: { run: RunInfo }) {
       }}
       className="h-72 overflow-auto rounded-lg border bg-black p-3 font-mono text-xs leading-relaxed text-[#d4d4d8] select-text"
     >
-      {lines && lines.length > 0 ? lines.join("\n") : <span className="opacity-60">En attente de sortie…</span>}
+      {lines && lines.length > 0 ? (
+        // Une ligne par élément : seules les nouvelles lignes sont calculées (adresses cliquables).
+        lines.map((line, i) => (
+          <Fragment key={i}>
+            {i > 0 && "\n"}
+            <LinkifiedLine text={line} />
+          </Fragment>
+        ))
+      ) : (
+        <span className="opacity-60">En attente de sortie…</span>
+      )}
     </pre>
   );
 }
