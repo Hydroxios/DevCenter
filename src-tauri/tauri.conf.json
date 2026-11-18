@@ -55,7 +55,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU4REY2QUE5QjgwMTc3NkMKUldSc2R3RzRxV3JmV0RGNmIyUUFGdlk5d2Vjek9EL0dWS2ZYMXRoWk9kQ2JMVTlVd1cwajhEaWIK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQzNjg2OTI0MDQ0ODdDNTUKUldSVmZFZ0VKR2xvUTFtajFOUHhVRUpsaG1DMjByNFF2enltZTQ4Uk1wRE0rT0d5anl6eEY2NlkK",
       "endpoints": [
         "https://github.com/Hydroxios/DevCenter/releases/latest/download/latest.json"
       ],

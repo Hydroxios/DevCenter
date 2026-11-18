@@ -13,6 +13,55 @@ import type { SystemInfo } from "@/types";
 import { WorkspaceToggle } from "@/modules/workspaces/WorkspacesPage";
 
 const REFRESH_MS = 2000;
+/** Nombre de mesures conservées par cœur (60 × 2 s = 2 minutes). */
+const HISTORY_POINTS = 60;
+
+/** Mini-graphique d'historique d'un cœur logique (aire + courbe, 0–100 %). */
+function CoreChart({ index, value, history }: { index: number; value: number; history: number[] }) {
+  // Les points sont alignés à droite : la courbe « entre » par la droite au démarrage.
+  const offset = HISTORY_POINTS - history.length;
+  const pts = history.map((v, i) => `${offset + i},${100 - Math.max(0, Math.min(100, v))}`);
+  const line = pts.length > 1 ? `M${pts.join("L")}` : "";
+  const area = line ? `${line}L${HISTORY_POINTS - 1},100L${offset},100Z` : "";
+
+  return (
+    <div className="grid gap-1" title={`Cœur ${index} : ${value.toFixed(0)} %`}>
+      <div className="flex items-baseline justify-between font-mono text-[10px] text-muted-foreground tabular-nums">
+        <span>#{index}</span>
+        <span className="text-foreground">{value.toFixed(0)} %</span>
+      </div>
+      <svg
+        viewBox={`0 0 ${HISTORY_POINTS - 1} 100`}
+        preserveAspectRatio="none"
+        className="h-12 w-full rounded-sm border border-primary/15 bg-primary/5"
+        aria-hidden
+      >
+        {[25, 50, 75].map((y) => (
+          <line
+            key={y}
+            x1={0}
+            x2={HISTORY_POINTS - 1}
+            y1={y}
+            y2={y}
+            className="stroke-primary/10"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+        {area && <path d={area} className="fill-primary/20" />}
+        {line && (
+          <path
+            d={line}
+            fill="none"
+            className="stroke-primary"
+            strokeWidth={1.25}
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
+      </svg>
+    </div>
+  );
+}
 
 function Metric({
   title,
@@ -77,7 +126,13 @@ function FavoriteWorkspaces() {
 export function DashboardPage() {
   const tauri = isTauri();
   const [info, setInfo] = useState<SystemInfo | null>(null);
-  const { data: snap, error } = usePolling(api.system.snapshot, REFRESH_MS, tauri);
+  const [coreHistory, setCoreHistory] = useState<number[][]>([]);
+  const { data: snap, error } = usePolling(api.system.snapshot, REFRESH_MS, tauri, {
+    onData: (s) =>
+      setCoreHistory((prev) =>
+        s.cpuPerCore.map((v, i) => [...(prev[i] ?? []), v].slice(-HISTORY_POINTS)),
+      ),
+  });
 
   useEffect(() => {
     if (tauri) api.system.info().then(setInfo).catch(() => {});
@@ -157,21 +212,14 @@ export function DashboardPage() {
           <Card>
             <CardHeader>
               <CardTitle>Charge par cœur logique</CardTitle>
-              <span className="meta">{snap.cpuPerCore.length} cœurs</span>
+              <span className="meta">{snap.cpuPerCore.length} cœurs · {(HISTORY_POINTS * REFRESH_MS) / 1000} s</span>
             </CardHeader>
-            {/* Barres pleine hauteur réduites par `scaleY` (animé par le GPU) ; la transition dure
-                tout l'intervalle de rafraîchissement : les barres glissent en continu, sans à-coups. */}
-            <div className="flex min-h-24 flex-1 items-stretch gap-1" aria-label="Charge CPU par cœur">
+            <div
+              className="grid flex-1 grid-cols-[repeat(auto-fill,minmax(max(6.5rem,calc((100%_-_3.5rem)/8)),1fr))] gap-2"
+              aria-label="Historique de charge CPU par cœur"
+            >
               {snap.cpuPerCore.map((v, i) => (
-                <div key={i} title={`Cœur ${i} : ${v.toFixed(0)} %`} className="relative flex-1 overflow-hidden rounded-sm bg-primary/8">
-                  <div
-                    className="absolute inset-0 origin-bottom rounded-sm bg-linear-to-t from-primary/70 to-primary will-change-transform"
-                    style={{
-                      transform: `scaleY(${Math.max(3, Math.min(100, v)) / 100})`,
-                      transition: `transform ${REFRESH_MS}ms cubic-bezier(0.33, 0, 0.25, 1)`,
-                    }}
-                  />
-                </div>
+                <CoreChart key={i} index={i} value={v} history={coreHistory[i] ?? []} />
               ))}
             </div>
           </Card>
