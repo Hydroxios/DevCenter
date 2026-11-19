@@ -100,6 +100,7 @@ function loadBackground(): BackgroundSettings {
     // Valeurs inconnues (version précédente, fichier modifié) : retour au défaut.
     if (!BACKGROUNDS.some((b) => b.id === bg.kind)) bg.kind = DEFAULT_BACKGROUND.kind;
     if (!ACCENTS.includes(bg.accent)) bg.accent = DEFAULT_BACKGROUND.accent;
+    bg.frameless = bg.frameless === true;
     return bg;
   } catch {
     return DEFAULT_BACKGROUND;
@@ -241,6 +242,7 @@ const WidgetFrame = memo(function WidgetFrame({
   data,
   settings,
   editing,
+  frameless,
   onRemove,
   onConfigure,
 }: {
@@ -248,6 +250,8 @@ const WidgetFrame = memo(function WidgetFrame({
   data: DashboardData;
   settings: WidgetSettings;
   editing: boolean;
+  /** Réglage global « sans cadre » (chaque widget peut le forcer dans un sens ou dans l'autre). */
+  frameless: boolean;
   onRemove: (type: WidgetType) => void;
   onConfigure: (type: WidgetType) => void;
 }) {
@@ -258,6 +262,8 @@ const WidgetFrame = memo(function WidgetFrame({
   // alors dans une petite barre flottante, et tout le widget sert de poignée de déplacement.
   const showHeader = settings.header !== false;
   const bare = !showHeader && "bareWithoutHeader" in def && def.bareWithoutHeader;
+  // Sans cadre : bordure et fond retirés, mais la marge intérieure est gardée (contenu aligné).
+  const noFrame = !bare && !(settings.frame ?? !frameless);
   const tools = editing && (
     <>
       <button
@@ -286,6 +292,7 @@ const WidgetFrame = memo(function WidgetFrame({
         // La carte est un conteneur de taille : un widget très bas passe en mode compact (index.css).
         "widget-card relative h-full min-w-0 gap-0 overflow-hidden p-0",
         bare && "border-transparent bg-transparent",
+        noFrame && "is-frameless border-transparent bg-transparent shadow-none",
         settings.accent && `accent-${settings.accent}`,
         editing && "border-dashed border-primary/40 shadow-[0_0_0_1px] shadow-primary/10",
       )}
@@ -391,6 +398,22 @@ function EditControls({
           );
         })}
       </div>
+      <label className="flex shrink-0 cursor-pointer items-center justify-between gap-3 border-t px-1 pt-3 text-xs">
+        <span className="grid gap-0.5">
+          <span className="eyebrow">Cadre des widgets</span>
+          <span className="text-[11px] text-muted-foreground">Masque la bordure et le fond des cartes.</span>
+        </span>
+        <span className="flex items-center gap-2 text-muted-foreground">
+          {background.frameless ? "Masqué" : "Affiché"}
+          <input
+            type="checkbox"
+            checked={!background.frameless}
+            onChange={(e) => onBackground({ frameless: !e.target.checked })}
+            className="size-4 accent-primary"
+            aria-label="Afficher le cadre des widgets"
+          />
+        </span>
+      </label>
       <BackgroundPicker value={background} onChange={onBackground} />
       <div className="flex shrink-0 gap-2 border-t pt-3">
         <Button variant="ghost" size="sm" className="min-w-0 flex-1" onClick={onReset}>
@@ -502,12 +525,13 @@ export function DashboardPage() {
               data={data}
               settings={settings[t] ?? NO_SETTINGS}
               editing={editing}
+              frameless={background.frameless}
               onRemove={remove}
               onConfigure={setConfiguring}
             />
           </div>
         )),
-    [ids, data, settings, editing, remove],
+    [ids, data, settings, editing, background.frameless, remove],
   );
 
   return (

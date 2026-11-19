@@ -33,6 +33,8 @@ export interface WidgetSettings {
   accent?: Accent;
   /** false = en-tête masqué hors édition. */
   header?: boolean;
+  /** Cadre (bordure + fond) : true = toujours, false = jamais, absent = suit le réglage global. */
+  frame?: boolean;
   window?: HistoryWindow;
   chart?: ChartStyle;
   count?: number;
@@ -99,6 +101,8 @@ export interface BackgroundSettings {
   intensity: number;
   /** Vitesse de 0.25 à 2. */
   speed: number;
+  /** Widgets sans cadre par défaut (bordure et fond de carte masqués). */
+  frameless: boolean;
 }
 
-export const DEFAULT_BACKGROUND: BackgroundSettings = { kind: "none", accent: "cyan", intensity: 0.6, speed: 1 };
+export const DEFAULT_BACKGROUND: BackgroundSettings = { kind: "none", accent: "cyan", intensity: 0.6, speed: 1, frameless: false };

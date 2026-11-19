@@ -180,6 +180,18 @@ export function WidgetSettingsDialog({
             />
           </Field>
 
+          <Field label="Cadre">
+            <Segmented
+              value={settings.frame === undefined ? "auto" : settings.frame ? "on" : "off"}
+              options={[
+                { value: "auto", label: "Par défaut" },
+                { value: "on", label: "Affiché" },
+                { value: "off", label: "Masqué" },
+              ]}
+              onChange={(v) => onChange({ frame: v === "auto" ? undefined : v === "on" })}
+            />
+          </Field>
+
           {options.includes("window") && hasHistory(settings.chart) && (
             <Field label="Historique">
               <Segmented<HistoryWindow>
