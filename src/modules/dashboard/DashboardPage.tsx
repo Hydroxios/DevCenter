@@ -55,8 +55,8 @@ function loadLayout(): LayoutItem[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultLayout();
     const saved = JSON.parse(raw) as { i: string; x: number; y: number; w: number; h: number }[];
-    // Les widgets disparus d'une version à l'autre sont ignorés.
-    return saved.filter((it) => isWidgetType(it.i)).map((it) => withConstraints(it as Parameters<typeof withConstraints>[0]));
+    // Les widgets disparus d'une version à l'autre sont ignorés ; les chevauchements enregistrés sont réparés.
+    return resolveOverlaps(saved.filter((it) => isWidgetType(it.i)).map((it) => withConstraints(it as Parameters<typeof withConstraints>[0])));
   } catch {
     return defaultLayout();
   }
@@ -96,6 +96,28 @@ const push = (prev: number[], v: number) => [...prev, v].slice(-HISTORY_MAX);
 function findFreeSpot(layout: LayoutItem[], type: WidgetType) {
   const { w, h, minW, minH } = WIDGETS[type].size;
   return findSpot(layout, w, h) ?? findSpot(layout, minW, minH);
+}
+
+const collide = (a: LayoutItem, b: LayoutItem) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+
+/**
+ * Aucun widget ne doit en recouvrir un autre. Quand la grille pousse un widget vers le bas,
+ * `withConstraints` le ramène dans le tableau… parfois sous un autre widget, qui le cache.
+ * Chaque widget en conflit est donc déplacé vers la première place libre (à sa taille, sinon
+ * à sa taille minimale). Faute de place, il garde sa position plutôt que de disparaître.
+ */
+function resolveOverlaps(items: LayoutItem[]): LayoutItem[] {
+  const placed: LayoutItem[] = [];
+  const pending: LayoutItem[] = [];
+  // Les plus grands gardent leur place : c'est le petit widget recouvert qui est déplacé.
+  const bySize = [...items].sort((a, b) => b.w * b.h - a.w * a.h);
+  for (const it of bySize) (placed.some((p) => collide(p, it)) ? pending : placed).push(it);
+  for (const it of pending) {
+    const spot = findSpot(placed, it.w, it.h) ?? findSpot(placed, it.minW ?? 1, it.minH ?? 1);
+    placed.push(spot ? { ...it, ...spot } : it);
+  }
+  // Ordre d'origine conservé (la grille s'en sert pour les clés).
+  return items.map((it) => placed.find((p) => p.i === it.i)!);
 }
 
 function findSpot(layout: LayoutItem[], w: number, h: number) {
@@ -233,9 +255,10 @@ function EditControls({
     );
   }
   return (
-    <div className="absolute right-5 bottom-5 z-10 grid w-72 grid-cols-1 gap-3 rounded-xl border border-primary/30 bg-card/95 p-3 shadow-xl backdrop-blur">
-      <div className="grid min-w-0 grid-cols-1 gap-1">
-        <p className="eyebrow px-1">Ajouter un widget</p>
+    <div className="absolute right-5 bottom-5 z-10 flex max-h-[calc(100%-2.5rem)] w-72 flex-col gap-3 rounded-xl border border-primary/30 bg-card/95 p-3 shadow-xl backdrop-blur">
+      {/* Liste défilante : avec beaucoup de widgets disponibles, le menu ne déborde plus en haut de l'écran. */}
+      <div className="grid min-h-0 min-w-0 grid-cols-1 content-start gap-1 overflow-y-auto">
+        <p className="eyebrow sticky top-0 z-10 bg-card px-1 pb-1">Ajouter un widget</p>
         {available.length === 0 && <p className="px-1 text-xs text-muted-foreground">Tous les widgets sont affichés.</p>}
         {available.map((t) => {
           const def = WIDGETS[t];
@@ -260,7 +283,7 @@ function EditControls({
           );
         })}
       </div>
-      <div className="flex gap-2 border-t pt-3">
+      <div className="flex shrink-0 gap-2 border-t pt-3">
         <Button variant="ghost" size="sm" className="min-w-0 flex-1" onClick={onReset}>
           <RotateCcw /> Réinitialiser
         </Button>
@@ -320,7 +343,9 @@ export function DashboardPage() {
 
   const applyLayout = useCallback((next: Layout) => {
     // La bibliothèque renvoie les éléments sans leurs limites : on les réapplique.
-    const items = next.filter((it) => isWidgetType(it.i)).map((it) => withConstraints(it as Parameters<typeof withConstraints>[0]));
+    const items = resolveOverlaps(
+      next.filter((it) => isWidgetType(it.i)).map((it) => withConstraints(it as Parameters<typeof withConstraints>[0])),
+    );
     setLayout(items);
     saveLayout(items);
   }, []);
