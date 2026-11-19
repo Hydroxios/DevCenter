@@ -62,12 +62,16 @@ function GitCard({
   onOpenCommit,
   onOpenBranches,
   onCommit,
+  onPush,
+  pushing,
 }: {
   git: GitStatus | null | undefined;
   hasGit: boolean;
   onOpenCommit: (hash: string) => void;
   onOpenBranches: () => void;
   onCommit: () => void;
+  onPush: () => void;
+  pushing: boolean;
 }) {
   if (!hasGit) {
     return <p className="text-sm text-muted-foreground">Ce dossier n'est pas un dépôt Git.</p>;
@@ -75,6 +79,8 @@ function GitCard({
   if (!git) return <p className="text-sm text-muted-foreground">Lecture du dépôt…</p>;
 
   const changes = git.staged + git.modified + git.untracked + git.conflicts;
+  // Pousser : commits en avance, ou branche jamais publiée.
+  const canPush = !!git.branch && !!git.lastCommit && (git.ahead > 0 || !git.upstream);
   return (
     <div className="grid gap-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
@@ -94,6 +100,19 @@ function GitCard({
           </Badge>
         )}
         {git.upstream && <span className="text-xs text-muted-foreground">→ {git.upstream}</span>}
+        {canPush && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="ml-auto"
+            disabled={pushing}
+            onClick={onPush}
+            title={git.upstream ? `Pousser vers ${git.upstream}` : "Publier la branche sur le dépôt distant"}
+          >
+            {pushing ? <Loader2 className="animate-spin" /> : <ArrowUp />}
+            {git.upstream ? `Pousser${git.ahead > 0 ? ` (${git.ahead})` : ""}` : "Publier la branche"}
+          </Button>
+        )}
       </div>
 
       {changes === 0 ? (
@@ -304,6 +323,19 @@ export function ProjectPanel({
   const runningCount = runs.filter((r) => r.status === "running").length;
   const [branchOpen, setBranchOpen] = useState(false);
   const [commitOpen, setCommitOpen] = useState(false);
+  const [pushing, setPushing] = useState<number | null>(null);
+  const push = async () => {
+    const id = project.id;
+    setPushing(id);
+    setActionError(null);
+    try {
+      onDetails(await api.git.push(id));
+    } catch (e) {
+      setActionError(`Push impossible : ${e}`);
+    } finally {
+      setPushing((cur) => (cur === id ? null : cur));
+    }
+  };
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -353,7 +385,14 @@ export function ProjectPanel({
       {hasGit && (
         <>
           <BranchDialog projectId={project.id} git={details?.git} open={branchOpen} onOpenChange={setBranchOpen} onChanged={onDetails} />
-          <CommitDialog projectId={project.id} open={commitOpen} onOpenChange={setCommitOpen} onCommitted={onDetails} />
+          <CommitDialog
+            projectId={project.id}
+            canPush={!!details?.git?.branch}
+            open={commitOpen}
+            onOpenChange={setCommitOpen}
+            onCommitted={onDetails}
+            onPushError={(e) => setActionError(`Commit créé, mais le push a échoué : ${e}`)}
+          />
         </>
       )}
       {!project.exists && <p className="border-b px-6 py-2 text-sm text-destructive">Dossier introuvable : il a été déplacé ou supprimé.</p>}
@@ -413,6 +452,8 @@ export function ProjectPanel({
                   }}
                   onOpenBranches={() => setBranchOpen(true)}
                   onCommit={() => setCommitOpen(true)}
+                  onPush={push}
+                  pushing={pushing === project.id}
                 />
               </Card>
             )}

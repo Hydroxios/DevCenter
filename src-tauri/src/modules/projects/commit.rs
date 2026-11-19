@@ -1,4 +1,4 @@
-//! Préparation d'un commit : fichiers modifiés, index (stage / unstage), diff d'un fichier, commit.
+//! Préparation d'un commit : fichiers modifiés, index (stage / unstage), diff d'un fichier, commit, push.
 
 use std::io::Write;
 use std::path::Path;
@@ -207,6 +207,39 @@ pub fn commit(dir: &Path, message: &str, all: bool) -> AppResult<()> {
     }
 }
 
+/// Pousse la branche courante. Sans branche suivie, la publie sur le dépôt distant
+/// (`origin` de préférence) et la fait suivre (`-u`).
+pub fn push(dir: &Path) -> AppResult<()> {
+    let branch = run(dir, &["symbolic-ref", "--quiet", "--short", "HEAD"])
+        .map_err(|_| AppError::InvalidInput("HEAD détachée : basculez sur une branche pour pousser".into()))?;
+    let branch = branch.trim();
+    let has_upstream = run(dir, &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).is_ok();
+    let mut args = vec!["push", "--porcelain"];
+    let remotes = run(dir, &["remote"])?;
+    let remote;
+    if !has_upstream {
+        let list: Vec<&str> = remotes.lines().map(str::trim).filter(|r| !r.is_empty()).collect();
+        remote = match list.iter().find(|r| **r == "origin").or(list.first()) {
+            Some(r) => r.to_string(),
+            None => return Err(AppError::InvalidInput("aucun dépôt distant configuré (git remote add origin …)".into())),
+        };
+        args.extend(["-u", remote.as_str(), branch]);
+    }
+    let out = shell::command("git")
+        .args(["-c", "core.quotepath=off", "-C"])
+        .arg(dir)
+        .args(&args)
+        .stdin(Stdio::null())
+        // Pas de terminal pour saisir un identifiant : échouer plutôt que bloquer.
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(error_of(&out))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,5 +267,35 @@ mod tests {
         assert!(check_paths(&["".into()]).is_err());
         assert!(check_paths(&[]).is_err());
         assert!(check_paths(&["src/a.rs".into()]).is_ok());
+    }
+
+    /// Dépôt temporaire + dépôt distant nu : commit, publication de la branche, puis push simple.
+    #[test]
+    fn commit_then_push() {
+        let root = std::env::temp_dir().join(format!("devcenter-push-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (work, bare) = (root.join("work"), root.join("remote.git"));
+        std::fs::create_dir_all(&work).unwrap();
+        run(&root, &["init", "-q", "--bare", bare.to_str().unwrap()]).unwrap();
+        run(&work, &["init", "-q", "-b", "main"]).unwrap();
+        run(&work, &["config", "user.name", "t"]).unwrap();
+        run(&work, &["config", "user.email", "t@t"]).unwrap();
+
+        assert!(push(&work).is_err(), "pas de commit ni de distant");
+        std::fs::write(work.join("a.txt"), "1").unwrap();
+        commit(&work, "  premier  ", true).unwrap();
+        assert!(changes(&work).unwrap().is_empty());
+        assert!(push(&work).unwrap_err().to_string().contains("distant"));
+
+        run(&work, &["remote", "add", "origin", bare.to_str().unwrap()]).unwrap();
+        push(&work).unwrap();
+        assert_eq!(run(&work, &["rev-parse", "--abbrev-ref", "@{u}"]).unwrap().trim(), "origin/main");
+
+        std::fs::write(work.join("a.txt"), "2").unwrap();
+        stage(&work, &["a.txt".into()]).unwrap();
+        commit(&work, "second", false).unwrap();
+        push(&work).unwrap();
+        assert_eq!(run(&bare, &["log", "-1", "--format=%s", "main"]).unwrap().trim(), "second");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

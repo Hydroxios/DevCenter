@@ -171,6 +171,8 @@ export const api = {
     /** Commit de l'index ; `all` indexe d'abord toutes les modifications. */
     createCommit: (projectId: number, message: string, all: boolean) =>
       invoke<ProjectDetails>("git_create_commit", { projectId, message, all }),
+    /** Pousse la branche courante (la publie sur `origin` si elle n'a pas de branche suivie). */
+    push: (projectId: number) => invoke<ProjectDetails>("git_push", { projectId }),
   },
   push: {
     /** Notification de test vers tous les téléphones abonnés ; retourne le nombre d'envois réussis. */

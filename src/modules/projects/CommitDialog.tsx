@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { GitCommitHorizontal, Loader2, Minus, Plus, RefreshCw } from "lucide-react";
+import { ArrowUp, GitCommitHorizontal, Loader2, Minus, Plus, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -138,21 +138,27 @@ function Section({
 
 export function CommitDialog({
   projectId,
+  canPush,
   open,
   onOpenChange,
   onCommitted,
+  onPushError,
 }: {
   projectId: number;
+  /** Faux en HEAD détachée. */
+  canPush: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCommitted: (d: ProjectDetails) => void;
+  onPushError: (message: string) => void;
 }) {
   const [files, setFiles] = useState<ChangedFile[] | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [diff, setDiff] = useState<{ key: string; text: string } | null>(null);
   const [message, setMessageState] = useState("");
   const [busy, setBusy] = useState(false);
-  const [committing, setCommitting] = useState(false);
+  /** Action en cours : commit seul ou commit suivi d'un push. */
+  const [committing, setCommitting] = useState<"commit" | "push" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
 
@@ -225,22 +231,32 @@ export function CommitDialog({
   const all = staged.length === 0;
   const canCommit = !!files && files.length > 0 && message.trim().length > 0 && !busy && !committing;
 
-  const commit = async () => {
+  const commit = async (andPush: boolean) => {
     if (!canCommit) return;
-    setCommitting(true);
+    setCommitting(andPush ? "push" : "commit");
     setError(null);
+    let details: ProjectDetails;
     try {
-      const details = await api.git.createCommit(projectId, message, all);
-      drafts.delete(projectId);
-      setMessageState("");
-      onCommitted(details);
-      onOpenChange(false);
+      details = await api.git.createCommit(projectId, message, all);
     } catch (e) {
       setError(String(e));
       load();
-    } finally {
-      setCommitting(false);
+      setCommitting(null);
+      return;
     }
+    drafts.delete(projectId);
+    setMessageState("");
+    onCommitted(details);
+    if (andPush) {
+      // Le commit est fait : un échec du push est signalé dans le panneau du projet.
+      try {
+        onCommitted(await api.git.push(projectId));
+      } catch (e) {
+        onPushError(String(e));
+      }
+    }
+    setCommitting(null);
+    onOpenChange(false);
   };
 
   const total = files?.length ?? 0;
@@ -337,7 +353,7 @@ export function CommitDialog({
           className="grid gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            commit();
+            commit(false);
           }}
         >
           <textarea
@@ -347,7 +363,7 @@ export function CommitDialog({
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
-                commit();
+                commit(e.shiftKey && canPush);
               }
             }}
             rows={3}
@@ -356,13 +372,21 @@ export function CommitDialog({
             className="w-full resize-none rounded-lg border border-input bg-card px-3 py-2 font-mono text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 hover:border-foreground/20 focus:border-primary focus:ring-2 focus:ring-primary/15"
           />
           <div className="flex items-center justify-between gap-3">
-            <span className="text-xs text-muted-foreground">Ctrl + Entrée pour valider</span>
+            <span className="text-xs text-muted-foreground">
+              Ctrl + Entrée pour committer{canPush && ", Ctrl + Maj + Entrée pour committer et pousser"}
+            </span>
             <div className="flex gap-2">
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
                 Annuler
               </Button>
+              {canPush && (
+                <Button type="button" variant="outline" disabled={!canCommit} onClick={() => commit(true)}>
+                  {committing === "push" ? <Loader2 className="animate-spin" /> : <ArrowUp />}
+                  {committing === "push" ? "Envoi…" : "Committer et pousser"}
+                </Button>
+              )}
               <Button type="submit" disabled={!canCommit}>
-                {committing ? <Loader2 className="animate-spin" /> : <GitCommitHorizontal />}
+                {committing === "commit" ? <Loader2 className="animate-spin" /> : <GitCommitHorizontal />}
                 {all && total > 0 ? "Tout committer" : "Committer"}
               </Button>
             </div>

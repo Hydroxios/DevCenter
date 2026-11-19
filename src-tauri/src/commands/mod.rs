@@ -703,3 +703,13 @@ pub async fn git_create_commit(app: AppHandle, project_id: i64, message: String,
     })
     .await
 }
+
+#[tauri::command]
+pub async fn git_push(app: AppHandle, project_id: i64) -> AppResult<ProjectDetails> {
+    blocking(move || {
+        let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
+        projects::commit::push(&path)?;
+        Ok(projects::details_fresh(project_id, &path))
+    })
+    .await
+}

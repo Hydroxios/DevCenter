@@ -199,6 +199,7 @@ pub fn run() {
             commands::git_stage,
             commands::git_file_diff,
             commands::git_create_commit,
+            commands::git_push,
         ])
         .build(tauri::generate_context!())
         .expect("erreur au lancement de DevCenter")
