@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Lock, Search, Square } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, FileText, Hash, Lock, Search, Square } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { contextMenu, copyText } from "@/components/ui/context-menu";
 import {
   Dialog,
   DialogContent,
@@ -158,7 +159,27 @@ export function ProcessTable() {
               </tr>
             )}
             {rows.slice(0, MAX_ROWS).map((p) => (
-              <tr key={`${p.pid}-${p.startTime}`} className="border-t hover:bg-accent/40">
+              <tr
+                key={`${p.pid}-${p.startTime}`}
+                className="border-t hover:bg-accent/40"
+                onContextMenu={contextMenu(() => [
+                  { heading: `${p.name} · ${p.pid}` },
+                  {
+                    label: p.protected ? "Processus protégé" : "Arrêter…",
+                    icon: p.protected ? Lock : Square,
+                    danger: !p.protected,
+                    disabled: p.protected,
+                    onSelect: () => {
+                      setMessage(null);
+                      setTarget(p);
+                    },
+                  },
+                  { separator: true },
+                  { label: "Copier le nom", icon: Copy, onSelect: () => copyText(p.name) },
+                  { label: "Copier le PID", icon: Hash, onSelect: () => copyText(String(p.pid)) },
+                  !!p.exe && { label: "Copier le chemin", icon: FileText, onSelect: () => copyText(p.exe!) },
+                ])}
+              >
                 <td className="max-w-0 px-3 py-1.5">
                   <div className="truncate" title={p.exe ?? p.name}>
                     {p.name}

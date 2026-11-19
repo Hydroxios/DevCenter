@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Check, ChevronRight, Copy, FileMinus, FilePen, FilePlus, FileSymlink, FileX, GitBranch, Loader2, RefreshCw, Tag, X } from "lucide-react";
+import { Check, ChevronRight, Copy, Eye, FileMinus, FilePen, FilePlus, FileSymlink, FileX, GitBranch, Loader2, MessageSquareText, RefreshCw, Tag, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { contextMenu, copyText } from "@/components/ui/context-menu";
 import { cn, formatRelative } from "@/lib/utils";
 import { api } from "@/services/tauri";
 import type { CommitDetails, FileChange, GitLog, GraphCommit } from "@/types";
@@ -195,6 +196,14 @@ export function GitHistory({
                         id={`commit-${c.hash}`}
                         type="button"
                         onClick={() => setSelected(active ? null : c)}
+                        onContextMenu={contextMenu(() => [
+                          { heading: `${c.short} · ${c.author}` },
+                          { label: active ? "Fermer le détail" : "Voir le détail", icon: Eye, onSelect: () => setSelected(active ? null : c) },
+                          { separator: true },
+                          { label: "Copier le hash", icon: Copy, hint: c.short, onSelect: () => copyText(c.hash) },
+                          { label: "Copier le message", icon: MessageSquareText, onSelect: () => copyText(c.subject) },
+                          ...c.refs.map((r) => ({ label: `Copier « ${r} »`, icon: Tag, onSelect: () => copyText(r) })),
+                        ])}
                         className={cn(
                           "flex w-full min-w-0 items-center gap-2 pr-4 text-left text-sm transition-colors",
                           active ? "bg-primary/10" : "hover:bg-foreground/[0.04]",

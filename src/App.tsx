@@ -2,6 +2,8 @@ import { Suspense, lazy, useEffect } from "react";
 import { HashRouter, Navigate, Route, Routes } from "react-router";
 
 import { AppLayout } from "@/components/layout/AppLayout";
+import { ConfirmHost } from "@/components/ui/confirm";
+import { ContextMenuHost } from "@/components/ui/context-menu";
 import { useApplyTheme } from "@/hooks/useTheme";
 import { DashboardPage } from "@/modules/dashboard/DashboardPage";
 import { AutomationsPage } from "@/modules/automations/AutomationsPage";
@@ -54,6 +56,8 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
+      <ContextMenuHost />
+      <ConfirmHost />
     </HashRouter>
   );
 }

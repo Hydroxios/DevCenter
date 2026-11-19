@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { open } from "@tauri-apps/plugin-dialog";
-import { FolderGit2, FolderPlus, Search, TriangleAlert } from "lucide-react";
+import { Code2, Copy, FolderGit2, FolderOpen, FolderPlus, RefreshCw, Search, SquareTerminal, Trash2, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { confirmAction } from "@/components/ui/confirm";
+import { contextMenu, copyText } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { api, isTauri } from "@/services/tauri";
 import { useRuns } from "@/stores/runs";
+import type { Project } from "@/types";
 import { GitSummary, ProjectPanel } from "./ProjectPanel";
 import { GithubDialog } from "./GithubDialog";
 import { ScanDialog } from "./ScanDialog";
@@ -92,6 +95,38 @@ function ProjectsView() {
     }
   };
 
+  const act = (fn: () => Promise<unknown>) => fn().catch((e) => setError(String(e)));
+
+  const projectMenu = (p: Project) =>
+    contextMenu(() => [
+      { heading: p.name },
+      { label: "Ouvrir dans l'éditeur", icon: Code2, disabled: !p.exists, onSelect: () => act(() => api.projects.openInEditor(p.id)) },
+      { label: "Ouvrir le dossier", icon: FolderOpen, disabled: !p.exists, onSelect: () => act(() => api.projects.openFolder(p.id)) },
+      { label: "Ouvrir un terminal", icon: SquareTerminal, disabled: !p.exists, onSelect: () => act(() => api.projects.openTerminal(p.id)) },
+      { separator: true },
+      { label: "Actualiser", icon: RefreshCw, onSelect: () => refreshOne(p.id) },
+      { label: "Copier le chemin", icon: Copy, onSelect: () => copyText(p.path) },
+      { separator: true },
+      {
+        label: "Retirer de DevCenter",
+        icon: Trash2,
+        danger: true,
+        onSelect: async () => {
+          const ok = await confirmAction({
+            title: `Retirer ${p.name} ?`,
+            description: "Le projet disparaît de DevCenter. Le dossier et ses fichiers ne sont pas touchés.",
+            confirmLabel: "Retirer",
+          });
+          if (!ok) return;
+          await act(async () => {
+            const list = await api.projects.remove(p.id);
+            apply(list);
+            if (selected?.id === p.id) setSelectedId(list[0]?.id ?? null);
+          });
+        },
+      },
+    ]);
+
   const runningByProject = (id: number) => Object.values(runs).filter((r) => r.projectId === id && r.status === "running").length;
 
   return (
@@ -128,6 +163,7 @@ function ProjectsView() {
                 key={p.id}
                 type="button"
                 onClick={() => setSelectedId(p.id)}
+                onContextMenu={projectMenu(p)}
                 className={cn(
                   "relative grid w-full gap-0.5 px-3 py-2 text-left transition-colors",
                   active ? "bg-foreground/[0.06]" : "hover:bg-foreground/[0.03]",

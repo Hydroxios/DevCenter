@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { AppWindow, FolderOpen, Play, Plus, Trash2, TriangleAlert } from "lucide-react";
+import { AppWindow, Copy, FolderOpen, Play, Plus, Trash2, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { contextMenu, copyText } from "@/components/ui/context-menu";
 import {
   Dialog,
   DialogContent,
@@ -134,7 +135,17 @@ export function AppLauncher() {
       ) : (
         <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {apps.map((app) => (
-            <li key={app.id} className="group flex items-center gap-3 rounded-lg border px-3 py-2">
+            <li
+              key={app.id}
+              className="group flex items-center gap-3 rounded-lg border px-3 py-2"
+              onContextMenu={contextMenu(() => [
+                { heading: app.name },
+                { label: "Lancer", icon: Play, disabled: !app.exists, onSelect: () => launch(app) },
+                { label: "Copier le chemin", icon: Copy, onSelect: () => copyText(app.path) },
+                { separator: true },
+                { label: "Retirer", icon: Trash2, danger: true, onSelect: () => remove(app) },
+              ])}
+            >
               {app.exists ? (
                 <AppWindow className="size-4 shrink-0 text-muted-foreground" />
               ) : (

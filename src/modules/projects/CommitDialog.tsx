@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, GitCommitHorizontal, Loader2, Minus, Plus, RefreshCw } from "lucide-react";
+import { ArrowUp, Copy, FileDiff, GitCommitHorizontal, Loader2, Minus, Plus, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { contextMenu, copyText } from "@/components/ui/context-menu";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/tauri";
@@ -60,6 +61,14 @@ function FileItem({
         selected ? "bg-primary/10" : "hover:bg-foreground/[0.04]",
       )}
       onClick={onSelect}
+      onContextMenu={contextMenu(() => [
+        { heading: name },
+        { label: "Voir le diff", icon: FileDiff, onSelect },
+        { label: staged ? "Retirer de l'index" : "Indexer", icon: staged ? Minus : Plus, disabled: busy, onSelect: onToggle },
+        { separator: true },
+        { label: "Copier le chemin", icon: Copy, onSelect: () => copyText(file.path) },
+        { label: "Copier le nom", icon: Copy, onSelect: () => copyText(name) },
+      ])}
       title={file.origPath ? `${file.origPath} → ${file.path}` : file.path}
     >
       <span className="min-w-0 flex-1 truncate">

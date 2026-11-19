@@ -156,11 +156,24 @@ export function ListPane({
 }
 
 /** Élément de la liste de gauche (barre cyan quand il est sélectionné). */
-export function ListItem({ active, onClick, className, children }: { active: boolean; onClick: () => void; className?: string; children: React.ReactNode }) {
+export function ListItem({
+  active,
+  onClick,
+  onContextMenu,
+  className,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  onContextMenu?: React.MouseEventHandler;
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
+      onContextMenu={onContextMenu}
       aria-current={active || undefined}
       className={cn(
         "relative grid w-full gap-0.5 px-3 py-2 text-left transition-colors",

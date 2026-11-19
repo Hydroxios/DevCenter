@@ -7,12 +7,15 @@ import {
   CircleCheck,
   CircleMinus,
   Clock,
+  CopyPlus,
   History,
   LayoutList,
   Loader2,
   Pencil,
   Play,
   Plus,
+  Power,
+  PowerOff,
   Trash2,
   Workflow,
 } from "lucide-react";
@@ -21,6 +24,8 @@ import { EmptyState, ListItem, ListPane, Page, PageBar, PageBody, PageMain, Page
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { confirmAction } from "@/components/ui/confirm";
+import { contextMenu } from "@/components/ui/context-menu";
 import {
   Dialog,
   DialogContent,
@@ -492,6 +497,42 @@ function AutomationsView() {
       initial: { id: a.id, name: a.name, description: a.description, enabled: a.enabled, trigger: a.trigger, steps: a.steps, onError: a.onError, timeoutMinutes: a.timeoutMinutes },
     });
 
+  const automationMenu = (a: Automation) =>
+    contextMenu(() => [
+      { heading: a.name },
+      { label: a.running ? "En cours…" : "Exécuter maintenant", icon: Play, disabled: a.running, onSelect: () => api.automations.run(a.id).catch((e) => setError(String(e))) },
+      {
+        label: a.enabled ? "Désactiver" : "Activer",
+        icon: a.enabled ? PowerOff : Power,
+        onSelect: () => api.automations.setEnabled(a.id, !a.enabled).then(setList).catch((e) => setError(String(e))),
+      },
+      { separator: true },
+      { label: "Modifier…", icon: Pencil, onSelect: () => edit(a) },
+      {
+        label: "Dupliquer…",
+        icon: CopyPlus,
+        onSelect: () =>
+          setEditor({
+            open: true,
+            initial: { id: null, name: `${a.name} (copie)`, description: a.description, enabled: false, trigger: a.trigger, steps: a.steps, onError: a.onError, timeoutMinutes: a.timeoutMinutes },
+          }),
+      },
+      { separator: true },
+      {
+        label: "Supprimer",
+        icon: Trash2,
+        danger: true,
+        onSelect: async () => {
+          const ok = await confirmAction({
+            title: `Supprimer ${a.name} ?`,
+            description: "L'automatisation est supprimée ; son historique d'exécution est conservé.",
+            confirmLabel: "Supprimer",
+          });
+          if (ok) await api.automations.remove(a.id).then(setList).catch((e) => setError(String(e)));
+        },
+      },
+    ]);
+
   const all = list ?? [];
   const q = filter.trim().toLowerCase();
   const shown = all.filter((a) => !q || a.name.toLowerCase().includes(q) || a.description.toLowerCase().includes(q));
@@ -529,7 +570,7 @@ function AutomationsView() {
         {shown.map((a) => {
           const active = !showAll && selected?.id === a.id;
           return (
-            <ListItem key={a.id} active={active} onClick={() => setSelectedId(a.id)}>
+            <ListItem key={a.id} active={active} onClick={() => setSelectedId(a.id)} onContextMenu={automationMenu(a)}>
               <span className="flex items-center gap-2">
                 <AutomationDot a={a} />
                 <span className={cn("truncate text-sm", !a.enabled ? "text-muted-foreground" : active ? "text-foreground" : "text-foreground/85")}>{a.name}</span>

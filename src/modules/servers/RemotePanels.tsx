@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Box, Clock, Cpu, FileText, HardDrive, Loader2, MemoryStick, Play, RefreshCw, RotateCw, Search, Square } from "lucide-react";
+import { Box, Clock, Copy, Cpu, FileText, HardDrive, Loader2, MemoryStick, Play, RefreshCw, RotateCw, Search, Square } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { contextMenu, copyText } from "@/components/ui/context-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -183,6 +184,20 @@ function ActionButtons({
   );
 }
 
+/** Menu contextuel commun aux services et conteneurs. */
+function remoteMenu(name: string, running: boolean, busy: boolean, onAction: (a: RemoteAction) => void, onLogs: () => void, copy: { label: string; value: string }[]) {
+  return contextMenu(() => [
+    { heading: name },
+    running
+      ? { label: "Redémarrer", icon: RotateCw, disabled: busy, onSelect: () => onAction("restart") }
+      : { label: "Démarrer", icon: Play, disabled: busy, onSelect: () => onAction("start") },
+    running && { label: "Arrêter", icon: Square, danger: true, disabled: busy, onSelect: () => onAction("stop") },
+    { label: "Voir les logs", icon: FileText, onSelect: onLogs },
+    { separator: true },
+    ...copy.map((c) => ({ label: c.label, icon: Copy, onSelect: () => copyText(c.value) })),
+  ]);
+}
+
 /** Liste distante : affichée depuis le cache, puis rafraîchie en arrière-plan. */
 function useRemoteList<T>(cacheKey: string, load: () => Promise<T[]>) {
   const [items, setItems] = useState<T[] | null>(() => remoteCache.get<T[]>(cacheKey) ?? null);
@@ -265,7 +280,13 @@ export function ServicesPanel({ server }: { server: Server }) {
       {items && (
         <ul className="max-h-[480px] divide-y overflow-y-auto rounded-lg border">
           {filtered.map((s) => (
-            <li key={s.name} className="flex items-center gap-3 px-3 py-1.5">
+            <li
+              key={s.name}
+              className="flex items-center gap-3 px-3 py-1.5"
+              onContextMenu={remoteMenu(s.name, s.active === "active", busy === s.name, (a) => act(s.name, a), () => setLogsFor(s.name), [
+                { label: "Copier le nom", value: s.name },
+              ])}
+            >
               <span
                 className={cn("size-2 shrink-0 rounded-full", s.active === "active" ? "bg-success" : s.active === "failed" ? "bg-destructive" : "bg-muted-foreground/40")}
                 title={`${s.active} (${s.sub})`}
@@ -327,7 +348,15 @@ export function DockerPanel({ server }: { server: Server }) {
       {items && items.length > 0 && (
         <ul className="divide-y rounded-lg border">
           {items.map((c) => (
-            <li key={c.id} className="flex items-center gap-3 px-3 py-2">
+            <li
+              key={c.id}
+              className="flex items-center gap-3 px-3 py-2"
+              onContextMenu={remoteMenu(c.name, c.state === "running", busy === c.id, (a) => act(c, a), () => setLogsFor(c), [
+                { label: "Copier le nom", value: c.name },
+                { label: "Copier l'ID", value: c.id },
+                { label: "Copier l'image", value: c.image },
+              ])}
+            >
               <Box className={cn("size-4 shrink-0", c.state === "running" ? "text-success" : "text-muted-foreground")} />
               <div className="min-w-0 flex-1">
                 <p className="flex items-center gap-2 text-sm">

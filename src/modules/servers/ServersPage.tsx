@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Box, Gauge, Pencil, Plus, Server as ServerIcon, Settings2, TerminalSquare, Trash2, Zap } from "lucide-react";
+import { Box, Copy, Gauge, Pencil, Plus, Server as ServerIcon, Settings2, TerminalSquare, Trash2, Zap } from "lucide-react";
 
 import { EmptyState, ListItem, ListPane, Page, PageBar, PageBody, PageMain, PageNotice, PageTabs, TauriOnly } from "@/components/layout/Page";
 import { Button } from "@/components/ui/button";
+import { confirmAction } from "@/components/ui/confirm";
+import { contextMenu, copyText } from "@/components/ui/context-menu";
 import {
   Dialog,
   DialogContent,
@@ -231,6 +233,44 @@ function ServersView() {
     return st && st !== "checking" && st.ok;
   }).length;
 
+  const serverMenu = (s: Server) =>
+    contextMenu(() => {
+      const target = `${s.user ? `${s.user}@` : ""}${s.host}`;
+      return [
+        { heading: s.name },
+        {
+          label: "Tester la connexion",
+          icon: Zap,
+          disabled: status[s.id] === "checking",
+          onSelect: () => {
+            setStatus(s.id, "checking");
+            ping(s.id);
+          },
+        },
+        { label: "Modifier…", icon: Pencil, onSelect: () => setDialog({ open: true, server: s }) },
+        { separator: true },
+        { label: "Copier l'adresse", icon: Copy, hint: target, onSelect: () => copyText(target) },
+        { label: "Copier la commande SSH", icon: TerminalSquare, onSelect: () => copyText(`ssh ${s.port !== 22 ? `-p ${s.port} ` : ""}${target}`) },
+        { separator: true },
+        {
+          label: "Supprimer",
+          icon: Trash2,
+          danger: true,
+          onSelect: async () => {
+            const ok = await confirmAction({ title: `Supprimer ${s.name} ?`, description: "Le serveur est retiré de DevCenter.", confirmLabel: "Supprimer" });
+            if (!ok) return;
+            try {
+              const list = await api.servers.remove(s.id);
+              setServers(list);
+              if (selected?.id === s.id) setSelectedId(list[0]?.id ?? null);
+            } catch (e) {
+              setError(String(e));
+            }
+          },
+        },
+      ];
+    });
+
   return (
     <Page>
       <ListPane
@@ -246,7 +286,7 @@ function ServersView() {
         error={error}
       >
         {shown.map((s) => (
-          <ListItem key={s.id} active={selected?.id === s.id} onClick={() => setSelectedId(s.id)}>
+          <ListItem key={s.id} active={selected?.id === s.id} onClick={() => setSelectedId(s.id)} onContextMenu={serverMenu(s)}>
             <span className="flex items-center gap-2">
               <StatusDot status={status[s.id]} />
               <span className={cn("truncate text-sm", selected?.id === s.id ? "text-foreground" : "text-foreground/85")}>{s.name}</span>

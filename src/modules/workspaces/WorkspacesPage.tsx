@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { CircleAlert, CircleCheck, ExternalLink, History, Layers, LayoutList, Loader2, Pencil, Play, Plus, Square, Star, Trash2 } from "lucide-react";
+import { CircleAlert, CircleCheck, CopyPlus, ExternalLink, History, Layers, LayoutList, Loader2, Pencil, Play, Plus, Square, Star, StarOff, Trash2 } from "lucide-react";
 
 import { EmptyState, ListItem, ListPane, Page, PageBar, PageBody, PageMain, PageNotice, PageTabs, TauriOnly } from "@/components/layout/Page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { confirmAction } from "@/components/ui/confirm";
+import { contextMenu } from "@/components/ui/context-menu";
 import {
   Dialog,
   DialogContent,
@@ -243,7 +245,7 @@ function WorkspaceView({ workspace, onEdit, historyVersion }: { workspace: Works
 }
 
 export function WorkspacesPage() {
-  const { workspaces, error, init, clearError } = useWorkspaces();
+  const { workspaces, error, init, clearError, start, stop, remove, toggleFavorite, save, busy } = useWorkspaces();
   const [editing, setEditing] = useState<Workspace | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [selectedId, setSelectedIdState] = useState<number | null>(lastSelected);
@@ -274,6 +276,37 @@ export function WorkspacesPage() {
   const activeCount = sorted.filter((w) => w.active).length;
   const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? "s" : ""}`;
 
+  const workspaceMenu = (w: Workspace) =>
+    contextMenu(() => [
+      { heading: w.name },
+      w.active
+        ? { label: "Arrêter", icon: Square, disabled: busy === w.id, onSelect: () => stop(w.id) }
+        : { label: "Démarrer", icon: Play, disabled: busy === w.id || w.steps.length === 0, onSelect: () => start(w.id) },
+      { separator: true },
+      { label: "Modifier…", icon: Pencil, onSelect: () => openEditor(w) },
+      { label: w.favorite ? "Retirer des favoris" : "Ajouter aux favoris", icon: w.favorite ? StarOff : Star, onSelect: () => toggleFavorite(w) },
+      {
+        label: "Dupliquer",
+        icon: CopyPlus,
+        onSelect: () => save({ id: null, name: `${w.name} (copie)`, description: w.description, favorite: false, steps: w.steps }),
+      },
+      { separator: true },
+      {
+        label: "Supprimer",
+        icon: Trash2,
+        danger: true,
+        disabled: !!w.active,
+        onSelect: async () => {
+          const ok = await confirmAction({
+            title: `Supprimer ${w.name} ?`,
+            description: "Le workspace et ses étapes seront supprimés. L'historique des sessions est conservé.",
+            confirmLabel: "Supprimer",
+          });
+          if (ok) await remove(w.id);
+        },
+      },
+    ]);
+
   return (
     <Page>
       <ListPane
@@ -290,7 +323,7 @@ export function WorkspacesPage() {
         {shown.map((w) => {
           const active = selected?.id === w.id;
           return (
-            <ListItem key={w.id} active={active} onClick={() => setSelectedId(w.id)}>
+            <ListItem key={w.id} active={active} onClick={() => setSelectedId(w.id)} onContextMenu={workspaceMenu(w)}>
               <span className="flex items-center gap-2">
                 {w.favorite && <Star className="size-3.5 shrink-0 fill-warning text-warning" aria-label="Favori" />}
                 <span className={cn("truncate text-sm", active ? "text-foreground" : "text-foreground/85")}>{w.name}</span>
