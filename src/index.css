@@ -264,3 +264,9 @@
     gap: 6px;
   }
 }
+
+/* Fond animé du tableau de bord : cartes translucides pour le laisser transparaître. */
+.has-animated-bg .widget-card:not(.bg-transparent) {
+  background-color: color-mix(in oklab, var(--card) 72%, transparent);
+  backdrop-filter: blur(10px);
+}

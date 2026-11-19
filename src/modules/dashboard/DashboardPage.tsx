@@ -11,8 +11,9 @@ import { usePolling } from "@/hooks/usePolling";
 import { cn } from "@/lib/utils";
 import { api, isTauri } from "@/services/tauri";
 import type { SystemInfo } from "@/types";
-import { HISTORY_MAX, REFRESH_MS } from "./config";
-import type { DashboardData, WidgetSettings } from "./config";
+import { ACCENTS, BACKGROUNDS, DEFAULT_BACKGROUND, HISTORY_MAX, REFRESH_MS } from "./config";
+import type { BackgroundSettings, DashboardData, WidgetSettings } from "./config";
+import { DashboardBackground } from "./background";
 import { WIDGETS, isWidgetType } from "./registry";
 import type { WidgetType } from "./registry";
 import { AutoFit } from "./widgets";
@@ -20,6 +21,7 @@ import { WidgetSettingsDialog } from "./WidgetSettingsDialog";
 
 const STORAGE_KEY = "devcenter.dashboard.layout.v1";
 const SETTINGS_KEY = "devcenter.dashboard.settings.v1";
+const BACKGROUND_KEY = "devcenter.dashboard.background.v1";
 const COLS = 12;
 /** Le tableau tient toujours dans la fenêtre : 16 lignes dont la hauteur suit celle de l'écran. */
 const ROWS = 16;
@@ -89,6 +91,105 @@ function saveSettings(settings: SettingsMap) {
   } catch {
     /* stockage indisponible : réglages non conservés */
   }
+}
+
+function loadBackground(): BackgroundSettings {
+  try {
+    const saved = JSON.parse(localStorage.getItem(BACKGROUND_KEY) ?? "{}") as Partial<BackgroundSettings>;
+    const bg = { ...DEFAULT_BACKGROUND, ...saved };
+    // Valeurs inconnues (version précédente, fichier modifié) : retour au défaut.
+    if (!BACKGROUNDS.some((b) => b.id === bg.kind)) bg.kind = DEFAULT_BACKGROUND.kind;
+    if (!ACCENTS.includes(bg.accent)) bg.accent = DEFAULT_BACKGROUND.accent;
+    return bg;
+  } catch {
+    return DEFAULT_BACKGROUND;
+  }
+}
+
+function saveBackground(bg: BackgroundSettings) {
+  try {
+    localStorage.setItem(BACKGROUND_KEY, JSON.stringify(bg));
+  } catch {
+    /* stockage indisponible : fond non conservé */
+  }
+}
+
+/** Pastille de couleur des accents (mêmes teintes que les widgets). */
+const ACCENT_SWATCH: Record<(typeof ACCENTS)[number], string> = {
+  cyan: "bg-cyan-400",
+  green: "bg-emerald-400",
+  amber: "bg-amber-400",
+  violet: "bg-violet-400",
+  rose: "bg-rose-400",
+  blue: "bg-blue-400",
+};
+
+/** Choix du fond animé, dans le panneau d'édition. */
+function BackgroundPicker({ value, onChange }: { value: BackgroundSettings; onChange: (patch: Partial<BackgroundSettings>) => void }) {
+  const off = value.kind === "none";
+  return (
+    <div className="grid shrink-0 gap-2 border-t pt-3">
+      <p className="eyebrow px-1">Fond animé</p>
+      <div className="grid grid-cols-3 gap-1">
+        {BACKGROUNDS.map((b) => (
+          <button
+            key={b.id}
+            type="button"
+            onClick={() => onChange({ kind: b.id })}
+            aria-pressed={value.kind === b.id}
+            className={cn(
+              "truncate rounded-md border px-1.5 py-1 text-[11px] transition-colors",
+              value.kind === b.id ? "border-primary/60 bg-primary/15 text-primary" : "border-transparent text-muted-foreground hover:bg-primary/10 hover:text-foreground",
+            )}
+          >
+            {b.label}
+          </button>
+        ))}
+      </div>
+      <div className={cn("grid gap-2 px-1", off && "pointer-events-none opacity-40")}>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-muted-foreground">Couleur</span>
+          <div className="flex gap-1.5">
+            {ACCENTS.map((a) => (
+              <button
+                key={a}
+                type="button"
+                onClick={() => onChange({ accent: a })}
+                title={a}
+                aria-label={`Couleur ${a}`}
+                aria-pressed={value.accent === a}
+                className={cn("size-4 rounded-full ring-offset-2 ring-offset-card transition", ACCENT_SWATCH[a], value.accent === a && "ring-2 ring-foreground/70")}
+              />
+            ))}
+          </div>
+        </div>
+        <label className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+          Intensité
+          <input
+            type="range"
+            min={0.2}
+            max={1}
+            step={0.05}
+            value={value.intensity}
+            onChange={(e) => onChange({ intensity: +e.target.value })}
+            className="w-32 accent-primary"
+          />
+        </label>
+        <label className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+          Vitesse
+          <input
+            type="range"
+            min={0.25}
+            max={2}
+            step={0.05}
+            value={value.speed}
+            onChange={(e) => onChange({ speed: +e.target.value })}
+            className="w-32 accent-primary"
+          />
+        </label>
+      </div>
+    </div>
+  );
 }
 
 const NO_SETTINGS: WidgetSettings = {};
@@ -235,7 +336,11 @@ function EditControls({
   onDone,
   onReset,
   onAdd,
+  background,
+  onBackground,
 }: {
+  background: BackgroundSettings;
+  onBackground: (patch: Partial<BackgroundSettings>) => void;
   editing: boolean;
   available: WidgetType[];
   fits: (type: WidgetType) => boolean;
@@ -258,7 +363,7 @@ function EditControls({
     );
   }
   return (
-    <div className="absolute right-5 bottom-5 z-10 flex max-h-[calc(100%-2.5rem)] w-72 flex-col gap-3 rounded-xl border border-primary/30 bg-card/95 p-3 shadow-xl backdrop-blur">
+    <div className="bg-nopoke absolute right-5 bottom-5 z-10 flex max-h-[calc(100%-2.5rem)] w-72 flex-col gap-3 rounded-xl border border-primary/30 bg-card/95 p-3 shadow-xl backdrop-blur">
       {/* Liste défilante : avec beaucoup de widgets disponibles, le menu ne déborde plus en haut de l'écran. */}
       <div className="grid min-h-0 min-w-0 grid-cols-1 content-start gap-1 overflow-y-auto">
         <p className="eyebrow sticky top-0 z-10 bg-card px-1 pb-1">Ajouter un widget</p>
@@ -286,6 +391,7 @@ function EditControls({
           );
         })}
       </div>
+      <BackgroundPicker value={background} onChange={onBackground} />
       <div className="flex shrink-0 gap-2 border-t pt-3">
         <Button variant="ghost" size="sm" className="min-w-0 flex-1" onClick={onReset}>
           <RotateCcw /> Réinitialiser
@@ -322,6 +428,14 @@ export function DashboardPage() {
       const clean = Object.fromEntries(Object.entries(merged).filter(([, v]) => v !== undefined)) as WidgetSettings;
       const next = { ...prev, [type]: clean };
       saveSettings(next);
+      return next;
+    });
+  }, []);
+  const [background, setBackground] = useState<BackgroundSettings>(loadBackground);
+  const updateBackground = useCallback((patch: Partial<BackgroundSettings>) => {
+    setBackground((prev) => {
+      const next = { ...prev, ...patch };
+      saveBackground(next);
       return next;
     });
   }, []);
@@ -404,7 +518,8 @@ export function DashboardPage() {
         )}
         {error && <PageNotice>{error}</PageNotice>}
 
-        <div className="relative flex min-h-0 flex-1 flex-col">
+        <div className={cn("relative isolate flex min-h-0 flex-1 flex-col", background.kind !== "none" && "has-animated-bg")}>
+        <DashboardBackground settings={background} cpu={history.cpu} cores={history.cores} />
         {layout.length === 0 && !editing ? (
           <EmptyState
             icon={LayoutGrid}
@@ -462,6 +577,8 @@ export function DashboardPage() {
             saveSettings({});
           }}
           onAdd={add}
+          background={background}
+          onBackground={updateBackground}
         />
         </div>
         <WidgetSettingsDialog

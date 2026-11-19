@@ -68,3 +68,37 @@ export interface WidgetDef {
   /** Sans en-tête, le widget perd aussi son fond et sa bordure (seul le contenu reste). */
   bareWithoutHeader?: boolean;
 }
+
+/* ------------------------------------------------------------------ */
+/* Fond animé du tableau de bord                                       */
+/* ------------------------------------------------------------------ */
+
+export const BACKGROUNDS = [
+  { id: "none", label: "Aucun" },
+  { id: "neural", label: "Réseau neuronal" },
+  { id: "fog", label: "Brouillard" },
+  { id: "bubbles", label: "Bulles" },
+  { id: "halos", label: "Halos" },
+  { id: "waves", label: "Vagues" },
+  { id: "code", label: "Pluie de code" },
+  { id: "circuit", label: "Circuit" },
+  { id: "grid", label: "Grille rétro" },
+  { id: "scope", label: "Oscilloscope CPU" },
+  { id: "aurora", label: "Aurore" },
+  { id: "stars", label: "Étoiles" },
+  { id: "fireflies", label: "Lucioles" },
+  { id: "flow", label: "Flux" },
+] as const;
+export type BackgroundKind = (typeof BACKGROUNDS)[number]["id"];
+
+export interface BackgroundSettings {
+  kind: BackgroundKind;
+  /** Couleur dominante (palette des widgets). */
+  accent: Accent;
+  /** Intensité de 0.2 à 1. */
+  intensity: number;
+  /** Vitesse de 0.25 à 2. */
+  speed: number;
+}
+
+export const DEFAULT_BACKGROUND: BackgroundSettings = { kind: "none", accent: "cyan", intensity: 0.6, speed: 1 };
