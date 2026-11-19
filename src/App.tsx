@@ -11,6 +11,7 @@ import { WorkspacesPage } from "@/modules/workspaces/WorkspacesPage";
 import { ProjectsPage } from "@/modules/projects/ProjectsPage";
 import { SystemPage } from "@/modules/system/SystemPage";
 import { SettingsPage } from "@/modules/settings/SettingsPage";
+import { useFullscreen } from "@/stores/fullscreen";
 import { useRuns } from "@/stores/runs";
 import { useSettings } from "@/stores/settings";
 import { useUpdates } from "@/stores/updates";
@@ -21,13 +22,15 @@ export default function App() {
   const initRuns = useRuns((s) => s.init);
   const initWorkspaces = useWorkspaces((s) => s.init);
   const initUpdates = useUpdates((s) => s.init);
+  const initFullscreen = useFullscreen((s) => s.init);
   useEffect(() => {
     load();
+    initFullscreen();
     initUpdates();
     initWorkspaces();
     // Les scripts continuent de tourner quand on quitte la page Projets : on suit leur état partout.
     initRuns();
-  }, [load, initRuns, initWorkspaces, initUpdates]);
+  }, [load, initRuns, initWorkspaces, initUpdates, initFullscreen]);
   useApplyTheme();
 
   return (

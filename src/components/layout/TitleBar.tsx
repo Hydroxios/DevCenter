@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Maximize2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { isTauri } from "@/services/tauri";
+import { useFullscreen } from "@/stores/fullscreen";
 import { Logo } from "./Logo";
 
 const icon = "size-[11px] fill-none stroke-current stroke-[1.2]";
@@ -41,6 +43,7 @@ function WindowButton({
 export function TitleBar() {
   const tauri = isTauri();
   const [maximized, setMaximized] = useState(false);
+  const enterFullscreen = useFullscreen((s) => s.set);
 
   useEffect(() => {
     if (!tauri) return;
@@ -64,6 +67,9 @@ export function TitleBar() {
       <div data-tauri-drag-region className="flex-1" />
       {win && (
         <div className="flex">
+          <WindowButton label="Plein écran (F11)" onClick={() => enterFullscreen(true)}>
+            <Maximize2 className="size-3 stroke-[1.5]" aria-hidden />
+          </WindowButton>
           <WindowButton label="Réduire" onClick={() => win.minimize()}>
             <svg viewBox="0 0 10 10" className={icon} aria-hidden>
               <path d="M0 5h10" />
