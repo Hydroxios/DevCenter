@@ -321,7 +321,7 @@ fn evaluate(app: &AppHandle, c: &Condition) -> AppResult<(bool, bool)> {
         Condition::ProcessRunning { name, negate } => {
             let target = name.trim().to_lowercase();
             let target_exe = if target.ends_with(".exe") { target.clone() } else { format!("{target}.exe") };
-            let found = state.system.processes()?.iter().any(|p| {
+            let found = state.system.processes(None, None)?.iter().any(|p| {
                 let n = p.name.to_lowercase();
                 n == target || n == target_exe
             });

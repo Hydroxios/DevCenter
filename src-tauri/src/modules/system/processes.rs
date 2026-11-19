@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System, UpdateKind};
 
 use crate::error::{AppError, AppResult};
@@ -27,6 +27,22 @@ pub struct KillOutcome {
     pub pid: u32,
     pub name: String,
     pub killed: bool,
+}
+
+/// Critère de classement des processus.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ProcessSort {
+    Cpu,
+    Memory,
+}
+
+/// Trie par ordre décroissant selon le critère.
+pub fn sort(list: &mut [ProcessInfo], by: ProcessSort) {
+    match by {
+        ProcessSort::Cpu => list.sort_unstable_by(|a, b| b.cpu_usage.total_cmp(&a.cpu_usage)),
+        ProcessSort::Memory => list.sort_unstable_by(|a, b| b.memory.cmp(&a.memory)),
+    }
 }
 
 /// Processus Windows dont l'arrêt provoque un écran bleu, une déconnexion ou une instabilité.

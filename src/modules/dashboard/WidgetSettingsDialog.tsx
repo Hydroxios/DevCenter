@@ -4,8 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { ACCENTS, HistoryChart, WIDGETS, hasHistory } from "./widgets";
-import type { Accent, ChartStyle, HistoryWindow, ProcessSort, WidgetSettings, WidgetType } from "./widgets";
+import { ACCENTS, hasHistory } from "./config";
+import type { Accent, ChartStyle, HistoryWindow, ProcessSort, WidgetSettings } from "./config";
+import { WIDGETS } from "./registry";
+import type { WidgetType } from "./registry";
+import { HistoryChart } from "./widgets";
 
 const ACCENT_LABELS: Record<Accent, string> = {
   cyan: "Cyan",

@@ -45,6 +45,11 @@ function withRecent(recent: RecentScript[], run: RunInfo): RecentScript[] {
 interface RunsState {
   runs: Record<number, RunInfo>;
   logs: Record<number, string[]>;
+  /**
+   * Nombre de lignes retirées en tête de `logs` (tampon plein) depuis le chargement :
+   * `logBase + index` identifie une ligne de façon stable (clé React).
+   */
+  logBase: Record<number, number>;
   error: string | null;
   recent: RecentScript[];
   init: () => Promise<void>;
@@ -61,6 +66,7 @@ let initialized = false;
 export const useRuns = create<RunsState>((set, get) => ({
   runs: {},
   logs: {},
+  logBase: {},
   error: null,
   recent: loadRecent(),
 
@@ -83,11 +89,17 @@ export const useRuns = create<RunsState>((set, get) => ({
       });
     });
 
-    await listen<{ runId: number; line: string }>("runner://log", ({ payload }) => {
+    // Les lignes arrivent par lots (au plus un événement toutes les 50 ms par exécution).
+    await listen<{ runId: number; lines: string[] }>("runner://log", ({ payload }) => {
       set((s) => {
-        const prev = s.logs[payload.runId] ?? [];
-        const next = prev.length >= MAX_LINES ? [...prev.slice(prev.length - MAX_LINES + 1), payload.line] : [...prev, payload.line];
-        return { logs: { ...s.logs, [payload.runId]: next } };
+        const { runId, lines } = payload;
+        const prev = s.logs[runId] ?? [];
+        const all = prev.concat(lines);
+        const drop = Math.max(0, all.length - MAX_LINES);
+        return {
+          logs: { ...s.logs, [runId]: drop ? all.slice(drop) : all },
+          logBase: drop ? { ...s.logBase, [runId]: (s.logBase[runId] ?? 0) + drop } : s.logBase,
+        };
       });
     });
 
@@ -104,7 +116,7 @@ export const useRuns = create<RunsState>((set, get) => ({
   loadLogs: async (runId) => {
     try {
       const lines = await api.runner.logs(runId);
-      set((s) => ({ logs: { ...s.logs, [runId]: lines } }));
+      set((s) => ({ logs: { ...s.logs, [runId]: lines }, logBase: { ...s.logBase, [runId]: 0 } }));
     } catch {
       /* exécution supprimée entre-temps */
     }
@@ -143,7 +155,8 @@ export const useRuns = create<RunsState>((set, get) => ({
     await api.runner.dismiss(runId).catch(() => {});
     const { [runId]: _r, ...runs } = get().runs;
     const { [runId]: _l, ...logs } = get().logs;
-    set({ runs, logs });
+    const { [runId]: _b, ...logBase } = get().logBase;
+    set({ runs, logs, logBase });
   },
 }));
 

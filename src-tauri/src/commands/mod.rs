@@ -23,7 +23,7 @@ use crate::modules::servers::{self, Server, ServerInput};
 use crate::modules::workspaces::{self, ActiveInfo, SessionRecord, Workspace, WorkspaceInput};
 use crate::modules::settings::{Settings, SettingsService};
 use crate::modules::apps::{self, AppShortcut};
-use crate::modules::system::{HardwareSnapshot, KillOutcome, ProcessInfo, SystemInfo, SystemSnapshot};
+use crate::modules::system::{HardwareSnapshot, KillOutcome, ProcessInfo, ProcessSort, SystemInfo, SystemSnapshot};
 use crate::state::AppState;
 
 // ---------------------------------------------------------------- Journal
@@ -84,23 +84,24 @@ pub fn get_system_info(state: State<'_, AppState>) -> AppResult<SystemInfo> {
 }
 
 #[tauri::command]
-pub fn get_system_snapshot(state: State<'_, AppState>) -> AppResult<SystemSnapshot> {
-    state.system.snapshot()
+pub async fn get_system_snapshot(app: AppHandle) -> AppResult<SystemSnapshot> {
+    blocking(move || app.state::<AppState>().system.snapshot()).await
 }
 
 #[tauri::command]
-pub fn get_hardware(state: State<'_, AppState>) -> AppResult<HardwareSnapshot> {
-    state.system.hardware()
+pub async fn get_hardware(app: AppHandle) -> AppResult<HardwareSnapshot> {
+    blocking(move || app.state::<AppState>().system.hardware()).await
+}
+
+/// `sort` (`cpu` | `memory`) et `limit` : tri et coupe côté Rust (le widget n'affiche que le haut du classement).
+#[tauri::command]
+pub async fn list_processes(app: AppHandle, sort: Option<ProcessSort>, limit: Option<usize>) -> AppResult<Vec<ProcessInfo>> {
+    blocking(move || app.state::<AppState>().system.processes(sort, limit)).await
 }
 
 #[tauri::command]
-pub fn list_processes(state: State<'_, AppState>) -> AppResult<Vec<ProcessInfo>> {
-    state.system.processes()
-}
-
-#[tauri::command]
-pub fn kill_process(state: State<'_, AppState>, pid: u32, start_time: u64) -> AppResult<KillOutcome> {
-    state.system.kill_process(pid, start_time)
+pub async fn kill_process(app: AppHandle, pid: u32, start_time: u64) -> AppResult<KillOutcome> {
+    blocking(move || app.state::<AppState>().system.kill_process(pid, start_time)).await
 }
 
 #[tauri::command]
@@ -120,9 +121,12 @@ pub fn remove_app(state: State<'_, AppState>, id: i64) -> AppResult<Vec<AppShort
 
 /// Lance un raccourci enregistré via le shell Windows (gère .exe et .lnk).
 #[tauri::command]
-pub fn launch_app(state: State<'_, AppState>, id: i64) -> AppResult<()> {
-    let path = apps::resolve(&state.db, id)?;
-    apps::launch(&path).map(|_| ())
+pub async fn launch_app(app: AppHandle, id: i64) -> AppResult<()> {
+    blocking(move || {
+        let path = apps::resolve(&app.state::<AppState>().db, id)?;
+        apps::launch(&path).map(|_| ())
+    })
+    .await
 }
 
 // ---------------------------------------------------------------- Projets
@@ -171,28 +175,38 @@ pub async fn scan_projects(app: AppHandle, root: String) -> AppResult<Vec<ScanCa
 }
 
 #[tauri::command]
-pub fn open_in_editor(state: State<'_, AppState>, id: i64) -> AppResult<()> {
-    let path = projects::path_of(&state.db, id)?;
-    let settings = SettingsService::load(&state.db)?;
-    editor::open(settings.editor_path.as_deref(), &path)
+pub async fn open_in_editor(app: AppHandle, id: i64) -> AppResult<()> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        let path = projects::path_of(&state.db, id)?;
+        let settings = SettingsService::load(&state.db)?;
+        editor::open(settings.editor_path.as_deref(), &path)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn open_project_folder(state: State<'_, AppState>, id: i64) -> AppResult<()> {
-    let path = projects::path_of(&state.db, id)?;
-    tauri_plugin_opener::open_path(&path, None::<&str>)
-        .map_err(|e| AppError::InvalidInput(format!("impossible d'ouvrir {} : {e}", path.display())))
+pub async fn open_project_folder(app: AppHandle, id: i64) -> AppResult<()> {
+    blocking(move || {
+        let path = projects::path_of(&app.state::<AppState>().db, id)?;
+        tauri_plugin_opener::open_path(&path, None::<&str>)
+            .map_err(|e| AppError::InvalidInput(format!("impossible d'ouvrir {} : {e}", path.display())))
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn open_project_terminal(state: State<'_, AppState>, id: i64) -> AppResult<()> {
-    let path = projects::path_of(&state.db, id)?;
-    shell::open_terminal(&path).map_err(|e| AppError::InvalidInput(format!("impossible d'ouvrir un terminal : {e}")))
+pub async fn open_project_terminal(app: AppHandle, id: i64) -> AppResult<()> {
+    blocking(move || {
+        let path = projects::path_of(&app.state::<AppState>().db, id)?;
+        shell::open_terminal(&path).map_err(|e| AppError::InvalidInput(format!("impossible d'ouvrir un terminal : {e}")))
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn detect_editor() -> Option<String> {
-    editor::detect().map(|p| p.display().to_string())
+pub async fn detect_editor() -> Option<String> {
+    blocking(|| Ok(editor::detect().map(|p| p.display().to_string()))).await.ok().flatten()
 }
 
 // ---------------------------------------------------------------- Scripts
@@ -210,8 +224,8 @@ pub fn run_logs(state: State<'_, AppState>, run_id: u64) -> AppResult<Vec<String
 /// Lance un script déclaré dans le package.json du projet. Le nom est vérifié : aucune
 /// commande arbitraire ne peut être exécutée depuis le frontend.
 #[tauri::command]
-pub fn run_script(app: AppHandle, project_id: i64, script: String) -> AppResult<RunInfo> {
-    projects::run_script(&app, project_id, &script)
+pub async fn run_script(app: AppHandle, project_id: i64, script: String) -> AppResult<RunInfo> {
+    blocking(move || projects::run_script(&app, project_id, &script)).await
 }
 
 #[tauri::command]
@@ -288,8 +302,8 @@ pub fn delete_server(state: State<'_, AppState>, id: i64) -> AppResult<Vec<Serve
 }
 
 #[tauri::command]
-pub fn find_ssh_keys() -> Vec<String> {
-    servers::find_keys()
+pub async fn find_ssh_keys() -> Vec<String> {
+    blocking(|| Ok(servers::find_keys())).await.unwrap_or_default()
 }
 
 fn server_of(app: &AppHandle, id: i64) -> AppResult<Server> {
@@ -337,9 +351,13 @@ pub async fn server_container_logs(app: AppHandle, id: i64, container: String, l
 }
 
 #[tauri::command]
-pub fn terminal_open(app: AppHandle, state: State<'_, AppState>, server_id: i64, cols: u16, rows: u16) -> AppResult<u64> {
-    let server = servers::get(&state.db, server_id)?;
-    state.terminals.open(&app, &server, cols, rows)
+pub async fn terminal_open(app: AppHandle, server_id: i64, cols: u16, rows: u16) -> AppResult<u64> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        let server = servers::get(&state.db, server_id)?;
+        state.terminals.open(&app, &server, cols, rows)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -364,9 +382,13 @@ pub async fn server_key_status(app: AppHandle, id: i64) -> AppResult<KeyStatus> 
 
 /// Ouvre `ssh-add` pour la clé du serveur (chemin déjà validé à l'enregistrement).
 #[tauri::command]
-pub fn terminal_open_ssh_add(app: AppHandle, state: State<'_, AppState>, server_id: i64, cols: u16, rows: u16) -> AppResult<u64> {
-    let server = servers::get(&state.db, server_id)?;
-    state.terminals.open_ssh_add(&app, server.key_path.as_deref(), cols, rows)
+pub async fn terminal_open_ssh_add(app: AppHandle, server_id: i64, cols: u16, rows: u16) -> AppResult<u64> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        let server = servers::get(&state.db, server_id)?;
+        state.terminals.open_ssh_add(&app, server.key_path.as_deref(), cols, rows)
+    })
+    .await
 }
 
 // ---------------------------------------------------------------- Automatisations
@@ -514,9 +536,13 @@ pub async fn github_repos(app: AppHandle, refresh: Option<bool>) -> AppResult<Ve
 }
 
 #[tauri::command]
-pub fn github_login_terminal(app: AppHandle, state: State<'_, AppState>, cols: u16, rows: u16) -> AppResult<u64> {
-    state.github.invalidate();
-    state.terminals.open_gh_login(&app, cols, rows)
+pub async fn github_login_terminal(app: AppHandle, cols: u16, rows: u16) -> AppResult<u64> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        state.github.invalidate();
+        state.terminals.open_gh_login(&app, cols, rows)
+    })
+    .await
 }
 
 #[tauri::command]

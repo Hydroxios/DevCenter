@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Activity, ArrowUpRight, Bot, Loader2, Clock, Cpu, GitCommitHorizontal, Gpu, HardDrive, Layers, ListOrdered, MemoryStick, Play, Square, Star, X } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { ArrowUpRight, Loader2, Play, Square, Star, X } from "lucide-react";
 
 import { Progress } from "@/components/ui/progress";
 import { usePolling } from "@/hooks/usePolling";
@@ -10,57 +9,11 @@ import { cn, formatBytes, formatDuration, formatRelative } from "@/lib/utils";
 import { api, isTauri } from "@/services/tauri";
 import { useRuns } from "@/stores/runs";
 import { useWorkspaces } from "@/stores/workspaces";
-import type { SystemInfo, SystemSnapshot } from "@/types";
 import { WorkspaceToggle } from "@/modules/workspaces/WorkspacesPage";
 import { ActivityView, ContributionGrid, GRID_GAP, GRID_LEFT, GridLegend, RefreshButton, dayKey, streaks } from "./activity";
 import { UsageBars, UsageView, compact, rangeLabel, usageDays, usd } from "./usage";
-
-export const REFRESH_MS = 2000;
-/** Nombre de mesures conservées (150 × 2 s = 5 minutes, la plus longue fenêtre proposée). */
-export const HISTORY_MAX = 150;
-
-/* ------------------------------------------------------------------ */
-/* Réglages par widget                                                 */
-/* ------------------------------------------------------------------ */
-
-export const ACCENTS = ["cyan", "green", "amber", "violet", "rose", "blue"] as const;
-export type Accent = (typeof ACCENTS)[number];
-export type HistoryWindow = 1 | 2 | 5;
-/** Style des graphiques d'historique ; « none » désactive le graphique. */
-/** Style des graphiques : courbes d'historique, simple jauge (« gauge ») ou rien du tout (« none »). */
-export type ChartStyle = "area" | "line" | "smooth" | "step" | "bars" | "gauge" | "none";
-/** Vrai si le style affiche un historique (et donc une durée). */
-export const hasHistory = (c: ChartStyle | undefined) => c !== "gauge" && c !== "none";
-export type ProcessSort = "cpu" | "memory";
-/** Périodes proposées pour le widget Claude Code, en jours. */
-export const USAGE_RANGES = [7, 14, 30, 90, 365] as const;
-export type UsageRange = (typeof USAGE_RANGES)[number];
-
-/** Réglages enregistrés pour un widget (tous facultatifs : valeurs par défaut sinon). */
-export interface WidgetSettings {
-  title?: string;
-  accent?: Accent;
-  /** false = en-tête masqué hors édition. */
-  header?: boolean;
-  window?: HistoryWindow;
-  chart?: ChartStyle;
-  count?: number;
-  sort?: ProcessSort;
-}
-
-/** Réglages propres à certains widgets (en plus du titre, de la couleur et de l'en-tête). */
-export type OptionKey = "window" | "chart" | "count" | "sort";
-
-const windowOf = (s: WidgetSettings) => s.window ?? 2;
-/** Nombre de mesures affichées pour la fenêtre choisie. */
-const pointsOf = (s: WidgetSettings) => (windowOf(s) * 60000) / REFRESH_MS;
-
-/** Données système partagées par tous les widgets (une seule interrogation pour tout le tableau). */
-export interface DashboardData {
-  snap: SystemSnapshot | null;
-  info: SystemInfo | null;
-  history: { cpu: number[]; mem: number[]; cores: number[][] };
-}
+import { USAGE_RANGES, hasHistory, pointsOf } from "./config";
+import type { ChartStyle, DashboardData, ProcessSort, UsageRange, WidgetSettings } from "./config";
 
 /* ------------------------------------------------------------------ */
 /* Briques communes                                                    */
@@ -300,7 +253,7 @@ function FitWidth({ children, className }: { children: React.ReactNode; classNam
 /** En dessous de cette largeur, l'en-tête du processeur passe sur deux lignes et rétrécit en bloc. */
 const CPU_WIDE = 340;
 
-function CpuBody({ snap, info, history, settings }: DashboardData & { settings: WidgetSettings }) {
+export function CpuBody({ snap, info, history, settings }: DashboardData & { settings: WidgetSettings }) {
   const points = pointsOf(settings);
   const h = history.cpu.slice(-points);
   const [ref, { w }] = useSize<HTMLDivElement>();
@@ -341,7 +294,7 @@ function CpuBody({ snap, info, history, settings }: DashboardData & { settings: 
   );
 }
 
-function MemoryBody({ snap, history, settings }: DashboardData & { settings: WidgetSettings }) {
+export function MemoryBody({ snap, history, settings }: DashboardData & { settings: WidgetSettings }) {
   const memPct = snap && snap.memoryTotal ? (snap.memoryUsed / snap.memoryTotal) * 100 : 0;
   const swapPct = snap && snap.swapTotal ? (snap.swapUsed / snap.swapTotal) * 100 : null;
   const chart = hasHistory(settings.chart);
@@ -388,7 +341,7 @@ function MemoryBody({ snap, history, settings }: DashboardData & { settings: Wid
   );
 }
 
-function SystemBody({ snap, info }: DashboardData) {
+export function SystemBody({ snap, info }: DashboardData) {
   return (
     <>
       <BigValue value={snap ? formatDuration(snap.uptimeSecs) : "—"} sub="Temps de fonctionnement" />
@@ -431,7 +384,7 @@ function coreColumns(n: number, W: number, H: number) {
   return n;
 }
 
-function CoresBody({ snap, history, settings }: DashboardData & { settings: WidgetSettings }) {
+export function CoresBody({ snap, history, settings }: DashboardData & { settings: WidgetSettings }) {
   const [ref, { w, h }] = useSize<HTMLDivElement>();
   const n = snap?.cpuPerCore.length ?? 0;
   const cols = n ? coreColumns(n, w, h) : 1;
@@ -473,7 +426,7 @@ function CoresBody({ snap, history, settings }: DashboardData & { settings: Widg
   );
 }
 
-function StorageBody({ snap }: DashboardData) {
+export function StorageBody({ snap }: DashboardData) {
   const disks = (snap?.disks ?? []).filter((d) => d.totalBytes > 0);
   if (disks.length === 0) return <Empty>Aucun disque détecté.</Empty>;
   return (
@@ -500,7 +453,7 @@ function StorageBody({ snap }: DashboardData) {
   );
 }
 
-function WorkspacesBody() {
+export function WorkspacesBody() {
   const workspaces = useWorkspaces((s) => s.workspaces);
   const error = useWorkspaces((s) => s.error);
   const shown = (workspaces ?? []).filter((w) => w.favorite || w.active);
@@ -545,7 +498,7 @@ function ProjectLink({ id, name }: { id: number; name: string }) {
 
 const rowBtn = "flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors";
 
-function RunsBody() {
+export function RunsBody() {
   const runs = useRuns((s) => s.runs);
   const stop = useRuns((s) => s.stop);
   const start = useRuns((s) => s.start);
@@ -640,7 +593,7 @@ function RunsBody() {
 }
 
 /** Carte graphique et températures : interrogé seulement quand le widget est affiché. */
-function HardwareBody() {
+export function HardwareBody() {
   const { data, error } = usePolling(api.system.hardware, 3000, isTauri());
   if (error) return <p className="text-sm text-destructive">{error}</p>;
   if (!data) return <Empty>Chargement…</Empty>;
@@ -673,11 +626,11 @@ function HardwareBody() {
 }
 
 /** Processus les plus gourmands en CPU : interrogé seulement quand le widget est affiché. */
-function ProcessesBody({ count = 8, sort = "cpu" }: { count?: number; sort?: ProcessSort }) {
-  const { data, error } = usePolling(api.processes.list, 3000, isTauri());
+export function ProcessesBody({ count = 8, sort = "cpu" }: { count?: number; sort?: ProcessSort }) {
+  // Tri et coupe faits côté Rust : seuls les `count` premiers processus traversent l'IPC.
+  const { data: top, error } = usePolling(() => api.processes.list(sort, count), 3000, isTauri());
   if (error) return <p className="text-sm text-destructive">{error}</p>;
-  if (!data) return <Empty>Chargement…</Empty>;
-  const top = [...data].sort((a, b) => (sort === "memory" ? b.memory - a.memory : b.cpuUsage - a.cpuUsage)).slice(0, count);
+  if (!top) return <Empty>Chargement…</Empty>;
   return (
     <table className="w-full text-sm">
       <thead>
@@ -777,7 +730,7 @@ function useCachedPolling<T>(key: string, fetcher: (force: boolean) => Promise<T
 const fetchCommits = () => api.activity.commits(371);
 
 /** Grille de contributions façon profil GitHub ; un clic ouvre la vue Activité en plein écran. */
-function CommitsBody() {
+export function CommitsBody() {
   const { data, error, loading, refresh } = useCachedPolling("commits", fetchCommits);
   const [ref, { w, h }] = useSize<HTMLDivElement>();
   const [openDay, setOpenDay] = useState<Date | null>(null);
@@ -851,7 +804,7 @@ function readRange(): UsageRange {
 }
 
 /** Widget Claude Code : la période se choisit directement sur le widget (mémorisée localement). */
-function CcusageWidget() {
+export function CcusageWidget() {
   const [range, setRange] = useState<UsageRange>(readRange);
   const change = (r: UsageRange) => {
     setRange(r);
@@ -949,129 +902,3 @@ function CcusageBody({ points, onRange }: { points: UsageRange; onRange: (r: Usa
     </>
   );
 }
-
-/* ------------------------------------------------------------------ */
-/* Catalogue                                                           */
-/* ------------------------------------------------------------------ */
-
-export interface WidgetDef {
-  title: string;
-  description: string;
-  icon: LucideIcon;
-  /** Taille par défaut et minimale, en cases de grille (12 colonnes). */
-  size: { w: number; h: number; minW: number; minH: number };
-  aside?: (d: DashboardData, s: WidgetSettings) => React.ReactNode;
-  render: (d: DashboardData, s: WidgetSettings) => React.ReactNode;
-  /** Réglages propres proposés dans la fenêtre de personnalisation. */
-  options?: readonly OptionKey[];
-  /** « fill » : le contenu s'étire lui-même (graphiques) ; sinon il est mis à l'échelle pour tenir. */
-  fit?: "fill";
-  /** Sans en-tête, le widget perd aussi son fond et sa bordure (seul le contenu reste). */
-  bareWithoutHeader?: boolean;
-}
-
-export const WIDGETS = {
-  cpu: {
-    title: "Processeur",
-    description: "Charge totale et historique",
-    icon: Cpu,
-    size: { w: 6, h: 5, minW: 2, minH: 2 },
-    aside: (_d, s) => hasHistory(s.chart) && <span className="meta">{windowOf(s)} min</span>,
-    render: (d, s) => <CpuBody {...d} settings={s} />,
-    options: ["window", "chart"],
-    fit: "fill",
-  },
-  memory: {
-    title: "Mémoire",
-    description: "RAM, historique et swap",
-    icon: MemoryStick,
-    size: { w: 3, h: 5, minW: 2, minH: 2 },
-    render: (d, s) => <MemoryBody {...d} settings={s} />,
-    options: ["window", "chart"],
-    fit: "fill",
-  },
-  system: {
-    title: "Système",
-    description: "Temps de fonctionnement et machine",
-    icon: Clock,
-    size: { w: 3, h: 5, minW: 2, minH: 2 },
-    aside: () => <WidgetLink to="/system" />,
-    render: (d) => <SystemBody {...d} />,
-  },
-  cores: {
-    title: "Charge par cœur",
-    description: "Un graphique par cœur logique",
-    icon: Activity,
-    size: { w: 8, h: 7, minW: 2, minH: 2 },
-    aside: (d, s) =>
-      d.snap && (
-        <span className="meta">
-          {d.snap.cpuPerCore.length} cœurs{hasHistory(s.chart) && ` · ${windowOf(s)} min`}
-        </span>
-      ),
-    render: (d, s) => <CoresBody {...d} settings={s} />,
-    options: ["window", "chart"],
-    fit: "fill",
-  },
-  storage: {
-    title: "Stockage",
-    description: "Espace libre par disque",
-    icon: HardDrive,
-    size: { w: 4, h: 7, minW: 2, minH: 2 },
-    render: (d) => <StorageBody {...d} />,
-  },
-  workspaces: {
-    title: "Workspaces favoris",
-    description: "Démarrage rapide des workspaces",
-    icon: Layers,
-    size: { w: 6, h: 4, minW: 2, minH: 2 },
-    aside: () => <WidgetLink to="/workspaces">Tout voir</WidgetLink>,
-    render: () => <WorkspacesBody />,
-  },
-  runs: {
-    title: "Scripts",
-    description: "En cours et récents, relance en un clic",
-    icon: Play,
-    size: { w: 6, h: 4, minW: 2, minH: 2 },
-    aside: () => <WidgetLink to="/projects">Projets</WidgetLink>,
-    render: () => <RunsBody />,
-    bareWithoutHeader: true,
-  },
-  hardware: {
-    title: "Carte graphique",
-    description: "Charge GPU et température",
-    icon: Gpu,
-    size: { w: 4, h: 4, minW: 2, minH: 2 },
-    aside: () => <WidgetLink to="/system" />,
-    render: () => <HardwareBody />,
-  },
-  processes: {
-    title: "Processus gourmands",
-    description: "Les plus gourmands en CPU ou en mémoire",
-    icon: ListOrdered,
-    size: { w: 4, h: 7, minW: 2, minH: 2 },
-    aside: () => <WidgetLink to="/system" />,
-    render: (_d, s) => <ProcessesBody count={s.count} sort={s.sort} />,
-    options: ["count", "sort"],
-  },
-  commits: {
-    title: "Commits",
-    description: "Grille des contributions de tous les projets, façon GitHub",
-    icon: GitCommitHorizontal,
-    size: { w: 8, h: 4, minW: 3, minH: 2 },
-    aside: () => <WidgetLink to="/projects">Projets</WidgetLink>,
-    render: () => <CommitsBody />,
-    fit: "fill",
-  },
-  ccusage: {
-    title: "Claude Code",
-    description: "Coût et tokens par jour (ccusage)",
-    icon: Bot,
-    size: { w: 4, h: 4, minW: 2, minH: 2 },
-    render: () => <CcusageWidget />,
-    fit: "fill",
-  },
-} satisfies Record<string, WidgetDef>;
-
-export type WidgetType = keyof typeof WIDGETS;
-export const isWidgetType = (v: string): v is WidgetType => v in WIDGETS;

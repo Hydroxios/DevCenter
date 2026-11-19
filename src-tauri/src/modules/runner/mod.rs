@@ -7,9 +7,9 @@ use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -18,6 +18,10 @@ use crate::error::{AppError, AppResult};
 use crate::modules::shell;
 
 const MAX_LOG_LINES: usize = 2000;
+/// Les lignes de log sont envoyées à l'interface par lots, au plus une fois par intervalle :
+/// un build bavard produit des centaines de lignes par seconde, un événement IPC par ligne
+/// saturerait l'interface.
+const LOG_FLUSH_EVERY: Duration = Duration::from_millis(50);
 pub const EVENT_LOG: &str = "runner://log";
 pub const EVENT_STATUS: &str = "runner://status";
 
@@ -47,15 +51,24 @@ pub struct RunInfo {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct LogEvent<'a> {
+struct LogEvent {
     run_id: u64,
-    line: &'a str,
+    lines: Vec<String>,
+}
+
+/// Lignes lues mais pas encore envoyées à l'interface, partagées par les lecteurs stdout/stderr.
+struct LogBatch {
+    lines: Mutex<Vec<String>>,
+    /// Lecteurs encore ouverts : l'envoi s'arrête quand tous ont terminé.
+    open_readers: AtomicUsize,
 }
 
 struct Run {
     info: RunInfo,
     logs: VecDeque<String>,
     stop_requested: bool,
+    /// URL détectée, statut pas encore envoyé à l'interface.
+    url_pending: bool,
     /// Ouvre l'URL détectée dans le navigateur (démarrage de workspace).
     open_browser: bool,
 }
@@ -79,6 +92,40 @@ fn detect_url(line: &str) -> Option<String> {
         }
     }
     None
+}
+
+struct ReaderDone(Arc<LogBatch>);
+
+impl Drop for ReaderDone {
+    fn drop(&mut self) {
+        self.0.open_readers.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// Envoie les lignes en attente par lots, jusqu'à la fermeture des deux flux du processus.
+fn spawn_log_flusher(app: AppHandle, runs: Arc<Mutex<HashMap<u64, Run>>>, id: u64, batch: Arc<LogBatch>) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(LOG_FLUSH_EVERY);
+        // Lu avant de vider le tampon : une ligne poussée juste avant la fermeture n'est pas perdue.
+        let done = batch.open_readers.load(Ordering::SeqCst) == 0;
+        let lines = match batch.lines.lock() {
+            Ok(mut pending) => std::mem::take(&mut *pending),
+            Err(_) => return,
+        };
+        if !lines.is_empty() {
+            let _ = app.emit(EVENT_LOG, LogEvent { run_id: id, lines });
+        }
+        let url_info = runs.lock().ok().and_then(|mut runs| {
+            let run = runs.get_mut(&id)?;
+            std::mem::take(&mut run.url_pending).then(|| run.info.clone())
+        });
+        if let Some(info) = url_info {
+            let _ = app.emit(EVENT_STATUS, &info);
+        }
+        if done {
+            return;
+        }
+    });
 }
 
 impl Runner {
@@ -156,16 +203,18 @@ impl Runner {
             runs.retain(|_, r| {
                 !(r.info.project_id == project_id && r.info.script == script && r.info.status != RunStatus::Running)
             });
-            runs.insert(id, Run { info: info.clone(), logs: VecDeque::new(), stop_requested: false, open_browser });
+            runs.insert(id, Run { info: info.clone(), logs: VecDeque::new(), stop_requested: false, url_pending: false, open_browser });
         }
         let _ = app.emit(EVENT_STATUS, &info);
 
+        let batch = Arc::new(LogBatch { lines: Mutex::new(Vec::new()), open_readers: AtomicUsize::new(0) });
         if let Some(out) = child.stdout.take() {
-            self.spawn_reader(app.clone(), id, out);
+            self.spawn_reader(Arc::clone(&batch), id, out);
         }
         if let Some(err) = child.stderr.take() {
-            self.spawn_reader(app.clone(), id, err);
+            self.spawn_reader(Arc::clone(&batch), id, err);
         }
+        spawn_log_flusher(app.clone(), Arc::clone(&self.runs), id, batch);
 
         let runs = Arc::clone(&self.runs);
         let app = app.clone();
@@ -202,9 +251,12 @@ impl Runner {
         Ok(info)
     }
 
-    fn spawn_reader(&self, app: AppHandle, id: u64, stream: impl Read + Send + 'static) {
+    fn spawn_reader(&self, batch: Arc<LogBatch>, id: u64, stream: impl Read + Send + 'static) {
         let runs = Arc::clone(&self.runs);
+        batch.open_readers.fetch_add(1, Ordering::SeqCst);
         std::thread::spawn(move || {
+            // Signale la fin du lecteur quelle que soit la sortie de la boucle.
+            let _done = ReaderDone(Arc::clone(&batch));
             let mut reader = BufReader::new(stream);
             let mut buf = Vec::new();
             loop {
@@ -214,7 +266,6 @@ impl Runner {
                     Ok(_) => {}
                 }
                 let line = shell::strip_ansi(String::from_utf8_lossy(&buf).trim_end_matches('\n'));
-                let mut url_found = None;
                 {
                     let Ok(mut runs) = runs.lock() else { break };
                     let Some(run) = runs.get_mut(&id) else { break };
@@ -224,7 +275,8 @@ impl Runner {
                                 let _ = tauri_plugin_opener::open_url(&url, None::<&str>);
                             }
                             run.info.url = Some(url);
-                            url_found = Some(run.info.clone());
+                            // Le statut (avec l'URL) part avec le prochain lot de logs.
+                            run.url_pending = true;
                         }
                     }
                     if run.logs.len() >= MAX_LOG_LINES {
@@ -232,9 +284,9 @@ impl Runner {
                     }
                     run.logs.push_back(line.clone());
                 }
-                let _ = app.emit(EVENT_LOG, LogEvent { run_id: id, line: &line });
-                if let Some(info) = url_found {
-                    let _ = app.emit(EVENT_STATUS, &info);
+                match batch.lines.lock() {
+                    Ok(mut pending) => pending.push(line),
+                    Err(_) => break,
                 }
             }
         });

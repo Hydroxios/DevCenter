@@ -8,7 +8,7 @@ use sysinfo::{Components, CpuRefreshKind, Disks, Gpus, MemoryRefreshKind, Refres
 
 use crate::error::{AppError, AppResult};
 
-pub use processes::{KillOutcome, ProcessInfo};
+pub use processes::{KillOutcome, ProcessInfo, ProcessSort};
 
 fn opt<T>(r: Result<T, sysinfo::Error>) -> Option<T> {
     r.ok()
@@ -202,10 +202,20 @@ impl SystemService {
         reply_rx.recv().map_err(|_| AppError::Unavailable("matériel"))
     }
 
-    pub fn processes(&self) -> AppResult<Vec<ProcessInfo>> {
+    /// Liste des processus ; avec `sort`/`limit`, seuls les premiers du classement sont renvoyés.
+    pub fn processes(&self, sort: Option<ProcessSort>, limit: Option<usize>) -> AppResult<Vec<ProcessInfo>> {
         let cores = self.sys.lock()?.cpus().len().max(1);
-        let mut procs = self.procs.lock()?;
-        Ok(processes::list(&mut procs, cores))
+        let mut list = {
+            let mut procs = self.procs.lock()?;
+            processes::list(&mut procs, cores)
+        };
+        if let Some(sort) = sort {
+            processes::sort(&mut list, sort);
+        }
+        if let Some(limit) = limit {
+            list.truncate(limit);
+        }
+        Ok(list)
     }
 
     pub fn kill_process(&self, pid: u32, start_time: u64) -> AppResult<KillOutcome> {
@@ -229,7 +239,7 @@ mod tests {
             eprintln!("  gpu {:?} usage={:?} vram={:?}/{:?}", g.model, g.usage, g.memory_used, g.memory_total);
         }
 
-        let procs = svc.processes().unwrap();
+        let procs = svc.processes(None, None).unwrap();
         assert!(procs.len() > 10);
         let me = procs.iter().find(|p| p.pid == std::process::id()).expect("processus courant listé");
         assert!(me.protected);

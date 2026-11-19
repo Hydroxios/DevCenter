@@ -466,7 +466,7 @@ fn status_payload(app: &AppHandle) -> AppResult<MobileStatus> {
     let projects = crate::modules::projects::list(&state.db)?;
     let project_name = |id: i64| projects.iter().find(|p| p.id == id).map(|p| p.name.clone()).unwrap_or_else(|| format!("projet {id}"));
 
-    let mut procs = state.system.processes()?;
+    let mut procs = state.system.processes(None, None)?;
     procs.sort_by(|a, b| b.cpu_usage.total_cmp(&a.cpu_usage));
     let gpus = state.system.hardware().map(|h| h.gpus).unwrap_or_default();
 

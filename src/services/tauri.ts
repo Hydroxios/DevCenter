@@ -59,7 +59,8 @@ export const api = {
     hardware: () => invoke<HardwareSnapshot>("get_hardware"),
   },
   processes: {
-    list: () => invoke<ProcessInfo[]>("list_processes"),
+    /** Sans argument : tous les processus. Avec `sort`/`limit` : seulement le haut du classement (trié côté Rust). */
+    list: (sort?: "cpu" | "memory", limit?: number) => invoke<ProcessInfo[]>("list_processes", { sort, limit }),
     /** `startTime` garantit qu'on arrête bien le processus affiché (PID non réattribué). */
     kill: (pid: number, startTime: number) => invoke<KillOutcome>("kill_process", { pid, startTime }),
   },

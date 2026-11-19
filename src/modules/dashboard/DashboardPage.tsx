@@ -11,8 +11,11 @@ import { usePolling } from "@/hooks/usePolling";
 import { cn } from "@/lib/utils";
 import { api, isTauri } from "@/services/tauri";
 import type { SystemInfo } from "@/types";
-import { AutoFit, HISTORY_MAX, REFRESH_MS, WIDGETS, isWidgetType } from "./widgets";
-import type { DashboardData, WidgetSettings, WidgetType } from "./widgets";
+import { HISTORY_MAX, REFRESH_MS } from "./config";
+import type { DashboardData, WidgetSettings } from "./config";
+import { WIDGETS, isWidgetType } from "./registry";
+import type { WidgetType } from "./registry";
+import { AutoFit } from "./widgets";
 import { WidgetSettingsDialog } from "./WidgetSettingsDialog";
 
 const STORAGE_KEY = "devcenter.dashboard.layout.v1";

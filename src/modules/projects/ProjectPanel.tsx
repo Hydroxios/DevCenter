@@ -125,6 +125,7 @@ function GitCard({
 
 function LogViewer({ run }: { run: RunInfo }) {
   const lines = useRuns((s) => s.logs[run.id]);
+  const base = useRuns((s) => s.logBase[run.id] ?? 0);
   const loadLogs = useRuns((s) => s.loadLogs);
   const ref = useRef<HTMLPreElement>(null);
   const stick = useRef(true);
@@ -149,9 +150,10 @@ function LogViewer({ run }: { run: RunInfo }) {
       className="h-72 overflow-auto rounded-lg border bg-black p-3 font-mono text-xs leading-relaxed text-[#d4d4d8] select-text"
     >
       {lines && lines.length > 0 ? (
-        // Une ligne par élément : seules les nouvelles lignes sont calculées (adresses cliquables).
+        // Une ligne par élément, avec une clé stable (`base + i`) même quand les plus anciennes sont
+        // retirées : seules les nouvelles lignes sont calculées (adresses cliquables).
         lines.map((line, i) => (
-          <Fragment key={i}>
+          <Fragment key={base + i}>
             {i > 0 && "\n"}
             <LinkifiedLine text={line} />
           </Fragment>
