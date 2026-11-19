@@ -1,6 +1,7 @@
 //! Project Manager : projets enregistrés (SQLite) + métadonnées calculées à la demande.
 
 pub mod branches;
+pub mod commit;
 pub mod detect;
 pub mod git;
 pub mod gitcache;

@@ -659,3 +659,47 @@ pub async fn git_create_branch(
     })
     .await
 }
+
+// ---------------------------------------------------------------- Commit
+
+#[tauri::command]
+pub async fn git_changes(app: AppHandle, project_id: i64) -> AppResult<Vec<projects::commit::ChangedFile>> {
+    blocking(move || {
+        let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
+        projects::commit::changes(&path)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_stage(app: AppHandle, project_id: i64, paths: Vec<String>, staged: bool) -> AppResult<Vec<projects::commit::ChangedFile>> {
+    blocking(move || {
+        let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
+        if staged {
+            projects::commit::stage(&path, &paths)?;
+        } else {
+            projects::commit::unstage(&path, &paths)?;
+        }
+        projects::commit::changes(&path)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_file_diff(app: AppHandle, project_id: i64, path: String, staged: bool) -> AppResult<String> {
+    blocking(move || {
+        let dir = projects::path_of(&app.state::<AppState>().db, project_id)?;
+        projects::commit::diff(&dir, &path, staged)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_create_commit(app: AppHandle, project_id: i64, message: String, all: bool) -> AppResult<ProjectDetails> {
+    blocking(move || {
+        let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
+        projects::commit::commit(&path, &message, all)?;
+        Ok(projects::details_fresh(project_id, &path))
+    })
+    .await
+}

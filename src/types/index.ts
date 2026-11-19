@@ -133,6 +133,17 @@ export interface GitBranch {
   subject: string;
 }
 
+/** Fichier modifié, tel que préparé pour un commit. */
+export interface ChangedFile {
+  path: string;
+  origPath: string | null;
+  /** État dans l'index (`M`, `A`, `D`, `R`…), ou null si rien n'est indexé. */
+  staged: string | null;
+  /** État dans l'arbre de travail (`M`, `D`, `?` pour un fichier non suivi…), ou null. */
+  unstaged: string | null;
+  conflict: boolean;
+}
+
 export interface ProjectDetails {
   id: number;
   meta: ProjectMeta;

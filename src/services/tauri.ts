@@ -32,6 +32,7 @@ import type {
   CcusageTotal,
   GitLog,
   CommitDetails,
+  ChangedFile,
   GitBranch,
   SessionRecord,
   ActiveSession,
@@ -162,6 +163,14 @@ export const api = {
       invoke<ProjectDetails>("git_checkout", { projectId, name, remote }),
     createBranch: (projectId: number, name: string, from: string | null, switchTo: boolean) =>
       invoke<ProjectDetails>("git_create_branch", { projectId, name, from, switch: switchTo }),
+    changes: (projectId: number) => invoke<ChangedFile[]>("git_changes", { projectId }),
+    /** Indexe (`staged`) ou désindexe les fichiers ; renvoie la liste à jour. */
+    stage: (projectId: number, paths: string[], staged: boolean) =>
+      invoke<ChangedFile[]>("git_stage", { projectId, paths, staged }),
+    fileDiff: (projectId: number, path: string, staged: boolean) => invoke<string>("git_file_diff", { projectId, path, staged }),
+    /** Commit de l'index ; `all` indexe d'abord toutes les modifications. */
+    createCommit: (projectId: number, message: string, all: boolean) =>
+      invoke<ProjectDetails>("git_create_commit", { projectId, message, all }),
   },
   push: {
     /** Notification de test vers tous les téléphones abonnés ; retourne le nombre d'envois réussis. */

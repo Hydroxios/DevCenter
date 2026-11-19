@@ -36,6 +36,7 @@ import { runsForProject, useRuns } from "@/stores/runs";
 import { LinkifiedLine } from "@/components/LinkifiedText";
 import type { GitStatus, Project, ProjectDetails, RunInfo } from "@/types";
 import { BranchDialog } from "./BranchDialog";
+import { CommitDialog } from "./CommitDialog";
 import { GitHistory } from "./GitHistory";
 
 /** Scripts mis en avant en tête de liste. */
@@ -60,11 +61,13 @@ function GitCard({
   hasGit,
   onOpenCommit,
   onOpenBranches,
+  onCommit,
 }: {
   git: GitStatus | null | undefined;
   hasGit: boolean;
   onOpenCommit: (hash: string) => void;
   onOpenBranches: () => void;
+  onCommit: () => void;
 }) {
   if (!hasGit) {
     return <p className="text-sm text-muted-foreground">Ce dossier n'est pas un dépôt Git.</p>;
@@ -96,11 +99,14 @@ function GitCard({
       {changes === 0 ? (
         <p className="text-muted-foreground">Aucune modification locale.</p>
       ) : (
-        <div className="flex flex-wrap gap-x-4 gap-y-1">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           {git.staged > 0 && <span><b className="tabular-nums">{git.staged}</b> indexé{git.staged > 1 && "s"}</span>}
           {git.modified > 0 && <span><b className="tabular-nums">{git.modified}</b> modifié{git.modified > 1 && "s"}</span>}
           {git.untracked > 0 && <span><b className="tabular-nums">{git.untracked}</b> non suivi{git.untracked > 1 && "s"}</span>}
           {git.conflicts > 0 && <span className="text-destructive"><b className="tabular-nums">{git.conflicts}</b> en conflit</span>}
+          <Button size="sm" variant="secondary" className="ml-auto" onClick={onCommit} title="Préparer et créer un commit">
+            <GitCommitHorizontal /> Committer
+          </Button>
         </div>
       )}
 
@@ -297,6 +303,7 @@ export function ProjectPanel({
   const [focusCommit, setFocusCommit] = useState<string | null>(null);
   const runningCount = runs.filter((r) => r.status === "running").length;
   const [branchOpen, setBranchOpen] = useState(false);
+  const [commitOpen, setCommitOpen] = useState(false);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -344,7 +351,10 @@ export function ProjectPanel({
         </div>
       </header>
       {hasGit && (
-        <BranchDialog projectId={project.id} git={details?.git} open={branchOpen} onOpenChange={setBranchOpen} onChanged={onDetails} />
+        <>
+          <BranchDialog projectId={project.id} git={details?.git} open={branchOpen} onOpenChange={setBranchOpen} onChanged={onDetails} />
+          <CommitDialog projectId={project.id} open={commitOpen} onOpenChange={setCommitOpen} onCommitted={onDetails} />
+        </>
       )}
       {!project.exists && <p className="border-b px-6 py-2 text-sm text-destructive">Dossier introuvable : il a été déplacé ou supprimé.</p>}
       {actionError && <p className="border-b px-6 py-2 text-sm text-destructive">{actionError}</p>}
@@ -402,6 +412,7 @@ export function ProjectPanel({
                     setTab("history");
                   }}
                   onOpenBranches={() => setBranchOpen(true)}
+                  onCommit={() => setCommitOpen(true)}
                 />
               </Card>
             )}
