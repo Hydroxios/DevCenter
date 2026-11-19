@@ -1,6 +1,6 @@
 [package]
 name = "devcenter"
-version = "0.1.0"
+version = "0.2.0"
 description = "DevCenter — centre de contrôle pour développeur"
 authors = []
 edition = "2024"
