@@ -58,4 +58,6 @@ jobs:
           releaseName: "DevCenter ${{ github.ref_name }}"
           releaseBody: "Voir les notes ci-dessous. Installation : télécharger le fichier *_x64-setup.exe."
           releaseDraft: true
-          prerelease: true
+          # Pas de pré-release : `releases/latest/download/latest.json` (endpoint de l'updater)
+          # ignore les pré-releases et renverrait 404.
+          prerelease: false
