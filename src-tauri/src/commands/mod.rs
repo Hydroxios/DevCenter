@@ -89,6 +89,11 @@ pub async fn get_system_snapshot(app: AppHandle) -> AppResult<SystemSnapshot> {
 }
 
 #[tauri::command]
+pub async fn open_disk(app: AppHandle, mount_point: String) -> AppResult<()> {
+    blocking(move || app.state::<AppState>().system.open_disk(&mount_point)).await
+}
+
+#[tauri::command]
 pub async fn get_hardware(app: AppHandle) -> AppResult<HardwareSnapshot> {
     blocking(move || app.state::<AppState>().system.hardware()).await
 }

@@ -117,6 +117,7 @@ pub fn run() {
             commands::set_setting,
             commands::get_system_info,
             commands::get_system_snapshot,
+            commands::open_disk,
             commands::get_hardware,
             commands::list_processes,
             commands::kill_process,

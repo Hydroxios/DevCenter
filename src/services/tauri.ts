@@ -57,6 +57,8 @@ export const api = {
   system: {
     info: () => invoke<SystemInfo>("get_system_info"),
     snapshot: () => invoke<SystemSnapshot>("get_system_snapshot"),
+    /** Ouvre le disque dans l'explorateur (point de montage issu du snapshot). */
+    openDisk: (mountPoint: string) => invoke<void>("open_disk", { mountPoint }),
     hardware: () => invoke<HardwareSnapshot>("get_hardware"),
   },
   processes: {

@@ -437,7 +437,14 @@ export function StorageBody({ snap }: DashboardData) {
           <div key={d.mountPoint} className="grid gap-1.5">
             <div className="flex items-baseline justify-between gap-2 text-sm">
               <span className="min-w-0 truncate font-medium">
-                {d.mountPoint}
+                <button
+                  type="button"
+                  title={`Ouvrir ${d.mountPoint} dans l'explorateur`}
+                  onClick={() => void api.system.openDisk(d.mountPoint).catch(() => {})}
+                  className="cursor-pointer transition-colors hover:text-primary hover:underline"
+                >
+                  {d.mountPoint}
+                </button>
                 {d.name && <span className="ml-2 font-normal text-muted-foreground">{d.name}</span>}
               </span>
               <span className="meta shrink-0">{pct(used)}</span>

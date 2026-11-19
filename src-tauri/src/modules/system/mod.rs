@@ -196,6 +196,20 @@ impl SystemService {
         })
     }
 
+    /// Ouvre un disque dans l'explorateur. Seuls les points de montage détectés sont acceptés.
+    pub fn open_disk(&self, mount_point: &str) -> AppResult<()> {
+        let path = {
+            let disks = self.disks.lock()?;
+            disks
+                .iter()
+                .map(|d| d.mount_point().to_path_buf())
+                .find(|p| p.to_string_lossy() == mount_point)
+                .ok_or_else(|| AppError::InvalidInput(format!("disque inconnu : {mount_point}")))?
+        };
+        tauri_plugin_opener::open_path(&path, None::<&str>)
+            .map_err(|e| AppError::InvalidInput(format!("impossible d'ouvrir {} : {e}", path.display())))
+    }
+
     pub fn hardware(&self) -> AppResult<HardwareSnapshot> {
         let (reply_tx, reply_rx) = mpsc::channel();
         self.hardware.lock()?.send(reply_tx).map_err(|_| AppError::Unavailable("matériel"))?;
