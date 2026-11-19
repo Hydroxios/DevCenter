@@ -586,6 +586,53 @@ fn history_payload(app: &AppHandle) -> AppResult<Vec<MobileHistoryItem>> {
     Ok(items)
 }
 
+/// Intervalle des commentaires de maintien : garde la connexion ouverte à travers les proxys
+/// (Tailscale) et détecte un téléphone parti sans fermer proprement.
+const STREAM_KEEPALIVE: Duration = Duration::from_secs(15);
+
+/// Flux SSE des logs d'une exécution : les 400 dernières lignes (`reset`), puis chaque lot de
+/// nouvelles lignes ; `event: end` quand l'exécution est terminée.
+fn stream_logs(runner: &crate::modules::runner::Runner, req: Request, run_id: u64) {
+    use std::io::Write;
+    use std::sync::mpsc::RecvTimeoutError;
+
+    let (snapshot, rx) = match runner.subscribe(run_id, 400) {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = req.respond(error(404, &e.to_string()));
+            return;
+        }
+    };
+    let mut w = req.into_writer();
+    let mut send = |chunk: &str| w.write_all(chunk.as_bytes()).and_then(|_| w.flush()).is_ok();
+    let event = |lines: &[String], reset: bool| format!("data: {}\n\n", serde_json::json!({ "lines": lines, "reset": reset }));
+
+    // Réponse écrite à la main : pas de longueur ni d'encodage par blocs, le corps dure jusqu'à la
+    // fermeture et chaque message part aussitôt (flush).
+    let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream; charset=utf-8\r\nCache-Control: no-store\r\n\
+                X-Accel-Buffering: no\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n";
+    if !send(head) || !send(&event(&snapshot, true)) {
+        return;
+    }
+    let Some(rx) = rx else {
+        let _ = send("event: end\ndata: {}\n\n");
+        return;
+    };
+    loop {
+        let ok = match rx.recv_timeout(STREAM_KEEPALIVE) {
+            Ok(lines) => send(&event(&lines, false)),
+            Err(RecvTimeoutError::Timeout) => send(": ping\n\n"),
+            Err(RecvTimeoutError::Disconnected) => {
+                let _ = send("event: end\ndata: {}\n\n");
+                return;
+            }
+        };
+        if !ok {
+            return; // téléphone déconnecté : l'abonnement est retiré au prochain lot
+        }
+    }
+}
+
 fn handle(app: &AppHandle, mut req: Request) {
     let peer_ok = req.remote_addr().is_some_and(|a| is_private(a.ip()));
     if !peer_ok {
@@ -686,6 +733,16 @@ fn handle(app: &AppHandle, mut req: Request) {
     }
 
     let segments: Vec<&str> = path.trim_matches('/').split('/').collect();
+    // Logs en direct : la réponse reste ouverte, elle ne passe pas par `req.respond`.
+    if let (Method::Get, ["api", "runs", id, "stream"]) = (&method, segments.as_slice()) {
+        match id.parse::<u64>() {
+            Ok(id) => stream_logs(&state.runner, req, id),
+            Err(_) => {
+                let _ = req.respond(error(400, "identifiant invalide"));
+            }
+        }
+        return;
+    }
     let ok = || json_response(200, &serde_json::json!({ "ok": true }));
     let resp = match (&method, segments.as_slice()) {
         (Method::Get, ["api", "status"]) => match status_payload(app) {

@@ -8,7 +8,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
@@ -61,6 +61,8 @@ struct LogBatch {
     lines: Mutex<Vec<String>>,
     /// Lecteurs encore ouverts : l'envoi s'arrête quand tous ont terminé.
     open_readers: AtomicUsize,
+    /// Flux en direct (page mobile) : reçoivent chaque lot, fermés à la fin de l'exécution.
+    subscribers: Mutex<Vec<mpsc::Sender<Vec<String>>>>,
 }
 
 struct Run {
@@ -71,6 +73,7 @@ struct Run {
     url_pending: bool,
     /// Ouvre l'URL détectée dans le navigateur (démarrage de workspace).
     open_browser: bool,
+    batch: Arc<LogBatch>,
 }
 
 #[derive(Default)]
@@ -108,9 +111,20 @@ fn spawn_log_flusher(app: AppHandle, runs: Arc<Mutex<HashMap<u64, Run>>>, id: u6
         std::thread::sleep(LOG_FLUSH_EVERY);
         // Lu avant de vider le tampon : une ligne poussée juste avant la fermeture n'est pas perdue.
         let done = batch.open_readers.load(Ordering::SeqCst) == 0;
-        let lines = match batch.lines.lock() {
-            Ok(mut pending) => std::mem::take(&mut *pending),
-            Err(_) => return,
+        // Abonnés servis sous le verrou du tampon : `subscribe` voit donc chaque ligne soit dans
+        // l'instantané, soit dans un lot, jamais les deux.
+        let lines = {
+            let Ok(mut pending) = batch.lines.lock() else { return };
+            let lines = std::mem::take(&mut *pending);
+            if let Ok(mut subs) = batch.subscribers.lock() {
+                if !lines.is_empty() {
+                    subs.retain(|s| s.send(lines.clone()).is_ok());
+                }
+                if done {
+                    subs.clear(); // fin de l'exécution : les flux se ferment
+                }
+            }
+            lines
         };
         if !lines.is_empty() {
             let _ = app.emit(EVENT_LOG, LogEvent { run_id: id, lines });
@@ -139,6 +153,25 @@ impl Runner {
         let runs = self.runs.lock()?;
         let run = runs.get(&run_id).ok_or_else(|| AppError::InvalidInput(format!("exécution {run_id} inconnue")))?;
         Ok(run.logs.iter().cloned().collect())
+    }
+
+    /// Abonnement au flux de logs d'une exécution : les `tail` dernières lignes déjà reçues, puis
+    /// chaque nouveau lot via le canal (`None` si l'exécution est terminée : rien ne viendra plus).
+    pub fn subscribe(&self, run_id: u64, tail: usize) -> AppResult<(Vec<String>, Option<mpsc::Receiver<Vec<String>>>)> {
+        let runs = self.runs.lock()?;
+        let run = runs.get(&run_id).ok_or_else(|| AppError::InvalidInput(format!("exécution {run_id} inconnue")))?;
+        let pending = run.batch.lines.lock()?;
+        let mut subs = run.batch.subscribers.lock()?;
+        // Les lignes encore en attente partiront dans le prochain lot : exclues de l'instantané.
+        let sent = run.logs.len().saturating_sub(pending.len());
+        let snapshot: Vec<String> = run.logs.iter().take(sent).skip(sent.saturating_sub(tail)).cloned().collect();
+        let live = run.batch.open_readers.load(Ordering::SeqCst) > 0 || !pending.is_empty();
+        let rx = live.then(|| {
+            let (tx, rx) = mpsc::channel();
+            subs.push(tx);
+            rx
+        });
+        Ok((snapshot, rx))
     }
 
     pub fn start(
@@ -197,17 +230,31 @@ impl Runner {
             started_at: SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
         };
 
+        let batch = Arc::new(LogBatch {
+            lines: Mutex::new(Vec::new()),
+            open_readers: AtomicUsize::new(0),
+            subscribers: Mutex::new(Vec::new()),
+        });
         // Retire les anciennes exécutions terminées du même script (garde l'historique court).
         {
             let mut runs = self.runs.lock()?;
             runs.retain(|_, r| {
                 !(r.info.project_id == project_id && r.info.script == script && r.info.status != RunStatus::Running)
             });
-            runs.insert(id, Run { info: info.clone(), logs: VecDeque::new(), stop_requested: false, url_pending: false, open_browser });
+            runs.insert(
+                id,
+                Run {
+                    info: info.clone(),
+                    logs: VecDeque::new(),
+                    stop_requested: false,
+                    url_pending: false,
+                    open_browser,
+                    batch: Arc::clone(&batch),
+                },
+            );
         }
         let _ = app.emit(EVENT_STATUS, &info);
 
-        let batch = Arc::new(LogBatch { lines: Mutex::new(Vec::new()), open_readers: AtomicUsize::new(0) });
         if let Some(out) = child.stdout.take() {
             self.spawn_reader(Arc::clone(&batch), id, out);
         }
@@ -283,10 +330,11 @@ impl Runner {
                         run.logs.pop_front();
                     }
                     run.logs.push_back(line.clone());
-                }
-                match batch.lines.lock() {
-                    Ok(mut pending) => pending.push(line),
-                    Err(_) => break,
+                    // Sous le verrou des exécutions : cohérent avec l'instantané de `subscribe`.
+                    match batch.lines.lock() {
+                        Ok(mut pending) => pending.push(line),
+                        Err(_) => break,
+                    }
                 }
             }
         });

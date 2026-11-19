@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 
 import { api } from "@/services/tauri";
-import type { Project, ProjectDetails } from "@/types";
+import type { GitStatus, Project, ProjectDetails } from "@/types";
 
 /**
  * Projets + détails (Git, frameworks, scripts).
@@ -106,11 +106,17 @@ export function useProjects() {
     window.addEventListener("focus", onFocus);
     // Projet importé ou cloné depuis le téléphone.
     const unlisten = listen("projects://changed", () => refresh());
+    // Statut Git poussé par l'observateur de fichiers Rust (seulement quand il change).
+    const unlistenGit = listen<{ id: number; git: GitStatus | null }>("projects://git", ({ payload }) => {
+      const prev = cache.details[payload.id];
+      if (prev) setOne({ ...prev, git: payload.git });
+    });
     return () => {
       window.removeEventListener("focus", onFocus);
       unlisten.then((f) => f());
+      unlistenGit.then((f) => f());
     };
-  }, [refresh]);
+  }, [refresh, setOne]);
 
   return { projects, details, error, setError, apply, refresh, refreshOne, setOne };
 }

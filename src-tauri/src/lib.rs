@@ -5,7 +5,7 @@ mod modules;
 mod state;
 mod tray;
 
-use tauri::{Manager, RunEvent, WindowEvent};
+use tauri::{Listener, Manager, RunEvent, WindowEvent};
 
 use database::Database;
 use modules::settings::SettingsService;
@@ -65,8 +65,18 @@ pub fn run() {
                 remote: Default::default(),
                 clones: Default::default(),
                 github: Default::default(),
+                git_watcher: Default::default(),
             });
             modules::automations::spawn_scheduler(app.handle().clone());
+
+            // Statut Git en direct ; la liste suivie est réalignée à chaque changement de projets
+            // (ajout, retrait, clonage, import depuis le téléphone).
+            app.state::<AppState>().git_watcher.start(app.handle());
+            let handle = app.handle().clone();
+            app.listen_any(modules::projects::import::EVENT_CHANGED, move |_| {
+                let state = handle.state::<AppState>();
+                state.git_watcher.sync(&state.db);
+            });
 
             // Accès à distance : redémarré au lancement s'il était activé (une erreur de port
             // n'empêche pas DevCenter de démarrer ; elle est affichée dans les paramètres).

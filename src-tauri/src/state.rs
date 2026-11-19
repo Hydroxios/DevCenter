@@ -1,6 +1,7 @@
 use crate::database::Database;
 use crate::modules::github::GithubCache;
 use crate::modules::projects::import::CloneJobs;
+use crate::modules::projects::watcher::GitWatcher;
 use crate::modules::automations::AutomationRuntime;
 use crate::modules::remote::RemoteAccess;
 use crate::modules::runner::Runner;
@@ -21,4 +22,6 @@ pub struct AppState {
     pub remote: RemoteAccess,
     pub clones: CloneJobs,
     pub github: GithubCache,
+    /// Statut Git poussé à l'interface quand un dépôt change.
+    pub git_watcher: GitWatcher,
 }

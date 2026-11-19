@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { Check, ChevronRight, Copy, FileMinus, FilePen, FilePlus, FileSymlink, FileX, GitBranch, Loader2, RefreshCw, Tag, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -111,6 +112,26 @@ export function GitHistory({
     setSelected(null);
     load();
   }, [load, projectId]);
+
+  // Dépôt modifié (commit, checkout, fetch…) : relecture discrète. Côté Rust, l'historique n'est
+  // recalculé que si les refs ont changé ; une simple édition de fichier ne coûte presque rien.
+  useEffect(() => {
+    const unlisten = listen<{ id: number }>("projects://git", ({ payload }) => {
+      if (payload.id !== projectId) return;
+      api.git
+        .log(projectId)
+        .then((fresh) => {
+          // Simple édition de fichier : même historique, pas de nouveau rendu.
+          if (JSON.stringify(fresh) === JSON.stringify(logCache.get(projectId))) return;
+          logCache.set(projectId, fresh);
+          setLog(fresh);
+        })
+        .catch(() => {});
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [projectId]);
 
   useEffect(() => {
     if (!log || !focusHash) return;

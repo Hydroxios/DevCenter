@@ -138,12 +138,16 @@ pub fn list_projects(state: State<'_, AppState>) -> AppResult<Vec<Project>> {
 
 #[tauri::command]
 pub fn add_projects(state: State<'_, AppState>, paths: Vec<String>) -> AppResult<Vec<Project>> {
-    projects::add(&state.db, &paths)
+    let list = projects::add(&state.db, &paths)?;
+    state.git_watcher.sync(&state.db);
+    Ok(list)
 }
 
 #[tauri::command]
 pub fn remove_project(state: State<'_, AppState>, id: i64) -> AppResult<Vec<Project>> {
-    projects::remove(&state.db, id)
+    let list = projects::remove(&state.db, id)?;
+    state.git_watcher.sync(&state.db);
+    Ok(list)
 }
 
 #[tauri::command]

@@ -932,10 +932,14 @@
   }
 
   // ---------------------------------------------------------------- logs
-  let logsTimer = null;
+  // Flux en direct (SSE via fetch : EventSource ne permet pas d'envoyer le jeton dans un en-tête).
+  // Premier message : les dernières lignes ; ensuite chaque lot de nouvelles lignes.
+  const MAX_LOG_LINES = 1000;
   function openLogs(r) {
     const pre = h("pre", {}, "Chargement…");
-    const close = () => { clearInterval(logsTimer); sheet.remove(); };
+    const ctrl = new AbortController();
+    let retry = null;
+    const close = () => { ctrl.abort(); clearTimeout(retry); sheet.remove(); };
     const sheet = h("div", { class: "sheet", onclick: (e) => { if (e.target === sheet) close(); } },
       h("div", { class: "panel" },
         h("div", { style: "display:flex; align-items:center; gap:10px" },
@@ -945,15 +949,51 @@
     document.body.append(sheet);
     let stick = true;
     pre.addEventListener("scroll", () => { stick = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 30; });
-    const load = async () => {
-      try {
-        const { lines } = await api(`/api/runs/${r.id}/logs`);
-        pre.textContent = lines.length ? lines.join("\n") : "(aucune sortie pour l'instant)";
-        if (stick) pre.scrollTop = pre.scrollHeight;
-      } catch (e) { pre.textContent = e.message; clearInterval(logsTimer); }
+    let lines = [];
+    const paint = () => {
+      pre.textContent = lines.length ? lines.join("\n") : "(aucune sortie pour l'instant)";
+      if (stick) pre.scrollTop = pre.scrollHeight;
     };
-    load();
-    logsTimer = setInterval(() => { if (!document.hidden) load(); }, 2000);
+    /** Traite un message SSE ; renvoie vrai à la fin de l'exécution. */
+    const onEvent = (raw) => {
+      let ev = "message", data = "";
+      for (const l of raw.split("\n")) {
+        if (l.startsWith("event:")) ev = l.slice(6).trim();
+        else if (l.startsWith("data:")) data += l.slice(5).trim();
+      }
+      if (ev === "end") return true;
+      if (!data) return false; // commentaire de maintien de connexion
+      const msg = JSON.parse(data);
+      lines = (msg.reset ? msg.lines : lines.concat(msg.lines)).slice(-MAX_LOG_LINES);
+      paint();
+      return false;
+    };
+    const stream = async () => {
+      try {
+        const res = await fetch(`/api/runs/${r.id}/stream`, { headers: { Authorization: "Bearer " + token }, signal: ctrl.signal });
+        if (res.status === 401) { forget(); return; }
+        if (!res.ok) { pre.textContent = (await res.json().catch(() => ({}))).error || "erreur " + res.status; return; }
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let buf = "";
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let i;
+          while ((i = buf.indexOf("\n\n")) >= 0) {
+            const raw = buf.slice(0, i);
+            buf = buf.slice(i + 2);
+            if (onEvent(raw)) return; // exécution terminée : plus rien ne viendra
+          }
+        }
+      } catch (e) {
+        if (ctrl.signal.aborted) return;
+      }
+      // Connexion perdue (réseau, mise en veille) : reprise ; l'instantané remplace l'affichage.
+      if (!ctrl.signal.aborted) retry = setTimeout(stream, 3000);
+    };
+    stream();
   }
 
   // ---------------------------------------------------------------- données

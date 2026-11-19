@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use crate::modules::shell;
 
-#[derive(Debug, Default, Clone, Serialize)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitStatus {
     /// Branche courante, ou `None` en HEAD détachée.
@@ -21,7 +21,7 @@ pub struct GitStatus {
     pub last_commit: Option<LastCommit>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LastCommit {
     pub hash: String,
