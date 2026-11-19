@@ -482,3 +482,83 @@ export interface UpdateInfo {
   /** Date de publication (horodatage Unix). */
   date: number | null;
 }
+
+/* ------------------------------------------------------------------ */
+/* Activité (widgets du tableau de bord)                               */
+/* ------------------------------------------------------------------ */
+
+export interface CommitActivity {
+  /** Jours ayant au moins un commit (`AAAA-MM-JJ`, heure locale). */
+  days: { date: string; count: number }[];
+  total: number;
+  repos: number;
+}
+
+/** Un commit de l'utilisateur, pour le détail d'un jour de la grille. */
+export interface DayCommit {
+  projectId: number;
+  projectName: string;
+  hash: string;
+  subject: string;
+  /** Horodatage Unix. */
+  time: number;
+}
+
+/** Une journée du rapport `ccusage daily --json`. */
+export interface CcusageDay {
+  period: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  totalTokens: number;
+  totalCost: number;
+  modelsUsed: string[];
+  modelBreakdowns?: {
+    modelName: string;
+    cost: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheCreationTokens: number;
+    cacheReadTokens: number;
+  }[];
+}
+
+/** Coût et tokens Claude Code depuis le premier usage relevé. */
+export interface CcusageTotal {
+  cost: number;
+  tokens: number;
+  /** Premier jour relevé (`AAAA-MM-JJ`). */
+  since: string | null;
+  activeDays: number;
+}
+
+/** Détail Claude Code d'un jour : coût par projet et fenêtres de facturation de 5 h. */
+export interface CcusageDayDetail {
+  projects: {
+    key: string;
+    name: string;
+    projectId: number | null;
+    path: string | null;
+    cost: number;
+    totalTokens: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheCreationTokens: number;
+    cacheReadTokens: number;
+    models: string[];
+  }[];
+  blocks: {
+    start: string;
+    end: string | null;
+    active: boolean;
+    cost: number;
+    totalTokens: number;
+    entries: number;
+    models: string[];
+  }[];
+}
+
+export interface CcusageReport {
+  daily: CcusageDay[];
+}

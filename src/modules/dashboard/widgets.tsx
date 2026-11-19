@@ -1,7 +1,7 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Activity, ArrowUpRight, Clock, Cpu, Gpu, HardDrive, Layers, ListOrdered, MemoryStick, Play, Square, Star, X } from "lucide-react";
+import { Activity, ArrowUpRight, Bot, Loader2, Clock, Cpu, GitCommitHorizontal, Gpu, HardDrive, Layers, ListOrdered, MemoryStick, Play, Square, Star, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { Progress } from "@/components/ui/progress";
@@ -12,6 +12,8 @@ import { useRuns } from "@/stores/runs";
 import { useWorkspaces } from "@/stores/workspaces";
 import type { SystemInfo, SystemSnapshot } from "@/types";
 import { WorkspaceToggle } from "@/modules/workspaces/WorkspacesPage";
+import { ActivityView, ContributionGrid, GRID_GAP, GRID_LEFT, GridLegend, RefreshButton, dayKey, streaks } from "./activity";
+import { UsageBars, UsageView, compact, rangeLabel, usageDays, usd } from "./usage";
 
 export const REFRESH_MS = 2000;
 /** Nombre de mesures conservées (150 × 2 s = 5 minutes, la plus longue fenêtre proposée). */
@@ -30,6 +32,9 @@ export type ChartStyle = "area" | "line" | "smooth" | "step" | "bars" | "gauge" 
 /** Vrai si le style affiche un historique (et donc une durée). */
 export const hasHistory = (c: ChartStyle | undefined) => c !== "gauge" && c !== "none";
 export type ProcessSort = "cpu" | "memory";
+/** Périodes proposées pour le widget Claude Code, en jours. */
+export const USAGE_RANGES = [7, 14, 30, 90, 365] as const;
+export type UsageRange = (typeof USAGE_RANGES)[number];
 
 /** Réglages enregistrés pour un widget (tous facultatifs : valeurs par défaut sinon). */
 export interface WidgetSettings {
@@ -696,6 +701,256 @@ function ProcessesBody({ count = 8, sort = "cpu" }: { count?: number; sort?: Pro
 }
 
 /* ------------------------------------------------------------------ */
+/* Activité : commits et ccusage                                       */
+/* ------------------------------------------------------------------ */
+
+const ACTIVITY_REFRESH_MS = 5 * 60_000;
+
+/**
+ * Données lentes à obtenir (git sur tous les dépôts, ccusage), gardées en mémoire pour la session :
+ * en revenant sur le tableau de bord, le widget s'affiche aussitôt avec la dernière valeur, et la
+ * relecture n'a lieu que lorsque celle-ci a dépassé l'intervalle de rafraîchissement.
+ */
+const pollCache = new Map<string, { at: number; data: unknown }>();
+
+/**
+ * Comme `usePolling`, avec le cache ci-dessus. Quand `key` change (autre période), les données
+ * précédentes restent affichées pendant la lecture : `loading` le signale, sans écran d'attente.
+ * `dataKey` indique à quelle clé correspondent les données affichées.
+ */
+function useCachedPolling<T>(key: string, fetcher: (force: boolean) => Promise<T>, intervalMs = ACTIVITY_REFRESH_MS) {
+  const read = (k: string) => pollCache.get(k) as { at: number; data: T } | undefined;
+  const [state, setState] = useState<{ data: T | null; dataKey: string | null; error: string | null; loading: boolean }>(() => {
+    const hit = read(key);
+    return { data: hit?.data ?? null, dataKey: hit ? key : null, error: null, loading: !hit };
+  });
+  const fetcherRef = useRef(fetcher);
+  fetcherRef.current = fetcher;
+  const refreshRef = useRef<() => void>(() => {});
+  const enabled = isTauri();
+
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    const hit = read(key);
+    // Données déjà en cache pour cette clé : affichées tout de suite ; sinon on garde les précédentes.
+    setState((s) => (hit ? { data: hit.data, dataKey: key, error: null, loading: false } : { ...s, error: null, loading: true }));
+
+    const tick = async (force = false) => {
+      if (force || document.visibilityState === "visible") {
+        try {
+          const data = await fetcherRef.current(force);
+          pollCache.set(key, { at: Date.now(), data });
+          if (!cancelled) setState({ data, dataKey: key, error: null, loading: false });
+        } catch (e) {
+          if (!cancelled) setState((s) => ({ ...s, error: String(e), loading: false }));
+        }
+      }
+      if (!cancelled) timer = window.setTimeout(tick, intervalMs);
+    };
+    const onVisible = () => {
+      const fresh = read(key);
+      if (document.visibilityState === "visible" && (!fresh || Date.now() - fresh.at >= intervalMs)) {
+        window.clearTimeout(timer);
+        tick();
+      }
+    };
+    timer = window.setTimeout(tick, hit ? Math.max(0, intervalMs - (Date.now() - hit.at)) : 0);
+    // Actualisation à la demande : relecture immédiate, sans cache (y compris côté Rust).
+    refreshRef.current = () => {
+      window.clearTimeout(timer);
+      setState((s) => ({ ...s, error: null, loading: true }));
+      tick(true);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [key, intervalMs, enabled]);
+
+  const refresh = useCallback(() => refreshRef.current(), []);
+  return { ...state, refresh };
+}
+const fetchCommits = () => api.activity.commits(371);
+
+/** Grille de contributions façon profil GitHub ; un clic ouvre la vue Activité en plein écran. */
+function CommitsBody() {
+  const { data, error, loading, refresh } = useCachedPolling("commits", fetchCommits);
+  const [ref, { w, h }] = useSize<HTMLDivElement>();
+  const [openDay, setOpenDay] = useState<Date | null>(null);
+  const counts = useMemo(() => new Map(data?.days.map((d) => [d.date, d.count]) ?? []), [data]);
+
+  const TOP = 14; // libellés des mois
+  const FOOT = 20; // total et légende
+  // Taille de case dictée par la hauteur, puis nombre de semaines qui tiennent en largeur (53 au plus).
+  let cell = Math.max(4, Math.min(22, (h - TOP - FOOT) / 7 - GRID_GAP));
+  let weeks = Math.floor((w - GRID_LEFT + GRID_GAP) / (cell + GRID_GAP));
+  if (weeks > 53) {
+    weeks = 53;
+    cell = Math.max(4, (w - GRID_LEFT + GRID_GAP) / 53 - GRID_GAP);
+  }
+  weeks = Math.max(1, weeks);
+
+  // Total sur les semaines affichées.
+  const today = new Date();
+  const from = new Date(today);
+  from.setDate(today.getDate() - ((today.getDay() + 6) % 7) - (weeks - 1) * 7);
+  const fromKey = dayKey(from);
+  const total = data?.days.reduce((a, d) => (d.date >= fromKey ? a + d.count : a), 0) ?? 0;
+  const { current } = streaks(counts);
+
+  return (
+    <div ref={ref} className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
+      {error && !data ? (
+        <p className="text-sm text-destructive">{error}</p>
+      ) : !data ? (
+        <Empty>Lecture des dépôts…</Empty>
+      ) : (
+        w > 0 && (
+          // Largeur calée sur la grille : le pied ne peut pas déborder du widget.
+          <div className="grid gap-1" style={{ width: GRID_LEFT + weeks * (cell + GRID_GAP) - GRID_GAP }}>
+            <ContributionGrid counts={counts} weeks={weeks} cell={cell} onSelect={setOpenDay} />
+            <div className="mt-1 flex min-w-0 items-center justify-between gap-3 text-[11px] text-muted-foreground" style={{ marginLeft: GRID_LEFT }}>
+              <span className="min-w-0 truncate">
+                <span className="font-mono text-foreground tabular-nums">{total}</span> commit{total > 1 ? "s" : ""} · {data.repos} dépôt
+                {data.repos > 1 ? "s" : ""}
+                {current > 0 && (
+                  <>
+                    {" "}
+                    · série de <span className="font-mono text-foreground tabular-nums">{current}</span> j
+                  </>
+                )}
+              </span>
+              <span className="flex shrink-0 items-center gap-1.5">
+                {/* Légende seulement s'il reste de la place à côté du total. */}
+                {weeks * (cell + GRID_GAP) > 420 && <GridLegend />}
+                <RefreshButton onClick={refresh} loading={loading} label="Actualiser les commits" className="size-5" />
+              </span>
+            </div>
+          </div>
+        )
+      )}
+      {data && <ActivityView activity={data} onRefresh={refresh} refreshing={loading} day={openDay} onDayChange={setOpenDay} onClose={() => setOpenDay(null)} />}
+    </div>
+  );
+}
+
+/** Coût et tokens Claude Code par jour, relevés par `ccusage` ; un clic sur une barre ouvre le détail. */
+const RANGE_KEY = "devcenter.dashboard.ccusage.range";
+
+function readRange(): UsageRange {
+  try {
+    const v = Number(localStorage.getItem(RANGE_KEY));
+    return (USAGE_RANGES as readonly number[]).includes(v) ? (v as UsageRange) : 30;
+  } catch {
+    return 30;
+  }
+}
+
+/** Widget Claude Code : la période se choisit directement sur le widget (mémorisée localement). */
+function CcusageWidget() {
+  const [range, setRange] = useState<UsageRange>(readRange);
+  const change = (r: UsageRange) => {
+    setRange(r);
+    try {
+      localStorage.setItem(RANGE_KEY, String(r));
+    } catch {
+      /* stockage indisponible : période non conservée */
+    }
+  };
+  return <CcusageBody points={range} onRange={change} />;
+}
+
+/** Sélecteur compact de période, posé sur le widget. */
+function RangePicker({ value, onChange }: { value: UsageRange; onChange: (r: UsageRange) => void }) {
+  return (
+    <div className="inline-flex shrink-0 rounded-md border bg-background/40 p-px" role="radiogroup" aria-label="Période">
+      {USAGE_RANGES.map((n) => (
+        <button
+          key={n}
+          type="button"
+          role="radio"
+          aria-checked={value === n}
+          title={rangeLabel(n)}
+          onClick={() => onChange(n)}
+          className={cn(
+            "rounded-[5px] px-1.5 py-0.5 font-mono text-[10px] leading-none transition-colors",
+            value === n ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {n === 365 ? "1a" : `${n}j`}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CcusageBody({ points, onRange }: { points: UsageRange; onRange: (r: UsageRange) => void }) {
+  // Au moins le mois en cours (statistique « Ce mois »).
+  const needed = Math.max(points, 31);
+  // Un relevé plus long encore frais couvre aussi cette période : inutile de relancer ccusage.
+  const fetchDays =
+    USAGE_RANGES.map((n) => Math.max(n, 31)).find((n) => {
+      const hit = pollCache.get(`ccusage:${n}`);
+      return n >= needed && hit && Date.now() - hit.at < ACTIVITY_REFRESH_MS;
+    }) ?? needed;
+  const usage = useCachedPolling(`ccusage:${fetchDays}`, (force) => api.activity.ccusage(fetchDays, force));
+  const { data, dataKey, error, loading } = usage;
+  // Jours réellement couverts par les données affichées (les précédentes pendant une lecture).
+  const covered = dataKey ? Number(dataKey.split(":")[1]) : fetchDays;
+  const totalPoll = useCachedPolling("ccusage:total", (force) => api.activity.ccusageTotal(force));
+  const total = totalPoll.data;
+  const refresh = () => {
+    usage.refresh();
+    totalPoll.refresh();
+  };
+  const [openDay, setOpenDay] = useState<Date | null>(null);
+  if (error && !data) return <p className="text-sm text-destructive">{error}</p>;
+  if (!data) return <Empty>Lancement de ccusage…</Empty>;
+
+  const days = usageDays(data, points);
+  const sum = (n: number) => days.slice(-n).reduce((a, d) => a + d.cost, 0);
+  const monthKey = dayKey(new Date()).slice(0, 7);
+  const month = data.daily.filter((d) => d.period.startsWith(monthKey)).reduce((a, d) => a + d.totalCost, 0);
+  const last = days[days.length - 1];
+
+  return (
+    <>
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+        <BigValue value={usd(last.cost)} sub={`${compact.format(last.tokens)} tokens aujourd'hui`} />
+        <div className="flex shrink-0 gap-5">
+          <Stat label="7 jours" value={usd(sum(7))} />
+          <Stat label={rangeLabel(points)} value={usd(sum(points))} />
+          <Stat label="Ce mois" value={usd(month)} />
+          <Stat label="Total" value={total ? usd(total.cost) : "…"} />
+        </div>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-1.5">
+        <div className="flex items-center justify-end gap-2">
+          {loading && (
+            <span className="flex items-center gap-1 text-[10px] text-muted-foreground" role="status">
+              <Loader2 className="size-3 animate-spin" /> Lecture…
+            </span>
+          )}
+          {error && !loading && (
+            <span className="truncate text-[10px] text-destructive" title={error}>
+              Échec de la lecture
+            </span>
+          )}
+          <RangePicker value={points} onChange={onRange} />
+          <RefreshButton onClick={refresh} loading={loading || totalPoll.loading} label="Actualiser ccusage" className="size-5" />
+        </div>
+        <UsageBars days={days} onSelect={setOpenDay} className={cn("transition-opacity", loading && "animate-pulse opacity-50")} />
+      </div>
+      <UsageView report={data} total={total} onRefresh={refresh} refreshing={loading || totalPoll.loading} covered={covered} initialRange={points} day={openDay} onDayChange={setOpenDay} onClose={() => setOpenDay(null)} />
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Catalogue                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -798,6 +1053,23 @@ export const WIDGETS = {
     aside: () => <WidgetLink to="/system" />,
     render: (_d, s) => <ProcessesBody count={s.count} sort={s.sort} />,
     options: ["count", "sort"],
+  },
+  commits: {
+    title: "Commits",
+    description: "Grille des contributions de tous les projets, façon GitHub",
+    icon: GitCommitHorizontal,
+    size: { w: 8, h: 4, minW: 3, minH: 2 },
+    aside: () => <WidgetLink to="/projects">Projets</WidgetLink>,
+    render: () => <CommitsBody />,
+    fit: "fill",
+  },
+  ccusage: {
+    title: "Claude Code",
+    description: "Coût et tokens par jour (ccusage)",
+    icon: Bot,
+    size: { w: 4, h: 4, minW: 2, minH: 2 },
+    render: () => <CcusageWidget />,
+    fit: "fill",
   },
 } satisfies Record<string, WidgetDef>;
 

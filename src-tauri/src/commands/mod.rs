@@ -529,6 +529,50 @@ pub fn list_clone_jobs(state: State<'_, AppState>) -> Vec<CloneJob> {
     state.clones.list()
 }
 
+// ---------------------------------------------------------------- Activité (tableau de bord)
+
+/// Commits par jour de l'utilisateur, tous projets confondus.
+#[tauri::command]
+pub async fn commit_activity(app: AppHandle, days: Option<u32>) -> AppResult<crate::modules::activity::CommitActivity> {
+    blocking(move || {
+        let paths = projects::list(&app.state::<AppState>().db)?.into_iter().filter(|p| p.exists).map(|p| p.path).collect();
+        Ok(crate::modules::activity::commits(paths, days.unwrap_or(371)))
+    })
+    .await
+}
+
+/// Détail des commits de l'utilisateur pour un jour (`AAAA-MM-JJ`).
+#[tauri::command]
+pub async fn commits_on_day(app: AppHandle, date: String) -> AppResult<Vec<crate::modules::activity::DayCommit>> {
+    blocking(move || {
+        let list = projects::list(&app.state::<AppState>().db)?.into_iter().filter(|p| p.exists).map(|p| (p.id, p.name, p.path)).collect();
+        crate::modules::activity::commits_on(list, &date)
+    })
+    .await
+}
+
+/// Détail Claude Code d'un jour (`AAAA-MM-JJ`) : coût par projet et fenêtres de 5 h.
+#[tauri::command]
+pub async fn ccusage_day(app: AppHandle, date: String) -> AppResult<crate::modules::activity::DayUsage> {
+    blocking(move || {
+        let list = projects::list(&app.state::<AppState>().db)?.into_iter().map(|p| (p.id, p.name, p.path)).collect();
+        crate::modules::activity::ccusage_day(list, &date)
+    })
+    .await
+}
+
+/// Coût et tokens Claude Code depuis le premier usage.
+#[tauri::command]
+pub async fn ccusage_total(force: Option<bool>) -> AppResult<crate::modules::activity::UsageTotal> {
+    blocking(move || crate::modules::activity::ccusage_total(force.unwrap_or(false))).await
+}
+
+/// Consommation Claude Code relevée par `ccusage daily --json`.
+#[tauri::command]
+pub async fn ccusage_daily(days: Option<u32>, force: Option<bool>) -> AppResult<serde_json::Value> {
+    blocking(move || crate::modules::activity::ccusage(days.unwrap_or(30), force.unwrap_or(false))).await
+}
+
 // ---------------------------------------------------------------- Historique Git
 
 #[tauri::command]

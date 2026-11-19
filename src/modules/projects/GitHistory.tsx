@@ -260,7 +260,18 @@ function FileRow({ file, defaultOpen }: { file: FileChange; defaultOpen: boolean
   );
 }
 
-function CommitPanel({ projectId, commit, onClose }: { projectId: number; commit: GraphCommit; onClose: () => void }) {
+/** Panneau de détail d'un commit (fichiers et diff). Aussi utilisé par la vue Activité du tableau de bord. */
+export function CommitPanel({
+  projectId,
+  commit,
+  onClose,
+  className,
+}: {
+  projectId: number;
+  commit: Pick<GraphCommit, "hash" | "short" | "subject" | "refs">;
+  onClose: () => void;
+  className?: string;
+}) {
   const cacheKey = `${projectId}:${commit.hash}`;
   const [details, setDetails] = useState<CommitDetails | null>(() => commitCache.get(cacheKey) ?? null);
   const [error, setError] = useState<string | null>(null);
@@ -279,7 +290,7 @@ function CommitPanel({ projectId, commit, onClose }: { projectId: number; commit
   }, [projectId, commit.hash, cacheKey]);
 
   return (
-    <aside className="flex w-[min(640px,52%)] shrink-0 flex-col border-l bg-card">
+    <aside className={cn("flex w-[min(640px,52%)] shrink-0 flex-col border-l bg-card", className)}>
       <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b px-4">
         <span className="eyebrow">commit {commit.short}</span>
         <Button variant="ghost" size="icon" className="size-7" onClick={onClose} aria-label="Fermer le détail" title="Fermer (Échap)">

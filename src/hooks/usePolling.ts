@@ -8,7 +8,12 @@ export function usePolling<T>(
   fetcher: () => Promise<T>,
   intervalMs: number,
   enabled = true,
-  options: { initial?: T | null; onData?: (data: T) => void } = {},
+  options: {
+    initial?: T | null;
+    onData?: (data: T) => void;
+    /** Délai avant le premier appel (données en cache encore fraîches), en ms. */
+    firstDelay?: number;
+  } = {},
 ) {
   const [data, setData] = useState<T | null>(options.initial ?? null);
   const onDataRef = useRef(options.onData);
@@ -45,7 +50,8 @@ export function usePolling<T>(
       }
     };
 
-    tick();
+    if (options.firstDelay && options.firstDelay > 0) timer = window.setTimeout(tick, options.firstDelay);
+    else tick();
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;

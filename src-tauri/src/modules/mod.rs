@@ -1,4 +1,5 @@
 //! Services métier natifs. Un sous-module par domaine (system, projects, processes, …).
+pub mod activity;
 pub mod apps;
 pub mod automations;
 pub mod backup;
