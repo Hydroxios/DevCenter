@@ -47,18 +47,23 @@ function ProjectsView() {
   // `?project=<id>` (lien depuis le tableau de bord) l'emporte sur la dernière sélection.
   const [params, setParams] = useSearchParams();
   const linked = Number(params.get("project")) || null;
+  // `&run=<id>` (clic sur une notification) : affiche les logs de cette exécution.
+  const linkedRun = Number(params.get("run")) || null;
   const [selectedId, setSelectedId] = useState<number | null>(() => linked ?? readSelected());
+  const [focusRun, setFocusRun] = useState<{ id: number } | null>(null);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
     if (linked === null) return;
     setSelectedId(linked);
+    if (linkedRun !== null) setFocusRun({ id: linkedRun });
     // On retire le paramètre : la sélection vit ensuite normalement (et reste en mémoire).
     setParams((p) => {
       p.delete("project");
+      p.delete("run");
       return p;
     }, { replace: true });
-  }, [linked, setParams]);
+  }, [linked, linkedRun, setParams]);
 
   const initDependencies = useDependencies((s) => s.init);
   const checkDependencies = useDependencies((s) => s.check);
@@ -225,6 +230,7 @@ function ProjectsView() {
             key={selected.id}
             project={selected}
             details={details[selected.id]}
+            focusRun={focusRun}
             onRefresh={() => refreshOne(selected.id)}
             onDetails={setOne}
             onRemoved={(list) => {

@@ -447,23 +447,7 @@ pub fn trigger_with(app: &AppHandle, id: i64, origin: &str, context: Option<Stri
         .name(format!("automation-{id}"))
         .spawn(move || {
             let state = app.state::<AppState>();
-            let (status, log) = execute(&app, &automation, &run_vars);
-            if status == "failed" || status == "timeout" {
-                let reason = log
-                    .iter()
-                    .find(|l| l.outcome == "failed")
-                    .map(|l| format!("{} : {}", l.label, l.message.clone().unwrap_or_default()))
-                    .unwrap_or_else(|| "délai maximum dépassé".into());
-                crate::modules::push::notify_all(
-                    &app,
-                    crate::modules::push::Notification {
-                        title: format!("Échec · {}", automation.name),
-                        body: reason,
-                        tab: Some("auto".into()),
-                        tag: Some(format!("automation-{}", automation.id)),
-                    },
-                );
-            }
+            let (status, log) = execute(&app, &automation, &run_vars, run_id);
             let _ = state.db.with(|conn| {
                 conn.execute(
                     "UPDATE automation_runs SET status = ?1, ended_at = ?2, log = ?3 WHERE id = ?4",
@@ -476,11 +460,32 @@ pub fn trigger_with(app: &AppHandle, id: i64, origin: &str, context: Option<Stri
             }
             let _ = app.emit(EVENT_CHANGED, id);
             journal::automation_finished(&app, &automation.name, id, status, &log);
+            // Après la mise à jour : la notification ouvre une exécution terminée, et « Relancer »
+            // n'est pas refusé parce qu'elle serait encore en cours.
+            if status == "failed" || status == "timeout" {
+                let reason = log
+                    .iter()
+                    .find(|l| l.outcome == "failed")
+                    .map(|l| format!("{} : {}", l.label, l.message.clone().unwrap_or_default()))
+                    .unwrap_or_else(|| "délai maximum dépassé".into());
+                crate::modules::notify::dispatch(
+                    &app,
+                    crate::modules::notify::Event {
+                        category: crate::modules::notify::Category::Automation,
+                        title: format!("Échec · {}", automation.name),
+                        body: reason,
+                        tab: Some("auto".into()),
+                        tag: Some(format!("automation-{}", automation.id)),
+                        target: Some(crate::modules::notify::Target::Automation { automation_id: automation.id, run_id: Some(run_id) }),
+                        retry: Some(crate::modules::notify::Retry::Automation { id: automation.id }),
+                    },
+                );
+            }
         })?;
     Ok(run_id)
 }
 
-fn execute(app: &AppHandle, automation: &Automation, run_vars: &vars::Vars) -> (&'static str, Vec<StepLog>) {
+fn execute(app: &AppHandle, automation: &Automation, run_vars: &vars::Vars, run_id: i64) -> (&'static str, Vec<StepLog>) {
     let deadline = Instant::now() + Duration::from_secs(automation.timeout_minutes as u64 * 60);
     let mut log = Vec::new();
     let mut failed = false;
@@ -491,7 +496,7 @@ fn execute(app: &AppHandle, automation: &Automation, run_vars: &vars::Vars) -> (
         }
         let started = Instant::now();
         let label = steps::label(app, step);
-        let result = steps::run(app, step, deadline, run_vars);
+        let result = steps::run(app, step, deadline, run_vars, (automation.id, run_id));
         let duration_ms = started.elapsed().as_millis() as u64;
         match result {
             Ok(steps::Flow::Continue) => log.push(StepLog { label, outcome: "ok".into(), message: None, duration_ms }),

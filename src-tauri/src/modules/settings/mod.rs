@@ -32,6 +32,8 @@ pub struct Settings {
     pub onboarding_done: bool,
     /// Fetch Git périodique en arrière-plan, en minutes (0 = désactivé).
     pub git_fetch_interval: u32,
+    /// Canaux (Windows / téléphone) par catégorie de notification.
+    pub notifications: crate::modules::notify::NotificationPrefs,
 }
 
 /// Intervalles proposés pour le fetch Git périodique (minutes ; 0 = désactivé).
@@ -48,6 +50,7 @@ impl Default for Settings {
             projects_root: None,
             onboarding_done: false,
             git_fetch_interval: 15,
+            notifications: Default::default(),
         }
     }
 }
@@ -127,6 +130,11 @@ impl SettingsService {
                             }
                         }
                     }
+                    "notifications" => {
+                        if let Ok(n) = serde_json::from_str(&value) {
+                            settings.notifications = n;
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -174,6 +182,9 @@ impl SettingsService {
                     return Err(AppError::InvalidInput("intervalle de fetch : 0 (désactivé), 5, 15 ou 30 minutes".into()));
                 }
                 self.git_fetch_interval.store(m, Ordering::Relaxed);
+            }
+            "notifications" => {
+                serde_json::from_value::<crate::modules::notify::NotificationPrefs>(value.clone()).map_err(invalid)?;
             }
             other => return Err(AppError::InvalidInput(format!("clé inconnue « {other} »"))),
         }

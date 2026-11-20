@@ -74,6 +74,8 @@ pub fn run() {
             // Fetch Git périodique (compteurs ↑/↓ à jour), selon le réglage `gitFetchInterval`.
             modules::projects::sync::spawn_fetch_scheduler(app.handle().clone());
             modules::events::Entry::info(modules::events::Source::App, format!("DevCenter {} démarré", app.package_info().version)).emit(app.handle());
+            // Notifications Windows : boutons « Relancer » / « Voir les logs » et clics.
+            modules::notify::init(app.handle());
 
             // Statut Git en direct ; la liste suivie est réalignée à chaque changement de projets
             // (ajout, retrait, clonage, import depuis le téléphone).

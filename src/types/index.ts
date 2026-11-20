@@ -15,7 +15,32 @@ export interface Settings {
   onboardingDone: boolean;
   /** Fetch Git périodique en arrière-plan, en minutes : 0 (désactivé), 5, 15 ou 30. */
   gitFetchInterval: number;
+  notifications: NotificationPrefs;
 }
+
+/** Canaux d'une catégorie de notification : Windows (bureau) et téléphones appairés (push). */
+export interface NotificationChannels {
+  desktop: boolean;
+  mobile: boolean;
+}
+
+export interface NotificationPrefs {
+  automation: NotificationChannels;
+  script: NotificationChannels;
+  workspace: NotificationChannels;
+  step: NotificationChannels;
+  /** Pas de notification Windows quand la fenêtre DevCenter est au premier plan. */
+  skipWhenFocused: boolean;
+}
+
+export type NotificationCategory = "automation" | "script" | "workspace" | "step";
+
+/** Élément ouvert au clic sur une notification Windows (événement `notification://open`). */
+export type NotificationTarget =
+  | { kind: "run"; projectId: number; runId: number }
+  | { kind: "automation"; automationId: number; runId: number | null }
+  | { kind: "workspace"; workspaceId: number }
+  | { kind: "projects" };
 
 export interface SystemInfo {
   hostName: string | null;

@@ -189,9 +189,12 @@ impl CloneJobs {
                         j.status = "done".into();
                         j.project_id = project_id;
                     });
-                    crate::modules::push::notify_all(
+                    crate::modules::notify::dispatch(
                         &app,
-                        crate::modules::push::Notification {
+                        crate::modules::notify::Event {
+                            category: crate::modules::notify::Category::Clone,
+                            target: Some(crate::modules::notify::Target::Projects),
+                            retry: None,
                             title: format!("Projet cloné · {name}"),
                             body: dest.display().to_string(),
                             tab: Some("projects".into()),
@@ -209,9 +212,12 @@ impl CloneJobs {
                         j.status = "failed".into();
                         j.error = Some(msg.clone());
                     });
-                    crate::modules::push::notify_all(
+                    crate::modules::notify::dispatch(
                         &app,
-                        crate::modules::push::Notification {
+                        crate::modules::notify::Event {
+                            category: crate::modules::notify::Category::Clone,
+                            target: Some(crate::modules::notify::Target::Projects),
+                            retry: None,
                             title: format!("Échec du clonage · {name}"),
                             body: msg,
                             tab: Some("projects".into()),

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { useSearchParams } from "react-router";
 import {
   BookOpen,
   ChevronDown,
@@ -35,7 +36,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useLinkedId } from "@/hooks/useLinkedId";
 import { cn, formatRelative } from "@/lib/utils";
 import { api, isTauri } from "@/services/tauri";
 import type { Automation, AutomationInput, AutomationRun, AutomationRunStatus, AutomationStep } from "@/types";
@@ -113,7 +113,7 @@ function readCollapsed(): boolean {
 }
 
 /** Historique paginé ; `automationId` restreint aux exécutions d'une automatisation. */
-function RunHistory({ version, automationId }: { version: number; automationId: number | null }) {
+function RunHistory({ version, automationId, focusRun }: { version: number; automationId: number | null; focusRun?: { id: number } | null }) {
   const [runs, setRuns] = useState<AutomationRun[] | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -128,6 +128,20 @@ function RunHistory({ version, automationId }: { version: number; automationId: 
     }
   };
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Clic sur une notification : ouvre le détail de l'exécution dès qu'elle est chargée.
+  const pendingFocus = useRef<number | null>(null);
+  useEffect(() => {
+    if (focusRun) pendingFocus.current = focusRun.id;
+  }, [focusRun]);
+  useEffect(() => {
+    const id = pendingFocus.current;
+    if (id === null || !runs) return;
+    const run = runs.find((r) => r.id === id);
+    if (run) {
+      pendingFocus.current = null;
+      setOpen(run);
+    }
+  }, [runs, focusRun]);
   const sentinelRef = useRef<HTMLLIElement>(null);
   const busy = useRef(false);
 
@@ -270,10 +284,12 @@ function AutomationView({
   onEdit,
   onChanged,
   onError,
+  focusRun,
 }: {
   a: Automation;
   refs: Refs;
   version: number;
+  focusRun?: { id: number } | null;
   onEdit: () => void;
   onChanged: (list: Automation[]) => void;
   onError: (e: string) => void;
@@ -285,6 +301,10 @@ function AutomationView({
     setTabState(t);
   };
   const last = a.lastRun;
+  useEffect(() => {
+    if (focusRun) setTab("history");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusRun]);
 
   return (
     <PageMain>
@@ -375,7 +395,7 @@ function AutomationView({
             </Card>
           </>
         ) : (
-          <RunHistory key={a.id} version={version} automationId={a.id} />
+          <RunHistory key={a.id} version={version} automationId={a.id} focusRun={focusRun} />
         )}
       </PageBody>
 
@@ -471,7 +491,21 @@ function AutomationsView() {
     lastSelected = id;
     setSelectedIdState(id);
   };
-  useLinkedId("automation", setSelectedId);
+  // `?automation=<id>&run=<id>` (clic sur une notification) : ouvre cette exécution.
+  const [params, setParams] = useSearchParams();
+  const linked = Number(params.get("automation")) || null;
+  const linkedRun = Number(params.get("run")) || null;
+  const [focusRun, setFocusRun] = useState<{ id: number } | null>(null);
+  useEffect(() => {
+    if (linked === null) return;
+    setSelectedId(linked);
+    setFocusRun(linkedRun !== null ? { id: linkedRun } : null);
+    setParams((p) => {
+      p.delete("automation");
+      p.delete("run");
+      return p;
+    }, { replace: true });
+  }, [linked, linkedRun, setParams]);
 
   const refresh = useCallback(() => {
     api.automations.list().then(setList).catch((e) => setError(String(e)));
@@ -626,7 +660,7 @@ function AutomationsView() {
             </PageBody>
           </PageMain>
         ) : (
-          selected && <AutomationView key={selected.id} a={selected} refs={refs} version={version} onEdit={() => edit(selected)} onChanged={setList} onError={setError} />
+          selected && <AutomationView key={selected.id} a={selected} refs={refs} version={version} onEdit={() => edit(selected)} onChanged={setList} onError={setError} focusRun={focusRun} />
         )}
       </div>
 

@@ -7,6 +7,7 @@ pub mod dashboard;
 pub mod editor;
 pub mod events;
 pub mod github;
+pub mod notify;
 pub mod projects;
 pub mod push;
 pub mod remote;

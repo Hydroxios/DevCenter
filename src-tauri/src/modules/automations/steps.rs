@@ -6,7 +6,6 @@ use std::time::{Duration, Instant};
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
-use tauri_plugin_notification::NotificationExt;
 
 use crate::database::Database;
 use crate::error::{AppError, AppResult};
@@ -426,7 +425,9 @@ fn evaluate(app: &AppHandle, c: &Condition) -> AppResult<(bool, bool)> {
     })
 }
 
-pub fn run(app: &AppHandle, step: &Step, deadline: Instant, run_vars: &Vars) -> AppResult<Flow> {
+/// `run_vars` : variables `{{nom}}` de l'exécution ; `ctx` : automatisation et exécution en cours
+/// (cible des notifications).
+pub fn run(app: &AppHandle, step: &Step, deadline: Instant, run_vars: &Vars, ctx: (i64, i64)) -> AppResult<Flow> {
     let state = app.state::<AppState>();
     let db = &state.db;
     match step {
@@ -493,18 +494,20 @@ pub fn run(app: &AppHandle, step: &Step, deadline: Instant, run_vars: &Vars) -> 
             state.tunnels.stop(app, *tunnel_id)?;
         }
         Step::Notify { title, body } => {
-            let title = &render(title, run_vars, Escape::Raw);
-            let body = &render(body, run_vars, Escape::Raw);
-            app.notification()
-                .builder()
-                .title(title)
-                .body(body)
-                .show()
-                .map_err(|e| AppError::InvalidInput(format!("notification : {e}")))?;
-            // Aussi sur les téléphones appairés qui ont activé les notifications.
-            crate::modules::push::notify_all(
+            let title = render(title, run_vars, Escape::Raw);
+            let body = render(body, run_vars, Escape::Raw);
+            // Windows et/ou téléphones appairés, selon les préférences de notification.
+            crate::modules::notify::dispatch(
                 app,
-                crate::modules::push::Notification { title: title.clone(), body: body.clone(), tab: Some("auto".into()), tag: None },
+                crate::modules::notify::Event {
+                    category: crate::modules::notify::Category::Step,
+                    title: title.clone(),
+                    body: body.clone(),
+                    tab: Some("auto".into()),
+                    tag: None,
+                    target: Some(crate::modules::notify::Target::Automation { automation_id: ctx.0, run_id: Some(ctx.1) }),
+                    retry: None,
+                },
             );
         }
         Step::Wait { seconds } => {

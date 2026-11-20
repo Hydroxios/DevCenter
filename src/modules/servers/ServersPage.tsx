@@ -14,7 +14,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useLinkedId } from "@/hooks/useLinkedId";
 import { cn } from "@/lib/utils";
 import { api, isTauri } from "@/services/tauri";
 import type { Server } from "@/types";
@@ -181,7 +180,8 @@ function ServersView() {
   const [dialog, setDialog] = useState<{ open: boolean; server: Server | null }>({ open: false, server: null });
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
-  // `?server=<id>&terminal=1` (palette de commandes) : sélectionne le serveur sur l'onglet Terminal et s'y connecte.
+  // `?server=<id>` (Journal, palette…) sélectionne le serveur ; avec `&terminal=1` (palette de commandes),
+  // ouvre son onglet Terminal et s'y connecte.
   const [params, setParams] = useSearchParams();
   const linked = Number(params.get("server")) || null;
   const linkedTerminal = params.get("terminal") === "1";
@@ -196,7 +196,6 @@ function ServersView() {
     viewCache.selectedId = id;
     setSelectedIdState(id);
   };
-  useLinkedId("server", setSelectedId);
   const setStatus = useCallback((id: number, st: Status) => {
     viewCache.status = { ...viewCache.status, [id]: st };
     setStatusState(viewCache.status);

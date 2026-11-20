@@ -445,9 +445,12 @@ pub fn start(app: &AppHandle, state: &AppState, id: i64) -> AppResult<ActiveInfo
 
     let failures: Vec<&StepResult> = results.iter().filter(|r| !r.ok).collect();
     if !failures.is_empty() {
-        crate::modules::push::notify_all(
+        crate::modules::notify::dispatch(
             app,
-            crate::modules::push::Notification {
+            crate::modules::notify::Event {
+                category: crate::modules::notify::Category::Workspace,
+                target: Some(crate::modules::notify::Target::Workspace { workspace_id: id }),
+                retry: Some(crate::modules::notify::Retry::Workspace { id }),
                 title: format!("{} · {} étape(s) en échec", name, failures.len()),
                 body: failures.iter().map(|f| format!("{} : {}", f.label, f.message.clone().unwrap_or_default())).collect::<Vec<_>>().join("\n"),
                 tab: Some("workspaces".into()),

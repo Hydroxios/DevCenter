@@ -4,6 +4,7 @@ import { HashRouter, Navigate, Route, Routes } from "react-router";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ConfirmHost } from "@/components/ui/confirm";
 import { ContextMenuHost } from "@/components/ui/context-menu";
+import { NotificationRouter } from "@/components/NotificationRouter";
 import { useApplyTheme } from "@/hooks/useTheme";
 import { DashboardPage } from "@/modules/dashboard/DashboardPage";
 import { AutomationsPage } from "@/modules/automations/AutomationsPage";
@@ -75,6 +76,7 @@ export default function App() {
           <OnboardingWizard />
         </Suspense>
       )}
+      <NotificationRouter />
     </HashRouter>
   );
 }

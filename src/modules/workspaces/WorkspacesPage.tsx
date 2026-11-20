@@ -275,7 +275,11 @@ export function WorkspacesPage() {
       return p;
     }, { replace: true });
   }, [params, setParams]);
-  useLinkedId("workspace", setSelectedId);
+  // `?workspace=<id>` (Journal, notification…) : sélectionne ce workspace, onglet Aperçu.
+  useLinkedId("workspace", (id) => {
+    lastTab.set(id, "overview");
+    setSelectedId(id);
+  });
 
   useEffect(() => {
     init();
