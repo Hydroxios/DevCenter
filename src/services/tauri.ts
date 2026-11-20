@@ -26,6 +26,8 @@ import type {
   GithubRepo,
   CloneJob,
   CommitActivity,
+  DependencyReport,
+  DependencySummary,
   DayCommit,
   CcusageReport,
   CcusageDayDetail,
@@ -87,6 +89,13 @@ export const api = {
     /** Lit les vraies tâches Gradle (`gradlew tasks --all`) ; plusieurs secondes la première fois. */
     gradleTasks: (id: number) => invoke<ProjectDetails>("gradle_tasks", { id }),
     detectEditor: () => invoke<string | null>("detect_editor"),
+  },
+  dependencies: {
+    /** Dernier rapport enregistré (aucune commande lancée). */
+    report: (id: number) => invoke<DependencyReport | null>("dependency_report", { id }),
+    summaries: () => invoke<DependencySummary[]>("dependency_summaries"),
+    /** Lance outdated + audit en arrière-plan ; plusieurs secondes à quelques minutes. */
+    check: (id: number) => invoke<DependencyReport>("check_dependencies", { id }),
   },
   runner: {
     list: () => invoke<RunInfo[]>("list_runs"),

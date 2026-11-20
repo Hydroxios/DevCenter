@@ -104,6 +104,12 @@ const MIGRATIONS: &[&str] = &[
         auth       TEXT NOT NULL,
         created_at INTEGER NOT NULL
     );",
+    // 9 — santé des dépendances : dernier rapport par projet (JSON), relancé à la demande
+    "CREATE TABLE dependency_reports (
+        project_id INTEGER PRIMARY KEY NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        checked_at INTEGER NOT NULL,
+        report     TEXT NOT NULL
+    );",
 ];
 
 pub struct Database {

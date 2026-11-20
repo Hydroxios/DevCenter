@@ -38,6 +38,7 @@ import type { GitStatus, Project, ProjectDetails, RunInfo } from "@/types";
 import { BranchDialog } from "./BranchDialog";
 import { CommitDialog } from "./CommitDialog";
 import { GitHistory } from "./GitHistory";
+import { DependenciesPanel, useSevereVulns } from "./Dependencies";
 
 /** Scripts mis en avant en tête de liste. */
 const PRIMARY_SCRIPTS = ["dev", "start", "serve", "tauri", "bootRun", "run", "runClient", "quarkusDev", "build", "test", "lint"];
@@ -220,7 +221,7 @@ const SECONDARY_GROUPS = ["Help", "Build Setup", "Other"];
 /** Projets dont la lecture des tâches Gradle a échoué : pas de nouvel essai automatique. */
 const gradleFailed = new Set<number>();
 
-type PanelTab = "overview" | "history";
+type PanelTab = "overview" | "history" | "dependencies";
 /** Dernier onglet ouvert par projet (le temps de la session de l'app). */
 const lastTab = new Map<number, PanelTab>();
 
@@ -317,7 +318,9 @@ export function ProjectPanel({
     lastTab.set(project.id, t);
     setTabState(t);
   };
-  const activeTab: PanelTab = tab === "history" && !hasGit ? "overview" : tab;
+  const activeTab: PanelTab =
+    (tab === "history" && !hasGit) || (tab === "dependencies" && !project.exists) ? "overview" : tab;
+  const severeVulns = useSevereVulns(project.id);
   /** Commit à mettre en avant à l'ouverture de l'historique (clic sur le dernier commit). */
   const [focusCommit, setFocusCommit] = useState<string | null>(null);
   const runningCount = runs.filter((r) => r.status === "running").length;
@@ -401,9 +404,10 @@ export function ProjectPanel({
       {/* Onglets */}
       <nav className="flex shrink-0 gap-1 border-b px-4" role="tablist">
         {([
-          ["overview", "Aperçu", runningCount > 0 ? runningCount : null],
-          ...(hasGit ? ([["history", "Historique", null]] as const) : []),
-        ] as const).map(([id, label, count]) => (
+          ["overview", "Aperçu", runningCount > 0 ? runningCount : null, "success"],
+          ...(hasGit ? ([["history", "Historique", null, "success"]] as const) : []),
+          ...(project.exists ? ([["dependencies", "Dépendances", severeVulns > 0 ? severeVulns : null, "destructive"]] as const) : []),
+        ] as const).map(([id, label, count, tone]) => (
           <button
             key={id}
             type="button"
@@ -416,13 +420,24 @@ export function ProjectPanel({
             )}
           >
             {label}
-            {count !== null && <span className="rounded-full bg-success/15 px-1.5 font-mono text-[10px] text-success">{count}</span>}
+            {count !== null && (
+              <span
+                className={cn(
+                  "rounded-full px-1.5 font-mono text-[10px]",
+                  tone === "destructive" ? "bg-destructive/15 text-destructive" : "bg-success/15 text-success",
+                )}
+              >
+                {count}
+              </span>
+            )}
             {activeTab === id && <span className="absolute inset-x-2 -bottom-px h-px bg-primary" />}
           </button>
         ))}
       </nav>
 
-      {activeTab === "history" ? (
+      {activeTab === "dependencies" ? (
+        <DependenciesPanel projectId={project.id} packageManager={meta?.packageManager} />
+      ) : activeTab === "history" ? (
         // Rechargé quand HEAD change (changement ou création de branche).
         <GitHistory
           key={`${details?.git?.branch}:${details?.git?.lastCommit?.hash}`}

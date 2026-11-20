@@ -9,6 +9,7 @@ use crate::modules::backup::{self, ImportSummary};
 use crate::modules::editor;
 use crate::modules::github::{self, GithubStatus, Repo};
 use crate::modules::projects::branches::{self, Branch};
+use crate::modules::projects::deps::{self, DependencyReport, DependencySummary};
 use crate::modules::projects::history::{CommitDetails, GitLog};
 use crate::modules::projects::import::CloneJob;
 use crate::modules::push;
@@ -174,6 +175,29 @@ pub async fn gradle_tasks(state: State<'_, AppState>, id: i64) -> AppResult<Proj
     blocking(move || {
         projects::gradle::load(&path)?;
         Ok(projects::details(id, &path))
+    })
+    .await
+}
+
+/// Dernier rapport de dépendances enregistré (aucune commande lancée).
+#[tauri::command]
+pub fn dependency_report(state: State<'_, AppState>, id: i64) -> AppResult<Option<DependencyReport>> {
+    deps::load(&state.db, id)
+}
+
+/// Résumés de tous les projets vérifiés (pastille sur la liste).
+#[tauri::command]
+pub fn dependency_summaries(state: State<'_, AppState>) -> AppResult<Vec<DependencySummary>> {
+    deps::summaries(&state.db)
+}
+
+/// Vérifie les dépendances (outdated + audit) ; plusieurs secondes à quelques minutes.
+#[tauri::command]
+pub async fn check_dependencies(app: AppHandle, id: i64) -> AppResult<DependencyReport> {
+    blocking(move || {
+        let db = &app.state::<AppState>().db;
+        let path = projects::path_of(db, id)?;
+        deps::check(db, id, &path)
     })
     .await
 }

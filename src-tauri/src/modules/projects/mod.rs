@@ -2,6 +2,7 @@
 
 pub mod branches;
 pub mod commit;
+pub mod deps;
 pub mod detect;
 pub mod git;
 pub mod gitcache;

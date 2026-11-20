@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Code2, Copy, FolderGit2, FolderOpen, FolderPlus, RefreshCw, Search, SquareTerminal, Trash2, TriangleAlert } from "lucide-react";
+import { Code2, Copy, FolderGit2, FolderOpen, FolderPlus, PackageCheck, RefreshCw, Search, SquareTerminal, Trash2, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { confirmAction } from "@/components/ui/confirm";
@@ -9,9 +9,11 @@ import { contextMenu, copyText } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { api, isTauri } from "@/services/tauri";
+import { useDependencies } from "@/stores/dependencies";
 import { useRuns } from "@/stores/runs";
 import type { Project } from "@/types";
 import { GitSummary, ProjectPanel } from "./ProjectPanel";
+import { DependencyBadge } from "./Dependencies";
 import { GithubDialog } from "./GithubDialog";
 import { ScanDialog } from "./ScanDialog";
 import { useProjects } from "./useProjects";
@@ -58,9 +60,13 @@ function ProjectsView() {
     }, { replace: true });
   }, [linked, setParams]);
 
+  const initDependencies = useDependencies((s) => s.init);
+  const checkDependencies = useDependencies((s) => s.check);
+
   useEffect(() => {
     initRuns();
-  }, [initRuns]);
+    initDependencies();
+  }, [initRuns, initDependencies]);
 
   useEffect(() => {
     try {
@@ -105,6 +111,7 @@ function ProjectsView() {
       { label: "Ouvrir un terminal", icon: SquareTerminal, disabled: !p.exists, onSelect: () => act(() => api.projects.openTerminal(p.id)) },
       { separator: true },
       { label: "Actualiser", icon: RefreshCw, onSelect: () => refreshOne(p.id) },
+      { label: "Vérifier les dépendances", icon: PackageCheck, disabled: !p.exists, onSelect: () => checkDependencies(p.id) },
       { label: "Copier le chemin", icon: Copy, onSelect: () => copyText(p.path) },
       { separator: true },
       {
@@ -183,6 +190,9 @@ function ProjectsView() {
                 <span className="flex min-w-0 items-center gap-2">
                   {d?.meta.frameworks[0] && <span className="shrink-0 text-xs text-primary">{d.meta.frameworks[0]}</span>}
                   <GitSummary git={d?.git} />
+                  <span className="ml-auto flex shrink-0">
+                    <DependencyBadge projectId={p.id} />
+                  </span>
                 </span>
               </button>
             );
