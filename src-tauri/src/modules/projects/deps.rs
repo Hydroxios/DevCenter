@@ -739,10 +739,8 @@ pub fn parse_cargo_outdated(output: &str) -> Result<Vec<OutdatedPackage>, String
             let current = clean(d, "project");
             let latest = clean(d, "latest");
             let wanted = clean(d, "compat").or_else(|| current.clone());
-            if latest.is_none() || latest == current {
-                if wanted == current {
-                    continue;
-                }
+            if (latest.is_none() || latest == current) && wanted == current {
+                continue;
             }
             if list.iter().any(|p| p.name == name && p.current == current) {
                 continue; // même dépendance dans plusieurs crates du workspace

@@ -76,16 +76,16 @@ fn fire(app: &AppHandle, context: &str, event_vars: Vars, matches: impl Fn(&Trig
         .iter()
         .filter(|a| a.enabled && !a.running && matches(&a.trigger))
     {
-        if claim(&state, a.id) {
-            if let Err(e) = trigger_with(
+        if claim(&state, a.id)
+            && let Err(e) = trigger_with(
                 app,
                 a.id,
                 "event",
                 Some(context.to_string()),
                 event_vars.clone(),
-            ) {
-                log::warn!("automatisation « {} » non déclenchée : {e}", a.name);
-            }
+            )
+        {
+            log::warn!("automatisation « {} » non déclenchée : {e}", a.name);
         }
     }
 }

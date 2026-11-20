@@ -490,10 +490,10 @@ impl Ctx {
     }
 
     fn kill(&self) {
-        if let Ok(mut guard) = self.child.lock() {
-            if let Some(c) = guard.as_mut() {
-                let _ = c.kill();
-            }
+        if let Ok(mut guard) = self.child.lock()
+            && let Some(c) = guard.as_mut()
+        {
+            let _ = c.kill();
         }
     }
 
@@ -690,10 +690,10 @@ impl Transfers {
                     Err(_) => break,
                 }
             }
-            if local_err.is_none() {
-                if let Err(e) = file.flush() {
-                    local_err = Some(format!("écriture locale impossible : {e}"));
-                }
+            if local_err.is_none()
+                && let Err(e) = file.flush()
+            {
+                local_err = Some(format!("écriture locale impossible : {e}"));
             }
             drop(file);
             let status = wait_child(&ctx.child);

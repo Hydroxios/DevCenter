@@ -232,7 +232,7 @@ pub fn commits_on(projects: Vec<(i64, String, String)>, date: &str) -> AppResult
         .flatten()
         .filter(|c| seen.insert(c.hash.clone()))
         .collect();
-    all.sort_by(|a, b| b.time.cmp(&a.time));
+    all.sort_by_key(|c| std::cmp::Reverse(c.time));
     Ok(all)
 }
 
@@ -489,10 +489,11 @@ pub fn ccusage_total(force: bool) -> AppResult<UsageTotal> {
         .get_or_init(|| Mutex::new(None))
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    if let Some((at, total)) = cache.as_ref() {
-        if !force && at.elapsed() < TOTAL_TTL {
-            return Ok(total.clone());
-        }
+    if let Some((at, total)) = cache.as_ref()
+        && !force
+        && at.elapsed() < TOTAL_TTL
+    {
+        return Ok(total.clone());
     }
     let value = run_ccusage(&["daily", "--json"])?;
     let daily = value
@@ -540,10 +541,12 @@ pub fn ccusage(days: u32, force: bool) -> AppResult<serde_json::Value> {
         .get_or_init(|| Mutex::new(None))
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    if let Some((at, d, value)) = cache.as_ref() {
-        if !force && *d >= days && at.elapsed() < CCUSAGE_TTL {
-            return Ok(value.clone());
-        }
+    if let Some((at, d, value)) = cache.as_ref()
+        && !force
+        && *d >= days
+        && at.elapsed() < CCUSAGE_TTL
+    {
+        return Ok(value.clone());
     }
 
     let since = (Local::now() - chrono::Duration::days(days as i64 - 1))

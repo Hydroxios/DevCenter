@@ -151,7 +151,9 @@ pub fn build(input: Inputs, days: u32, from: i64, to: i64) -> TimeStats {
     let mut all: Vec<Interval> = Vec::new();
 
     // Par workspace : identifié par son id, ou par son nom s'il a été supprimé.
-    let mut by_ws: HashMap<(Option<i64>, String), (String, Vec<Interval>, u32)> = HashMap::new();
+    // Clé : (id, nom) ; valeur : (nom affiché, intervalles, nombre de sessions).
+    type WsKey = (Option<i64>, String);
+    let mut by_ws: HashMap<WsKey, (String, Vec<Interval>, u32)> = HashMap::new();
     let mut by_project: HashMap<i64, (Vec<Interval>, u32, u32)> = HashMap::new();
     for s in input.sessions {
         let Some(iv) = clip((s.start, s.end), from, to) else {

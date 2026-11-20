@@ -38,6 +38,9 @@ pub enum RunStatus {
     Stopped,
 }
 
+/// Flux des nouvelles lignes de log d'une exécution (par lots).
+pub type LogReceiver = mpsc::Receiver<Vec<String>>;
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunInfo {
@@ -182,7 +185,7 @@ impl Runner {
         &self,
         run_id: u64,
         tail: usize,
-    ) -> AppResult<(Vec<String>, Option<mpsc::Receiver<Vec<String>>>)> {
+    ) -> AppResult<(Vec<String>, Option<LogReceiver>)> {
         let runs = self.runs.lock()?;
         let run = runs
             .get(&run_id)
@@ -207,6 +210,8 @@ impl Runner {
         Ok((snapshot, rx))
     }
 
+    // Tous les paramètres décrivent le script à lancer ; une structure dédiée n'apporterait rien ici.
+    #[allow(clippy::too_many_arguments)]
     pub fn start(
         &self,
         app: &AppHandle,
@@ -438,15 +443,15 @@ impl Runner {
                 {
                     let Ok(mut runs) = runs.lock() else { break };
                     let Some(run) = runs.get_mut(&id) else { break };
-                    if run.info.url.is_none() {
-                        if let Some(url) = detect_url(&line) {
-                            if run.open_browser {
-                                let _ = tauri_plugin_opener::open_url(&url, None::<&str>);
-                            }
-                            run.info.url = Some(url);
-                            // Le statut (avec l'URL) part avec le prochain lot de logs.
-                            run.url_pending = true;
+                    if run.info.url.is_none()
+                        && let Some(url) = detect_url(&line)
+                    {
+                        if run.open_browser {
+                            let _ = tauri_plugin_opener::open_url(&url, None::<&str>);
                         }
+                        run.info.url = Some(url);
+                        // Le statut (avec l'URL) part avec le prochain lot de logs.
+                        run.url_pending = true;
                     }
                     if run.logs.len() >= MAX_LOG_LINES {
                         run.logs.pop_front();

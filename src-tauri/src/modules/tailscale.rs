@@ -70,12 +70,11 @@ pub fn status(local_port: u16) -> TailscaleStatus {
             .is_some_and(|a| !a.is_empty());
     }
     // `tailscale serve status --json` : la configuration pointe-t-elle vers notre port ?
-    if let (Some(dns), Ok(serve)) = (&st.dns_name, run(&["serve", "status", "--json"])) {
-        if serve.contains(&format!("127.0.0.1:{local_port}"))
-            || serve.contains(&format!("localhost:{local_port}"))
-        {
-            st.serve_url = Some(format!("https://{dns}"));
-        }
+    if let (Some(dns), Ok(serve)) = (&st.dns_name, run(&["serve", "status", "--json"]))
+        && (serve.contains(&format!("127.0.0.1:{local_port}"))
+            || serve.contains(&format!("localhost:{local_port}")))
+    {
+        st.serve_url = Some(format!("https://{dns}"));
     }
     st
 }

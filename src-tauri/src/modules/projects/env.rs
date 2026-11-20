@@ -506,12 +506,12 @@ fn resolve(dir: &Path, name: &str) -> AppResult<PathBuf> {
     if path.parent() != Some(dir) {
         return Err(AppError::InvalidInput("chemin hors du projet".into()));
     }
-    if let Ok(meta) = std::fs::symlink_metadata(&path) {
-        if meta.file_type().is_symlink() || !meta.is_file() {
-            return Err(AppError::InvalidInput(format!(
-                "{name} n'est pas un fichier ordinaire"
-            )));
-        }
+    if let Ok(meta) = std::fs::symlink_metadata(&path)
+        && (meta.file_type().is_symlink() || !meta.is_file())
+    {
+        return Err(AppError::InvalidInput(format!(
+            "{name} n'est pas un fichier ordinaire"
+        )));
     }
     Ok(path)
 }
@@ -710,13 +710,12 @@ pub fn set_active(
     overview(db, project_id, dir)
 }
 
+/// Profil `.env` actif : nom du fichier et variables à injecter.
+type ActiveEnv = (String, Vec<(String, String)>);
+
 /// Variables du profil actif, à injecter dans un script lancé depuis DevCenter.
 /// `Ok(None)` si aucun profil n'est choisi ; le nom du fichier accompagne les variables.
-pub fn script_env(
-    db: &Database,
-    project_id: i64,
-    dir: &Path,
-) -> AppResult<Option<(String, Vec<(String, String)>)>> {
+pub fn script_env(db: &Database, project_id: i64, dir: &Path) -> AppResult<Option<ActiveEnv>> {
     let Some(name) = active_name(db, project_id)? else {
         return Ok(None);
     };

@@ -269,12 +269,10 @@ fn validate(db: &Database, input: &AutomationInput) -> AppResult<()> {
                 ));
             }
         }
-        Trigger::Webhook { token } => {
-            if !events::valid_token(token) {
-                return Err(AppError::InvalidInput(
-                    "jeton de webhook invalide (32 à 128 caractères hexadécimaux)".into(),
-                ));
-            }
+        Trigger::Webhook { token } if !events::valid_token(token) => {
+            return Err(AppError::InvalidInput(
+                "jeton de webhook invalide (32 à 128 caractères hexadécimaux)".into(),
+            ));
         }
         _ => {}
     }
@@ -284,9 +282,10 @@ fn validate(db: &Database, input: &AutomationInput) -> AppResult<()> {
     Ok(())
 }
 
-fn row_to_automation(
-    r: &rusqlite::Row<'_>,
-) -> rusqlite::Result<(i64, String, String, bool, String, String, String, u32)> {
+/// Ligne brute de `automations` : id, nom, description, actif, déclencheur, étapes, gestion d'erreur, durée max.
+type AutomationRow = (i64, String, String, bool, String, String, String, u32);
+
+fn row_to_automation(r: &rusqlite::Row<'_>) -> rusqlite::Result<AutomationRow> {
     Ok((
         r.get(0)?,
         r.get(1)?,
@@ -352,10 +351,10 @@ pub fn get(db: &Database, runtime: &AutomationRuntime, id: i64) -> AppResult<Aut
 pub fn save(db: &Database, input: &AutomationInput) -> AppResult<i64> {
     // Webhook sans jeton : on en génère un (256 bits aléatoires).
     let mut input = input.clone();
-    if let Trigger::Webhook { token } = &mut input.trigger {
-        if token.trim().is_empty() {
-            *token = events::new_token()?;
-        }
+    if let Trigger::Webhook { token } = &mut input.trigger
+        && token.trim().is_empty()
+    {
+        *token = events::new_token()?;
     }
     let input = &input;
     validate(db, input)?;

@@ -497,10 +497,10 @@ impl TunnelRuntime {
         let server = super::get(db, tunnel.server_id)?;
 
         let mut live = self.live.lock()?;
-        if let Some(entry) = live.get(&id) {
-            if entry.status.is_active() {
-                return Ok(entry.status.clone());
-            }
+        if let Some(entry) = live.get(&id)
+            && entry.status.is_active()
+        {
+            return Ok(entry.status.clone());
         }
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed) + 1;
         let stop = Arc::new(AtomicBool::new(false));
@@ -611,10 +611,10 @@ impl TunnelRuntime {
             Err(_) => return,
         };
         for child in children {
-            if let Ok(mut c) = child.lock() {
-                if let Some(c) = c.as_mut() {
-                    let _ = c.kill();
-                }
+            if let Ok(mut c) = child.lock()
+                && let Some(c) = c.as_mut()
+            {
+                let _ = c.kill();
             }
         }
     }
@@ -684,12 +684,11 @@ fn supervise(
             *s = Some(child);
         }
         // `stop` a pu être demandé entre le lancement et l'enregistrement du processus.
-        if stop.load(Ordering::SeqCst) {
-            if let Ok(mut s) = slot.lock() {
-                if let Some(c) = s.as_mut() {
-                    let _ = c.kill();
-                }
-            }
+        if stop.load(Ordering::SeqCst)
+            && let Ok(mut s) = slot.lock()
+            && let Some(c) = s.as_mut()
+        {
+            let _ = c.kill();
         }
 
         let started = Instant::now();

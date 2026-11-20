@@ -46,9 +46,10 @@ fn empty_to_none(v: &Option<String>) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-fn validate(
-    input: &ServerInput,
-) -> AppResult<(String, String, u16, Option<String>, Option<String>)> {
+/// Serveur validé : nom, hôte, port, utilisateur, clé privée.
+type ValidatedServer = (String, String, u16, Option<String>, Option<String>);
+
+fn validate(input: &ServerInput) -> AppResult<ValidatedServer> {
     let name = input.name.trim().to_string();
     if name.is_empty() || name.len() > 80 {
         return Err(AppError::InvalidInput(

@@ -242,10 +242,10 @@ impl RemoteAccess {
     }
 
     pub fn stop(&self) {
-        if let Ok(mut running) = self.running.lock() {
-            if let Some(r) = running.take() {
-                r.server.unblock();
-            }
+        if let Ok(mut running) = self.running.lock()
+            && let Some(r) = running.take()
+        {
+            r.server.unblock();
         }
     }
 
@@ -800,21 +800,21 @@ fn handle(app: &AppHandle, mut req: Request) {
         let _ = req.respond(resp);
         return;
     }
-    if method == Method::Get {
-        if let Some((_, mime, bytes)) = ASSETS.iter().find(|(p, _, _)| *p == path) {
-            let mut resp = Response::from_data(bytes.to_vec())
-                .with_header(header("Content-Type", mime))
-                .with_header(header("X-Content-Type-Options", "nosniff"));
-            // Le service worker doit être revalidé à chaque fois ; les icônes peuvent être mises en cache.
-            resp = if path == "/sw.js" {
-                resp.with_header(header("Cache-Control", "no-cache"))
-                    .with_header(header("Service-Worker-Allowed", "/"))
-            } else {
-                resp.with_header(header("Cache-Control", "public, max-age=86400"))
-            };
-            let _ = req.respond(resp);
-            return;
-        }
+    if method == Method::Get
+        && let Some((_, mime, bytes)) = ASSETS.iter().find(|(p, _, _)| *p == path)
+    {
+        let mut resp = Response::from_data(bytes.to_vec())
+            .with_header(header("Content-Type", mime))
+            .with_header(header("X-Content-Type-Options", "nosniff"));
+        // Le service worker doit être revalidé à chaque fois ; les icônes peuvent être mises en cache.
+        resp = if path == "/sw.js" {
+            resp.with_header(header("Cache-Control", "no-cache"))
+                .with_header(header("Service-Worker-Allowed", "/"))
+        } else {
+            resp.with_header(header("Cache-Control", "public, max-age=86400"))
+        };
+        let _ = req.respond(resp);
+        return;
     }
 
     let state = app.state::<AppState>();

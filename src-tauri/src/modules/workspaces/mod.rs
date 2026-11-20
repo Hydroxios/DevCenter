@@ -174,10 +174,10 @@ fn validate(db: &Database, input: &WorkspaceInput) -> AppResult<()> {
                         "projet {project_id} inconnu"
                     )));
                 }
-                if let Step::Script { script, .. } = step {
-                    if script.trim().is_empty() {
-                        return Err(AppError::InvalidInput("script manquant".into()));
-                    }
+                if let Step::Script { script, .. } = step
+                    && script.trim().is_empty()
+                {
+                    return Err(AppError::InvalidInput("script manquant".into()));
                 }
             }
             Step::App { app_id, .. } => {

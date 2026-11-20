@@ -125,10 +125,10 @@ impl SettingsService {
                         }
                     }
                     "gitFetchInterval" => {
-                        if let Ok(m) = serde_json::from_str::<u32>(&value) {
-                            if GIT_FETCH_INTERVALS.contains(&m) {
-                                settings.git_fetch_interval = m;
-                            }
+                        if let Ok(m) = serde_json::from_str::<u32>(&value)
+                            && GIT_FETCH_INTERVALS.contains(&m)
+                        {
+                            settings.git_fetch_interval = m;
                         }
                     }
                     "notifications" => {

@@ -115,19 +115,19 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             // Fermer la fenêtre principale = la cacher dans la barre système (si activé).
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" {
-                    let close_to_tray = window
-                        .app_handle()
-                        .try_state::<AppState>()
-                        .map(|s| s.settings.close_to_tray())
-                        .unwrap_or(false);
-                    if close_to_tray {
-                        api.prevent_close();
-                        let _ = window.hide();
-                    } else {
-                        window.app_handle().exit(0);
-                    }
+            if let WindowEvent::CloseRequested { api, .. } = event
+                && window.label() == "main"
+            {
+                let close_to_tray = window
+                    .app_handle()
+                    .try_state::<AppState>()
+                    .map(|s| s.settings.close_to_tray())
+                    .unwrap_or(false);
+                if close_to_tray {
+                    api.prevent_close();
+                    let _ = window.hide();
+                } else {
+                    window.app_handle().exit(0);
                 }
             }
         })
@@ -270,16 +270,16 @@ pub fn run() {
         .expect("erreur au lancement de DevCenter")
         .run(|app, event| {
             // Pas de processus orphelins : les scripts lancés depuis DevCenter s'arrêtent avec lui.
-            if let RunEvent::Exit = event {
-                if let Some(state) = app.try_state::<AppState>() {
-                    modules::workspaces::close_all(&state);
-                    state.terminals.close_all();
-                    state.transfers.cancel_all();
-                    state.tunnels.stop_all();
-                    state.remote.stop();
-                    state.runner.stop_all();
-                    modules::runner::close_history(&state.db);
-                }
+            if let RunEvent::Exit = event
+                && let Some(state) = app.try_state::<AppState>()
+            {
+                modules::workspaces::close_all(&state);
+                state.terminals.close_all();
+                state.transfers.cancel_all();
+                state.tunnels.stop_all();
+                state.remote.stop();
+                state.runner.stop_all();
+                modules::runner::close_history(&state.db);
             }
         });
 }

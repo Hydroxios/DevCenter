@@ -254,14 +254,14 @@ fn flush(app: &AppHandle, inner: &Arc<Mutex<Inner>>) {
             };
             (changed, previous)
         };
-        if let (Some(before), Some(after)) = (&previous_head, &head) {
-            if before != after {
-                let subject = git
-                    .as_ref()
-                    .and_then(|g| g.last_commit.as_ref())
-                    .map(|c| c.subject.clone());
-                automations::on_git_change(app, id, before, after, subject);
-            }
+        if let (Some(before), Some(after)) = (&previous_head, &head)
+            && before != after
+        {
+            let subject = git
+                .as_ref()
+                .and_then(|g| g.last_commit.as_ref())
+                .map(|c| c.subject.clone());
+            automations::on_git_change(app, id, before, after, subject);
         }
         if changed {
             let _ = app.emit(EVENT_GIT, GitEvent { id, git });
