@@ -9,11 +9,14 @@ import { DashboardPage } from "@/modules/dashboard/DashboardPage";
 import { AutomationsPage } from "@/modules/automations/AutomationsPage";
 // Chargé à la demande : xterm.js alourdit le bundle principal.
 const ServersPage = lazy(() => import("@/modules/servers/ServersPage").then((m) => ({ default: m.ServersPage })));
+// Assistant de premier lancement : chargé seulement s'il s'affiche.
+const OnboardingWizard = lazy(() => import("@/modules/onboarding/OnboardingWizard"));
 import { WorkspacesPage } from "@/modules/workspaces/WorkspacesPage";
 import { ProjectsPage } from "@/modules/projects/ProjectsPage";
 import { SystemPage } from "@/modules/system/SystemPage";
 import { SettingsPage } from "@/modules/settings/SettingsPage";
 import { useFullscreen } from "@/stores/fullscreen";
+import { useOnboarding } from "@/stores/onboarding";
 import { useRuns } from "@/stores/runs";
 import { useSettings } from "@/stores/settings";
 import { useUpdates } from "@/stores/updates";
@@ -34,6 +37,13 @@ export default function App() {
     initRuns();
   }, [load, initRuns, initWorkspaces, initUpdates, initFullscreen]);
   useApplyTheme();
+
+  const settingsLoaded = useSettings((s) => s.loaded);
+  const maybeShowOnboarding = useOnboarding((s) => s.maybeShow);
+  const onboardingOpen = useOnboarding((s) => s.open);
+  useEffect(() => {
+    if (settingsLoaded) maybeShowOnboarding();
+  }, [settingsLoaded, maybeShowOnboarding]);
 
   return (
     <HashRouter>
@@ -58,6 +68,11 @@ export default function App() {
       </Routes>
       <ContextMenuHost />
       <ConfirmHost />
+      {onboardingOpen && (
+        <Suspense fallback={null}>
+          <OnboardingWizard />
+        </Suspense>
+      )}
     </HashRouter>
   );
 }

@@ -12,8 +12,48 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 import { api } from "@/services/tauri";
 import type { Project, ScanCandidate } from "@/types";
+
+/** Liste à cocher des projets détectés (partagée avec l'assistant de démarrage). */
+export function ScanCandidateList({
+  candidates,
+  selected,
+  onToggle,
+  className,
+}: {
+  candidates: ScanCandidate[];
+  selected: Set<string>;
+  onToggle: (path: string) => void;
+  className?: string;
+}) {
+  return (
+    <ul className={cn("max-h-80 divide-y overflow-y-auto rounded-lg border", className)}>
+      {candidates.map((c) => (
+        <li key={c.path}>
+          <label className="flex cursor-pointer items-start gap-3 px-3 py-2 hover:bg-accent/40">
+            <input
+              type="checkbox"
+              className="mt-1 accent-[var(--primary)]"
+              checked={selected.has(c.path)}
+              onChange={() => onToggle(c.path)}
+            />
+            <span className="min-w-0 flex-1">
+              <span className="flex flex-wrap items-center gap-1.5">
+                <span className="text-sm font-medium">{c.name}</span>
+                {[...c.frameworks, ...c.languages].slice(0, 4).map((t) => (
+                  <Badge key={t} variant="outline">{t}</Badge>
+                ))}
+              </span>
+              <span className="block truncate text-xs text-muted-foreground" title={c.path}>{c.path}</span>
+            </span>
+          </label>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export function ScanDialog({ onImported, compact = false }: { onImported: (projects: Project[]) => void; compact?: boolean }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -104,29 +144,7 @@ export function ScanDialog({ onImported, compact = false }: { onImported: (proje
           candidates.length === 0 ? (
             <p className="text-sm text-muted-foreground">Aucun nouveau projet trouvé dans ce dossier.</p>
           ) : (
-            <ul className="max-h-80 divide-y overflow-y-auto rounded-lg border">
-              {candidates.map((c) => (
-                <li key={c.path}>
-                  <label className="flex cursor-pointer items-start gap-3 px-3 py-2 hover:bg-accent/40">
-                    <input
-                      type="checkbox"
-                      className="mt-1 accent-[var(--primary)]"
-                      checked={selected.has(c.path)}
-                      onChange={() => toggle(c.path)}
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-sm font-medium">{c.name}</span>
-                        {[...c.frameworks, ...c.languages].slice(0, 4).map((t) => (
-                          <Badge key={t} variant="outline">{t}</Badge>
-                        ))}
-                      </span>
-                      <span className="block truncate text-xs text-muted-foreground" title={c.path}>{c.path}</span>
-                    </span>
-                  </label>
-                </li>
-              ))}
-            </ul>
+            <ScanCandidateList candidates={candidates} selected={selected} onToggle={toggle} />
           )
         )}
 

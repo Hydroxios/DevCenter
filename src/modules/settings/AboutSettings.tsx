@@ -1,4 +1,4 @@
-import { ArrowUpCircle, CircleCheck, FileText, Loader2, RefreshCw } from "lucide-react";
+import { ArrowUpCircle, CircleCheck, FileText, Loader2, RefreshCw, Sparkles } from "lucide-react";
 
 import { LogoMark } from "@/components/layout/Logo";
 import { Button } from "@/components/ui/button";
@@ -6,11 +6,13 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { formatBytes, formatRelative } from "@/lib/utils";
 import { api } from "@/services/tauri";
+import { useOnboarding } from "@/stores/onboarding";
 import { useUpdates } from "@/stores/updates";
 
 /** Version installée, mises à jour et journal. */
 export function AboutSettings() {
   const { version, status, update, progress, error, checkedAt, check, install } = useUpdates();
+  const showOnboarding = useOnboarding((s) => s.show);
   const pct = progress?.total ? (progress.downloaded / progress.total) * 100 : undefined;
 
   return (
@@ -91,6 +93,20 @@ export function AboutSettings() {
             </Button>
           </div>
         )}
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Assistant de démarrage</CardTitle>
+        </CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="max-w-xl text-sm text-muted-foreground">
+            Dossier de projets, éditeur, premier workspace, GitHub et accès mobile : reprenez la configuration guidée du premier lancement.
+          </p>
+          <Button variant="outline" size="sm" onClick={showOnboarding}>
+            <Sparkles /> Relancer l'assistant
+          </Button>
+        </div>
       </Card>
 
       <Card>

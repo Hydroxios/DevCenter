@@ -28,6 +28,8 @@ pub struct Settings {
     pub remote_port: u16,
     /// Dossier où cloner les nouveaux projets (sinon : déduit des projets existants).
     pub projects_root: Option<String>,
+    /// Assistant de premier lancement terminé (ou ignoré).
+    pub onboarding_done: bool,
 }
 
 impl Default for Settings {
@@ -39,6 +41,7 @@ impl Default for Settings {
             remote_enabled: false,
             remote_port: crate::modules::remote::DEFAULT_PORT,
             projects_root: None,
+            onboarding_done: false,
         }
     }
 }
@@ -97,6 +100,11 @@ impl SettingsService {
                             settings.projects_root = p;
                         }
                     }
+                    "onboardingDone" => {
+                        if let Ok(b) = serde_json::from_str(&value) {
+                            settings.onboarding_done = b;
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -121,7 +129,7 @@ impl SettingsService {
                     crate::modules::editor::validate_editor_path(p)?;
                 }
             }
-            "remoteEnabled" => {
+            "remoteEnabled" | "onboardingDone" => {
                 serde_json::from_value::<bool>(value.clone()).map_err(invalid)?;
             }
             "remotePort" => {
