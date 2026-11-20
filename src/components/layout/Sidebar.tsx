@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink } from "react-router";
-import { ArrowUpCircle, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { ArrowUpCircle, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 
 import { footerNav, mainNav, type NavItem } from "@/app/navigation";
 import { cn } from "@/lib/utils";
+import { PALETTE_SHORTCUT, usePalette } from "@/stores/palette";
 import { useUpdates } from "@/stores/updates";
 
 const COLLAPSED_KEY = "devcenter.sidebar.collapsed";
@@ -64,6 +65,32 @@ function UpdateNotice({ collapsed }: { collapsed: boolean }) {
   );
 }
 
+/** Ouvre la palette de commandes et rappelle son raccourci. */
+function PaletteButton({ collapsed }: { collapsed: boolean }) {
+  const setOpen = usePalette((s) => s.setOpen);
+  const label = `Rechercher une commande (${PALETTE_SHORTCUT})`;
+  return (
+    <button
+      type="button"
+      onClick={() => setOpen(true)}
+      title={label}
+      aria-label={label}
+      className={cn(
+        "mb-2 flex items-center gap-2 rounded-lg border bg-card/60 py-1.5 text-xs text-muted-foreground transition-colors hover:border-foreground/20 hover:text-foreground",
+        collapsed ? "justify-center px-0" : "px-3",
+      )}
+    >
+      <Search className="size-3.5 shrink-0 stroke-[1.5]" />
+      {!collapsed && (
+        <>
+          <span className="flex-1 truncate text-left">Rechercher…</span>
+          <kbd className="rounded border bg-background px-1.5 py-px font-mono text-[10px]">{PALETTE_SHORTCUT}</kbd>
+        </>
+      )}
+    </button>
+  );
+}
+
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(readCollapsed);
 
@@ -113,6 +140,7 @@ export function Sidebar() {
             <ToggleIcon className="size-4 stroke-[1.5]" />
           </button>
         </div>
+        <PaletteButton collapsed={collapsed} />
         {mainNav.map((item) => (
           <SidebarLink key={item.path} item={item} collapsed={collapsed} />
         ))}
