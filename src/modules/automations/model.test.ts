@@ -4,12 +4,13 @@ import type { AutomationStep } from "@/types";
 import { CONDITION_KINDS, DAYS, STEP_KINDS, defaultCondition, defaultStep, stepIcon, templates, triggerLabel } from "./model";
 import type { Refs } from "./model";
 
-const EMPTY: Refs = { projects: [], apps: [], workspaces: [], servers: [] };
+const EMPTY: Refs = { projects: [], apps: [], workspaces: [], servers: [], snippets: [] };
 const REFS: Refs = {
   projects: [{ id: 11, name: "api" }, { id: 12, name: "web" }],
   apps: [{ id: 21, name: "Docker Desktop" }],
   workspaces: [{ id: 31, name: "Journée" }],
   servers: [{ id: 41, name: "vps" }],
+  snippets: [{ id: 51, name: "Espace disque", serverId: null }],
 };
 
 describe("triggerLabel", () => {

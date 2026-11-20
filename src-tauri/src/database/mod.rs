@@ -122,6 +122,17 @@ const MIGRATIONS: &[&str] = &[
         status     TEXT NOT NULL
     );
     CREATE INDEX idx_script_runs_started ON script_runs(started_at);",
+    // 12 — commandes enregistrées des serveurs (server_id NULL = disponible sur tous les serveurs)
+    "CREATE TABLE server_snippets (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT NOT NULL,
+        command    TEXT NOT NULL,
+        server_id  INTEGER REFERENCES servers(id) ON DELETE CASCADE,
+        confirm    INTEGER NOT NULL DEFAULT 0,
+        sudo       INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+    );
+    CREATE INDEX idx_server_snippets_server ON server_snippets(server_id);",
 ];
 
 pub struct Database {

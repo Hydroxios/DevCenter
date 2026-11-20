@@ -11,6 +11,7 @@ import {
   PlugZap,
   Send,
   Square,
+  SquareChevronRight,
   SquareStop,
   type LucideIcon,
 } from "lucide-react";
@@ -49,6 +50,7 @@ export const STEP_KINDS: { kind: AutomationStep["kind"]; label: string; icon: Lu
   { kind: "launchApp", label: "Lancer une application", icon: AppWindow, group: "Ouvrir" },
   { kind: "openUrl", label: "Ouvrir une URL", icon: Globe, group: "Ouvrir" },
   { kind: "httpRequest", label: "Requête HTTP", icon: Send, group: "Ouvrir" },
+  { kind: "sshCommand", label: "Commande SSH", icon: SquareChevronRight, group: "Serveurs" },
   { kind: "notify", label: "Notifier", icon: Bell, group: "Contrôle" },
   { kind: "wait", label: "Attendre", icon: Hourglass, group: "Contrôle" },
   { kind: "waitForPort", label: "Attendre un port", icon: PlugZap, group: "Contrôle" },
@@ -72,7 +74,12 @@ export interface Refs {
   apps: { id: number; name: string }[];
   workspaces: { id: number; name: string }[];
   servers: { id: number; name: string }[];
+  /** Commandes serveur enregistrées (`serverId` null = tous les serveurs). */
+  snippets: { id: number; name: string; serverId: number | null }[];
 }
+
+/** Commandes enregistrées utilisables sur un serveur. */
+export const snippetsFor = (refs: Refs, serverId: number) => refs.snippets.filter((s) => s.serverId === null || s.serverId === serverId);
 
 export function defaultCondition(kind: AutomationCondition["kind"], refs: Refs): AutomationCondition {
   switch (kind) {
@@ -113,6 +120,11 @@ export function defaultStep(kind: AutomationStep["kind"], refs: Refs): Automatio
       return { kind, url: "http://localhost:3000" };
     case "httpRequest":
       return { kind, method: "GET", url: "http://localhost:3000/health", headers: "", body: "", expectStatus: "", timeoutSecs: 30 };
+    case "sshCommand": {
+      const serverId = refs.servers[0]?.id ?? 0;
+      const snippet = snippetsFor(refs, serverId)[0];
+      return { kind, serverId, snippetId: snippet?.id ?? null, command: snippet ? "" : "uptime", sudo: false, failOnError: true, timeoutSecs: 120 };
+    }
     case "notify":
       return { kind, title: "DevCenter", body: "" };
     case "wait":

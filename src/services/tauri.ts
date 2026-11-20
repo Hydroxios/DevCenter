@@ -20,6 +20,9 @@ import type {
   Container,
   RemoteAction,
   KeyStatus,
+  Snippet,
+  SnippetInput,
+  CommandResult,
   Automation,
   AutomationInput,
   AutomationRun,
@@ -150,6 +153,13 @@ export const api = {
     containerAction: (id: number, container: string, action: RemoteAction) =>
       invoke<void>("server_container_action", { id, container, action }),
     containerLogs: (id: number, container: string, lines = 300) => invoke<string>("server_container_logs", { id, container, lines }),
+  },
+  snippets: {
+    list: () => invoke<Snippet[]>("list_snippets"),
+    save: (input: SnippetInput) => invoke<Snippet[]>("save_snippet", { input }),
+    remove: (id: number) => invoke<Snippet[]>("delete_snippet", { id }),
+    /** Exécute la commande enregistrée sur le serveur `serverId`. */
+    run: (serverId: number, snippetId: number) => invoke<CommandResult>("server_run_snippet", { id: serverId, snippetId }),
   },
   automations: {
     list: () => invoke<Automation[]>("list_automations"),
