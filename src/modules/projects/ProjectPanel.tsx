@@ -1,9 +1,12 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
+  Archive,
   ArrowDown,
+  ArrowDownToLine,
   ArrowUp,
   ChevronDown,
+  CloudDownload,
   Code2,
   ExternalLink,
   FolderOpen,
@@ -34,10 +37,11 @@ import { cn, formatRelative } from "@/lib/utils";
 import { api } from "@/services/tauri";
 import { runsForProject, useRuns } from "@/stores/runs";
 import { LinkifiedLine } from "@/components/LinkifiedText";
-import type { GitStatus, Project, ProjectDetails, RunInfo } from "@/types";
+import type { GitStatus, Project, ProjectDetails, PullMode, RunInfo } from "@/types";
 import { BranchDialog } from "./BranchDialog";
 import { CommitDialog } from "./CommitDialog";
 import { GitHistory } from "./GitHistory";
+import { StashDialog } from "./StashDialog";
 
 /** Scripts mis en avant en tête de liste. */
 const PRIMARY_SCRIPTS = ["dev", "start", "serve", "tauri", "bootRun", "run", "runClient", "quarkusDev", "build", "test", "lint"];
@@ -64,6 +68,11 @@ function GitCard({
   onCommit,
   onPush,
   pushing,
+  onFetch,
+  onPull,
+  onStash,
+  syncing,
+  diverged,
 }: {
   git: GitStatus | null | undefined;
   hasGit: boolean;
@@ -72,6 +81,13 @@ function GitCard({
   onCommit: () => void;
   onPush: () => void;
   pushing: boolean;
+  onFetch: () => void;
+  onPull: (mode: PullMode) => void;
+  onStash: () => void;
+  /** Opération réseau en cours sur ce projet. */
+  syncing: "fetch" | PullMode | null;
+  /** Le dernier pull en avance rapide a échoué : branches divergentes. */
+  diverged: boolean;
 }) {
   if (!hasGit) {
     return <p className="text-sm text-muted-foreground">Ce dossier n'est pas un dépôt Git.</p>;
@@ -100,11 +116,34 @@ function GitCard({
           </Badge>
         )}
         {git.upstream && <span className="text-xs text-muted-foreground">→ {git.upstream}</span>}
+        <div className="ml-auto flex items-center gap-1.5">
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={syncing !== null}
+          onClick={onFetch}
+          title="Récupérer les nouveautés du dépôt distant sans toucher aux fichiers (git fetch --prune)"
+        >
+          {syncing === "fetch" ? <Loader2 className="animate-spin" /> : <CloudDownload />} Récupérer
+        </Button>
+        {git.upstream && git.behind > 0 && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={syncing !== null}
+            onClick={() => onPull("ffOnly")}
+            title={`Mettre la branche à jour depuis ${git.upstream} (git pull --ff-only)`}
+          >
+            {syncing === "ffOnly" ? <Loader2 className="animate-spin" /> : <ArrowDownToLine />} Tirer ({git.behind})
+          </Button>
+        )}
+        <Button size="sm" variant="ghost" onClick={onStash} title="Mettre de côté ou réappliquer des modifications (git stash)">
+          <Archive /> Remises
+        </Button>
         {canPush && (
           <Button
             size="sm"
             variant="outline"
-            className="ml-auto"
             disabled={pushing}
             onClick={onPush}
             title={git.upstream ? `Pousser vers ${git.upstream}` : "Publier la branche sur le dépôt distant"}
@@ -113,7 +152,34 @@ function GitCard({
             {git.upstream ? `Pousser${git.ahead > 0 ? ` (${git.ahead})` : ""}` : "Publier la branche"}
           </Button>
         )}
+        </div>
       </div>
+
+      {diverged && git.upstream && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2">
+          <p className="min-w-0 flex-1 text-xs">
+            La branche locale et <code>{git.upstream}</code> ont divergé : l'avance rapide est impossible.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={syncing !== null}
+            onClick={() => onPull("merge")}
+            title={`Fusionner ${git.upstream} dans la branche (git pull --no-rebase)`}
+          >
+            {syncing === "merge" && <Loader2 className="animate-spin" />} Fusionner
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={syncing !== null}
+            onClick={() => onPull("rebase")}
+            title={`Rejouer vos commits par-dessus ${git.upstream} (git pull --rebase)`}
+          >
+            {syncing === "rebase" && <Loader2 className="animate-spin" />} Rebaser
+          </Button>
+        </div>
+      )}
 
       {changes === 0 ? (
         <p className="text-muted-foreground">Aucune modification locale.</p>
@@ -323,6 +389,27 @@ export function ProjectPanel({
   const runningCount = runs.filter((r) => r.status === "running").length;
   const [branchOpen, setBranchOpen] = useState(false);
   const [commitOpen, setCommitOpen] = useState(false);
+  const [stashOpen, setStashOpen] = useState(false);
+  const [syncing, setSyncing] = useState<{ id: number; op: "fetch" | PullMode } | null>(null);
+  const [diverged, setDiverged] = useState<number | null>(null);
+  useEffect(() => setDiverged(null), [project.id]);
+  const sync = async (op: "fetch" | PullMode) => {
+    const id = project.id;
+    setSyncing({ id, op });
+    setActionError(null);
+    try {
+      onDetails(op === "fetch" ? await api.git.fetch(id) : await api.git.pull(id, op));
+      if (op !== "fetch") setDiverged(null);
+    } catch (e) {
+      const msg = String(e);
+      if (op === "ffOnly" && msg.includes("divergé")) setDiverged(id);
+      setActionError(`${op === "fetch" ? "Récupération" : "Pull"} impossible : ${msg}`);
+      // Un pull en conflit modifie quand même le dépôt : statut à relire.
+      if (op !== "fetch") api.projects.details(id, true).then(onDetails, () => {});
+    } finally {
+      setSyncing((cur) => (cur?.id === id ? null : cur));
+    }
+  };
   const [pushing, setPushing] = useState<number | null>(null);
   const push = async () => {
     const id = project.id;
@@ -393,6 +480,7 @@ export function ProjectPanel({
             onCommitted={onDetails}
             onPushError={(e) => setActionError(`Commit créé, mais le push a échoué : ${e}`)}
           />
+          <StashDialog projectId={project.id} git={details?.git} open={stashOpen} onOpenChange={setStashOpen} onChanged={onDetails} />
         </>
       )}
       {!project.exists && <p className="border-b px-6 py-2 text-sm text-destructive">Dossier introuvable : il a été déplacé ou supprimé.</p>}
@@ -454,6 +542,11 @@ export function ProjectPanel({
                   onCommit={() => setCommitOpen(true)}
                   onPush={push}
                   pushing={pushing === project.id}
+                  onFetch={() => sync("fetch")}
+                  onPull={sync}
+                  onStash={() => setStashOpen(true)}
+                  syncing={syncing?.id === project.id ? syncing.op : null}
+                  diverged={diverged === project.id && (details?.git?.behind ?? 0) > 0}
                 />
               </Card>
             )}

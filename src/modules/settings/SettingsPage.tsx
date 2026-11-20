@@ -10,6 +10,7 @@ import { GithubIcon } from "@/components/GithubIcon";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { api, isTauri } from "@/services/tauri";
+import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useSettings } from "@/stores/settings";
 import { AboutSettings } from "./AboutSettings";
@@ -181,6 +182,34 @@ function ProjectsRootSetting() {
   );
 }
 
+const FETCH_INTERVALS: { value: number; label: string }[] = [
+  { value: 0, label: "Désactivé" },
+  { value: 5, label: "Toutes les 5 min" },
+  { value: 15, label: "Toutes les 15 min" },
+  { value: 30, label: "Toutes les 30 min" },
+];
+
+function GitFetchSetting() {
+  const { settings, update } = useSettings();
+  return (
+    <Row
+      title="Récupération Git automatique"
+      description="git fetch en arrière-plan, un dépôt à la fois et sans fenêtre d'identification, pour garder les compteurs ↑/↓ à jour."
+    >
+      <Select
+        aria-label="Récupération Git automatique"
+        className="w-44 shrink-0"
+        value={settings.gitFetchInterval}
+        onChange={(e) => update("gitFetchInterval", Number(e.target.value))}
+      >
+        {FETCH_INTERVALS.map((i) => (
+          <option key={i.value} value={i.value}>{i.label}</option>
+        ))}
+      </Select>
+    </Row>
+  );
+}
+
 type SettingsTab = "general" | "remote" | "backup" | "about";
 const TABS: SettingsTab[] = ["general", "remote", "backup", "about"];
 let lastSettingsTab: SettingsTab = "general";
@@ -259,6 +288,7 @@ export function SettingsPage() {
         </Row>
         <EditorSetting />
         {tauri && <ProjectsRootSetting />}
+        {tauri && <GitFetchSetting />}
         {tauri && <GithubSetting />}
       </Card>
       )}

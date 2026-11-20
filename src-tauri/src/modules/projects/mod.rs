@@ -8,6 +8,7 @@ pub mod gitcache;
 pub mod gradle;
 pub mod history;
 pub mod import;
+pub mod sync;
 pub mod watcher;
 
 use std::path::{Path, PathBuf};

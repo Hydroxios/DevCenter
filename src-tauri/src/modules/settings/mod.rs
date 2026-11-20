@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -28,7 +28,12 @@ pub struct Settings {
     pub remote_port: u16,
     /// Dossier où cloner les nouveaux projets (sinon : déduit des projets existants).
     pub projects_root: Option<String>,
+    /// Fetch Git périodique en arrière-plan, en minutes (0 = désactivé).
+    pub git_fetch_interval: u32,
 }
+
+/// Intervalles proposés pour le fetch Git périodique (minutes ; 0 = désactivé).
+pub const GIT_FETCH_INTERVALS: &[u32] = &[0, 5, 15, 30];
 
 impl Default for Settings {
     fn default() -> Self {
@@ -39,6 +44,7 @@ impl Default for Settings {
             remote_enabled: false,
             remote_port: crate::modules::remote::DEFAULT_PORT,
             projects_root: None,
+            git_fetch_interval: 15,
         }
     }
 }
@@ -46,12 +52,21 @@ impl Default for Settings {
 /// Service des paramètres : lecture/écriture SQLite + cache des valeurs utilisées côté Rust.
 pub struct SettingsService {
     close_to_tray: AtomicBool,
+    git_fetch_interval: AtomicU32,
 }
 
 impl SettingsService {
     pub fn new(db: &Database) -> AppResult<Self> {
         let settings = Self::load(db)?;
-        Ok(Self { close_to_tray: AtomicBool::new(settings.close_to_tray) })
+        Ok(Self {
+            close_to_tray: AtomicBool::new(settings.close_to_tray),
+            git_fetch_interval: AtomicU32::new(settings.git_fetch_interval),
+        })
+    }
+
+    /// Intervalle du fetch Git d'arrière-plan, en minutes (0 = désactivé).
+    pub fn git_fetch_interval(&self) -> u32 {
+        self.git_fetch_interval.load(Ordering::Relaxed)
     }
 
     pub fn close_to_tray(&self) -> bool {
@@ -97,6 +112,13 @@ impl SettingsService {
                             settings.projects_root = p;
                         }
                     }
+                    "gitFetchInterval" => {
+                        if let Ok(m) = serde_json::from_str::<u32>(&value) {
+                            if GIT_FETCH_INTERVALS.contains(&m) {
+                                settings.git_fetch_interval = m;
+                            }
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -137,6 +159,13 @@ impl SettingsService {
                         return Err(AppError::InvalidInput(format!("dossier introuvable : {p}")));
                     }
                 }
+            }
+            "gitFetchInterval" => {
+                let m = serde_json::from_value::<u32>(value.clone()).map_err(invalid)?;
+                if !GIT_FETCH_INTERVALS.contains(&m) {
+                    return Err(AppError::InvalidInput("intervalle de fetch : 0 (désactivé), 5, 15 ou 30 minutes".into()));
+                }
+                self.git_fetch_interval.store(m, Ordering::Relaxed);
             }
             other => return Err(AppError::InvalidInput(format!("clé inconnue « {other} »"))),
         }
@@ -193,5 +222,8 @@ mod tests {
         assert!(svc.set(&db, "shell", serde_json::json!("rm -rf")).is_err());
         assert!(svc.set(&db, "theme", serde_json::json!("purple")).is_err());
         assert!(svc.set(&db, "closeToTray", serde_json::json!("yes")).is_err());
+        assert!(svc.set(&db, "gitFetchInterval", serde_json::json!(7)).is_err());
+        assert_eq!(svc.set(&db, "gitFetchInterval", serde_json::json!(5)).unwrap().git_fetch_interval, 5);
+        assert_eq!(svc.git_fetch_interval(), 5);
     }
 }
