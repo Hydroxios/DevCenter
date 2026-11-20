@@ -32,8 +32,23 @@ const TICK: Duration = Duration::from_millis(200);
 /// Dossiers dont les changements n'affectent pas le statut (ignorés par Git en pratique) ou
 /// produisent un flot d'événements (dépendances, sorties de build).
 const IGNORED_DIRS: &[&str] = &[
-    "node_modules", "target", "dist", "build", "out", ".gradle", ".next", ".nuxt", ".turbo", ".cache",
-    ".svelte-kit", ".parcel-cache", "coverage", "__pycache__", ".venv", "venv", ".idea",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    "out",
+    ".gradle",
+    ".next",
+    ".nuxt",
+    ".turbo",
+    ".cache",
+    ".svelte-kit",
+    ".parcel-cache",
+    "coverage",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".idea",
 ];
 
 #[derive(Serialize, Clone)]
@@ -68,7 +83,9 @@ pub struct GitWatcher {
 
 /// Vrai si le changement peut modifier le statut Git du dépôt `root`.
 fn relevant(root: &Path, path: &Path) -> bool {
-    let Ok(rel) = path.strip_prefix(root) else { return false };
+    let Ok(rel) = path.strip_prefix(root) else {
+        return false;
+    };
     let mut parts = rel.components().filter_map(|c| match c {
         Component::Normal(s) => s.to_str(),
         _ => None,
@@ -79,13 +96,19 @@ fn relevant(root: &Path, path: &Path) -> bool {
         Some(".git") => {
             let rest: Vec<&str> = parts.collect();
             match rest.as_slice() {
-                [f] => matches!(*f, "index" | "HEAD" | "packed-refs" | "FETCH_HEAD" | "ORIG_HEAD" | "MERGE_HEAD"),
+                [f] => matches!(
+                    *f,
+                    "index" | "HEAD" | "packed-refs" | "FETCH_HEAD" | "ORIG_HEAD" | "MERGE_HEAD"
+                ),
                 ["refs", ..] => !rest.last().is_some_and(|f| f.ends_with(".lock")),
                 _ => false,
             }
         }
         Some(first) => {
-            !IGNORED_DIRS.contains(&first) && !rel.components().any(|c| matches!(c, Component::Normal(s) if s == "node_modules"))
+            !IGNORED_DIRS.contains(&first)
+                && !rel
+                    .components()
+                    .any(|c| matches!(c, Component::Normal(s) if s == "node_modules"))
         }
     }
 }
@@ -101,31 +124,36 @@ impl GitWatcher {
                 return;
             }
         };
-        self.inner.lock().map(|mut i| i.watcher = Some(watcher)).ok();
+        self.inner
+            .lock()
+            .map(|mut i| i.watcher = Some(watcher))
+            .ok();
 
         let inner = Arc::clone(&self.inner);
         let handle = app.clone();
         std::thread::Builder::new()
             .name("devcenter-git-watch".into())
-            .spawn(move || loop {
-                match rx.recv_timeout(TICK) {
-                    Ok(Ok(event)) => {
-                        if matches!(event.kind, EventKind::Access(_)) {
+            .spawn(move || {
+                loop {
+                    match rx.recv_timeout(TICK) {
+                        Ok(Ok(event)) => {
+                            if matches!(event.kind, EventKind::Access(_)) {
+                                continue;
+                            }
+                            let Ok(mut inner) = inner.lock() else { return };
+                            let now = Instant::now();
+                            for repo in inner.repos.iter_mut() {
+                                if event.paths.iter().any(|p| relevant(&repo.path, p)) {
+                                    repo.dirty_since = Some(now);
+                                }
+                            }
                             continue;
                         }
-                        let Ok(mut inner) = inner.lock() else { return };
-                        let now = Instant::now();
-                        for repo in inner.repos.iter_mut() {
-                            if event.paths.iter().any(|p| relevant(&repo.path, p)) {
-                                repo.dirty_since = Some(now);
-                            }
-                        }
-                        continue;
+                        Ok(Err(_)) | Err(RecvTimeoutError::Timeout) => {}
+                        Err(RecvTimeoutError::Disconnected) => return,
                     }
-                    Ok(Err(_)) | Err(RecvTimeoutError::Timeout) => {}
-                    Err(RecvTimeoutError::Disconnected) => return,
+                    flush(&handle, &inner);
                 }
-                flush(&handle, &inner);
             })
             .ok();
 
@@ -134,10 +162,16 @@ impl GitWatcher {
 
     /// Aligne les dossiers suivis sur la liste des projets (ajout, retrait, clonage).
     pub fn sync(&self, db: &crate::database::Database) {
-        let Ok(projects) = super::list(db) else { return };
-        let Ok(mut inner) = self.inner.lock() else { return };
+        let Ok(projects) = super::list(db) else {
+            return;
+        };
+        let Ok(mut inner) = self.inner.lock() else {
+            return;
+        };
         let Inner { watcher, repos } = &mut *inner;
-        let Some(watcher) = watcher.as_mut() else { return };
+        let Some(watcher) = watcher.as_mut() else {
+            return;
+        };
 
         let wanted: HashMap<i64, PathBuf> = projects
             .into_iter()
@@ -159,7 +193,14 @@ impl GitWatcher {
             match watcher.watch(&path, RecursiveMode::Recursive) {
                 Ok(()) => {
                     let head = GitHead::read(&path);
-                    repos.push(Repo { id, path, dirty_since: None, last_read: None, last_sent: None, head })
+                    repos.push(Repo {
+                        id,
+                        path,
+                        dirty_since: None,
+                        last_read: None,
+                        last_sent: None,
+                        head,
+                    })
                 }
                 Err(e) => log::warn!("observation impossible de {} : {e}", path.display()),
             }
@@ -183,8 +224,10 @@ fn flush(app: &AppHandle, inner: &Arc<Mutex<Inner>>) {
             .repos
             .iter_mut()
             .filter(|r| {
-                r.dirty_since.is_some_and(|t| now.duration_since(t) >= QUIET)
-                    && r.last_read.is_none_or(|t| now.duration_since(t) >= MIN_INTERVAL)
+                r.dirty_since
+                    .is_some_and(|t| now.duration_since(t) >= QUIET)
+                    && r.last_read
+                        .is_none_or(|t| now.duration_since(t) >= MIN_INTERVAL)
             })
             .map(|r| {
                 r.dirty_since = None;
@@ -199,15 +242,24 @@ fn flush(app: &AppHandle, inner: &Arc<Mutex<Inner>>) {
         let head = GitHead::read(&path);
         let (changed, previous_head) = {
             let Ok(mut inner) = inner.lock() else { return };
-            let Some(repo) = inner.repos.iter_mut().find(|r| r.id == id) else { continue };
+            let Some(repo) = inner.repos.iter_mut().find(|r| r.id == id) else {
+                continue;
+            };
             let changed = repo.last_sent.as_ref() != Some(&git);
             repo.last_sent = Some(git.clone());
-            let previous = if head.is_some() { std::mem::replace(&mut repo.head, head.clone()) } else { None };
+            let previous = if head.is_some() {
+                std::mem::replace(&mut repo.head, head.clone())
+            } else {
+                None
+            };
             (changed, previous)
         };
         if let (Some(before), Some(after)) = (&previous_head, &head) {
             if before != after {
-                let subject = git.as_ref().and_then(|g| g.last_commit.as_ref()).map(|c| c.subject.clone());
+                let subject = git
+                    .as_ref()
+                    .and_then(|g| g.last_commit.as_ref())
+                    .map(|c| c.subject.clone());
                 automations::on_git_change(app, id, before, after, subject);
             }
         }
@@ -226,13 +278,39 @@ mod tests {
         let root = Path::new(r"C:\dev\app");
         assert!(relevant(root, &root.join("src").join("main.rs")));
         assert!(relevant(root, &root.join(".git").join("index")));
-        assert!(relevant(root, &root.join(".git").join("refs").join("heads").join("main")));
-        assert!(!relevant(root, &root.join(".git").join("refs").join("heads").join("main.lock")));
-        assert!(!relevant(root, &root.join(".git").join("objects").join("ab").join("cdef")));
+        assert!(relevant(
+            root,
+            &root.join(".git").join("refs").join("heads").join("main")
+        ));
+        assert!(!relevant(
+            root,
+            &root
+                .join(".git")
+                .join("refs")
+                .join("heads")
+                .join("main.lock")
+        ));
+        assert!(!relevant(
+            root,
+            &root.join(".git").join("objects").join("ab").join("cdef")
+        ));
         assert!(!relevant(root, &root.join(".git").join("index.lock")));
-        assert!(!relevant(root, &root.join("node_modules").join("x").join("index.js")));
-        assert!(!relevant(root, &root.join("packages").join("a").join("node_modules").join("y.js")));
-        assert!(!relevant(root, &root.join("target").join("debug").join("app.exe")));
+        assert!(!relevant(
+            root,
+            &root.join("node_modules").join("x").join("index.js")
+        ));
+        assert!(!relevant(
+            root,
+            &root
+                .join("packages")
+                .join("a")
+                .join("node_modules")
+                .join("y.js")
+        ));
+        assert!(!relevant(
+            root,
+            &root.join("target").join("debug").join("app.exe")
+        ));
         assert!(!relevant(root, Path::new(r"C:\autre\fichier.txt")));
     }
 }

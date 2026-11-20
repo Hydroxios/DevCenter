@@ -53,12 +53,23 @@ pub fn exe() -> Option<PathBuf> {
 }
 
 fn gh(args: &[&str]) -> AppResult<String> {
-    let exe = exe().ok_or_else(|| AppError::InvalidInput("GitHub CLI (gh) n'est pas installé".into()))?;
-    let out = shell::command(exe).args(args).env("GH_PROMPT_DISABLED", "1").env("NO_COLOR", "1").output()?;
+    let exe =
+        exe().ok_or_else(|| AppError::InvalidInput("GitHub CLI (gh) n'est pas installé".into()))?;
+    let out = shell::command(exe)
+        .args(args)
+        .env("GH_PROMPT_DISABLED", "1")
+        .env("NO_COLOR", "1")
+        .output()?;
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     } else {
-        Err(AppError::InvalidInput(String::from_utf8_lossy(&out.stderr).trim().chars().take(300).collect()))
+        Err(AppError::InvalidInput(
+            String::from_utf8_lossy(&out.stderr)
+                .trim()
+                .chars()
+                .take(300)
+                .collect(),
+        ))
     }
 }
 
@@ -66,12 +77,24 @@ pub fn status() -> GithubStatus {
     if exe().is_none() {
         return GithubStatus::default();
     }
-    let mut st = GithubStatus { installed: true, ..Default::default() };
+    let mut st = GithubStatus {
+        installed: true,
+        ..Default::default()
+    };
     // `gh auth status` sort en erreur s'il n'y a aucun compte : on lit quand même le JSON.
     let Some(exe) = exe() else { return st };
-    let Ok(out) = shell::command(exe).args(["auth", "status", "--json", "hosts"]).env("GH_PROMPT_DISABLED", "1").output() else { return st };
+    let Ok(out) = shell::command(exe)
+        .args(["auth", "status", "--json", "hosts"])
+        .env("GH_PROMPT_DISABLED", "1")
+        .output()
+    else {
+        return st;
+    };
     if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&out.stdout) {
-        if let Some(acc) = json["hosts"]["github.com"].as_array().and_then(|a| a.iter().find(|h| h["active"].as_bool() == Some(true) && h["state"] == "success")) {
+        if let Some(acc) = json["hosts"]["github.com"].as_array().and_then(|a| {
+            a.iter()
+                .find(|h| h["active"].as_bool() == Some(true) && h["state"] == "success")
+        }) {
             st.login = acc["login"].as_str().map(str::to_string);
             st.scopes = acc["scopes"].as_str().map(str::to_string);
         }
@@ -93,8 +116,15 @@ pub fn full_name_from_remote(url: &str) -> Option<String> {
 }
 
 fn origin_of(path: &Path) -> Option<String> {
-    let out = shell::command("git").arg("-C").arg(path).args(["config", "--get", "remote.origin.url"]).output().ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+    let out = shell::command("git")
+        .arg("-C")
+        .arg(path)
+        .args(["config", "--get", "remote.origin.url"])
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
 #[derive(Deserialize)]
@@ -119,10 +149,15 @@ struct ApiOwner {
 impl GithubCache {
     /// Dépôts accessibles au compte connecté (personnels, collaborations, organisations).
     pub fn repos(&self, db: &Database, refresh: bool) -> AppResult<(String, Vec<Repo>)> {
-        let login = status().login.ok_or_else(|| AppError::InvalidInput("aucun compte GitHub connecté".into()))?;
+        let login = status()
+            .login
+            .ok_or_else(|| AppError::InvalidInput("aucun compte GitHub connecté".into()))?;
         let cached = {
             let cache = self.repos.lock()?;
-            cache.as_ref().filter(|(at, who, _)| !refresh && at.elapsed() < CACHE_TTL && *who == login).map(|(_, _, r)| r.clone())
+            cache
+                .as_ref()
+                .filter(|(at, who, _)| !refresh && at.elapsed() < CACHE_TTL && *who == login)
+                .map(|(_, _, r)| r.clone())
         };
         let mut repos = match cached {
             Some(r) => r,
@@ -162,9 +197,18 @@ impl GithubCache {
             let handles: Vec<_> = projects
                 .iter()
                 .filter(|p| p.exists)
-                .map(|p| s.spawn(move || origin_of(Path::new(&p.path)).and_then(|u| full_name_from_remote(&u)).map(|n| (p.id, n))))
+                .map(|p| {
+                    s.spawn(move || {
+                        origin_of(Path::new(&p.path))
+                            .and_then(|u| full_name_from_remote(&u))
+                            .map(|n| (p.id, n))
+                    })
+                })
                 .collect();
-            handles.into_iter().filter_map(|h| h.join().ok().flatten()).collect()
+            handles
+                .into_iter()
+                .filter_map(|h| h.join().ok().flatten())
+                .collect()
         });
         for r in &mut repos {
             let key = r.full_name.to_lowercase();
@@ -224,14 +268,21 @@ fn search(query: &str) -> AppResult<Vec<InboxItem>> {
         "--jq",
         r#".items[] | {number, title, url: .html_url, updatedAt: .updated_at, draft: (.draft // false), repo: (.repository_url | sub("^.*/repos/"; ""))}"#,
     ])?;
-    Ok(text.lines().filter_map(|l| serde_json::from_str::<InboxItem>(l).ok()).collect())
+    Ok(text
+        .lines()
+        .filter_map(|l| serde_json::from_str::<InboxItem>(l).ok())
+        .collect())
 }
 
 /// PR et issues ouvertes qui concernent l'utilisateur connecté (trois recherches en parallèle).
 /// Sans compte connecté, renvoie simplement `login: None` (pas d'erreur).
 pub fn inbox() -> AppResult<GithubInbox> {
     let st = status();
-    let mut inbox = GithubInbox { installed: st.installed, login: st.login, ..Default::default() };
+    let mut inbox = GithubInbox {
+        installed: st.installed,
+        login: st.login,
+        ..Default::default()
+    };
     if inbox.login.is_none() {
         return Ok(inbox);
     }
@@ -240,7 +291,11 @@ pub fn inbox() -> AppResult<GithubInbox> {
         let r = s.spawn(|| search("is:open is:pr review-requested:@me"));
         let i = s.spawn(|| search("is:open is:issue assignee:@me"));
         let join = |h: std::thread::ScopedJoinHandle<'_, AppResult<Vec<InboxItem>>>| {
-            h.join().unwrap_or_else(|_| Err(AppError::InvalidInput("recherche GitHub interrompue".into())))
+            h.join().unwrap_or_else(|_| {
+                Err(AppError::InvalidInput(
+                    "recherche GitHub interrompue".into(),
+                ))
+            })
         };
         (join(a), join(r), join(i))
     });
@@ -257,7 +312,10 @@ pub fn credential_args(url: &str) -> Vec<String> {
     if !url.to_lowercase().starts_with("https://github.com/") || status().login.is_none() {
         return Vec::new();
     }
-    let helper = format!("!'{}' auth git-credential", exe.display().to_string().replace('\\', "/"));
+    let helper = format!(
+        "!'{}' auth git-credential",
+        exe.display().to_string().replace('\\', "/")
+    );
     vec![
         "-c".into(),
         "credential.https://github.com.helper=".into(),
@@ -272,9 +330,18 @@ mod tests {
 
     #[test]
     fn normalizes_remotes() {
-        assert_eq!(full_name_from_remote("https://github.com/Hydroxios/HxNotes.git").as_deref(), Some("hydroxios/hxnotes"));
-        assert_eq!(full_name_from_remote("git@github.com:Hydroxios/HxNotes.git").as_deref(), Some("hydroxios/hxnotes"));
-        assert_eq!(full_name_from_remote("https://github.com/a/b/").as_deref(), Some("a/b"));
+        assert_eq!(
+            full_name_from_remote("https://github.com/Hydroxios/HxNotes.git").as_deref(),
+            Some("hydroxios/hxnotes")
+        );
+        assert_eq!(
+            full_name_from_remote("git@github.com:Hydroxios/HxNotes.git").as_deref(),
+            Some("hydroxios/hxnotes")
+        );
+        assert_eq!(
+            full_name_from_remote("https://github.com/a/b/").as_deref(),
+            Some("a/b")
+        );
         assert_eq!(full_name_from_remote("https://gitlab.com/a/b"), None);
     }
 }
@@ -292,17 +359,35 @@ mod live_tests {
         let db = Database::open(&dir.join("t.db")).unwrap();
         let (login, repos) = GithubCache::default().repos(&db, true).unwrap();
         let private: Vec<_> = repos.iter().filter(|r| r.private).collect();
-        eprintln!("compte {login} : {} dépôts dont {} privés", repos.len(), private.len());
+        eprintln!(
+            "compte {login} : {} dépôts dont {} privés",
+            repos.len(),
+            private.len()
+        );
         if let Some(r) = private.first() {
             let out = shell::command("git")
                 .args(credential_args(&r.clone_url))
-                .args(["-c", "credential.interactive=never", "ls-remote", "--heads", &r.clone_url])
+                .args([
+                    "-c",
+                    "credential.interactive=never",
+                    "ls-remote",
+                    "--heads",
+                    &r.clone_url,
+                ])
                 .env("GIT_TERMINAL_PROMPT", "0")
                 .env("GCM_INTERACTIVE", "never")
                 .output()
                 .unwrap();
-            eprintln!("ls-remote {} : {}", r.full_name, if out.status.success() { "OK" } else { "ÉCHEC" });
-            assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+            eprintln!(
+                "ls-remote {} : {}",
+                r.full_name,
+                if out.status.success() { "OK" } else { "ÉCHEC" }
+            );
+            assert!(
+                out.status.success(),
+                "{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
         }
         std::fs::remove_dir_all(&dir).ok();
     }

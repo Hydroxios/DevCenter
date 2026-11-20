@@ -25,7 +25,10 @@ pub const EVENT_CHANGED: &str = "projects://changed";
 const CLONE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 fn key(p: &Path) -> String {
-    p.display().to_string().trim_end_matches(['\\', '/']).to_lowercase()
+    p.display()
+        .to_string()
+        .trim_end_matches(['\\', '/'])
+        .to_lowercase()
 }
 
 /// Dossier où sont clonés les nouveaux projets.
@@ -46,7 +49,9 @@ pub fn default_root(db: &Database) -> AppResult<PathBuf> {
     if let Some((dir, _)) = counts.into_iter().max_by_key(|(_, n)| *n) {
         return Ok(dir);
     }
-    let home = std::env::var_os("USERPROFILE").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("C:\\"));
+    let home = std::env::var_os("USERPROFILE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("C:\\"));
     Ok(home.join("Projects"))
 }
 
@@ -104,21 +109,37 @@ pub struct CloneJobs {
 
 /// URL de dépôt acceptée : https, hôte et chemin simples, sans identifiants intégrés.
 pub fn validate_url(url: &str) -> AppResult<()> {
-    let invalid = || AppError::InvalidInput("URL Git invalide : collez une adresse https://… (ex. https://github.com/moi/projet)".into());
+    let invalid = || {
+        AppError::InvalidInput(
+            "URL Git invalide : collez une adresse https://… (ex. https://github.com/moi/projet)"
+                .into(),
+        )
+    };
     let rest = url.strip_prefix("https://").ok_or_else(invalid)?;
     let (host, path) = rest.split_once('/').ok_or_else(invalid)?;
     let host_ok = !host.is_empty()
         && !host.contains('@') // pas d'identifiants dans l'URL
         && host.chars().all(|c| c.is_ascii_alphanumeric() || ".-:".contains(c));
     let path_ok = !path.trim_matches('/').is_empty()
-        && path.chars().all(|c| c.is_ascii_alphanumeric() || "._-/~".contains(c))
+        && path
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._-/~".contains(c))
         && !path.contains("..");
-    if url.len() <= 300 && host_ok && path_ok { Ok(()) } else { Err(invalid()) }
+    if url.len() <= 300 && host_ok && path_ok {
+        Ok(())
+    } else {
+        Err(invalid())
+    }
 }
 
 /// Nom de dossier déduit de l'URL (`…/projet.git` → `projet`).
 pub fn name_from_url(url: &str) -> String {
-    url.trim_end_matches('/').rsplit('/').next().unwrap_or("projet").trim_end_matches(".git").to_string()
+    url.trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or("projet")
+        .trim_end_matches(".git")
+        .to_string()
 }
 
 pub fn validate_name(name: &str) -> AppResult<()> {
@@ -126,8 +147,16 @@ pub fn validate_name(name: &str) -> AppResult<()> {
         && name.len() <= 100
         && !name.starts_with('.')
         && !name.starts_with('-')
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c));
-    if ok { Ok(()) } else { Err(AppError::InvalidInput(format!("nom de dossier invalide : {name}"))) }
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c));
+    if ok {
+        Ok(())
+    } else {
+        Err(AppError::InvalidInput(format!(
+            "nom de dossier invalide : {name}"
+        )))
+    }
 }
 
 impl CloneJobs {
@@ -147,16 +176,29 @@ impl CloneJobs {
     pub fn start(&self, app: &AppHandle, url: &str, name: Option<&str>) -> AppResult<CloneJob> {
         let url = url.trim().to_string();
         validate_url(&url)?;
-        let name = name.map(str::trim).filter(|n| !n.is_empty()).map(str::to_string).unwrap_or_else(|| name_from_url(&url));
+        let name = name
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| name_from_url(&url));
         validate_name(&name)?;
         let state = app.state::<AppState>();
         let root = default_root(&state.db)?;
         let dest = root.join(&name);
         if dest.exists() {
-            return Err(AppError::InvalidInput(format!("le dossier {} existe déjà", dest.display())));
+            return Err(AppError::InvalidInput(format!(
+                "le dossier {} existe déjà",
+                dest.display()
+            )));
         }
-        if self.list().iter().any(|j| j.status == "running" && key(Path::new(&j.path)) == key(&dest)) {
-            return Err(AppError::InvalidInput("ce clonage est déjà en cours".into()));
+        if self
+            .list()
+            .iter()
+            .any(|j| j.status == "running" && key(Path::new(&j.path)) == key(&dest))
+        {
+            return Err(AppError::InvalidInput(
+                "ce clonage est déjà en cours".into(),
+            ));
         }
         std::fs::create_dir_all(&root)?;
 
@@ -172,7 +214,9 @@ impl CloneJobs {
         };
         {
             let mut jobs = self.jobs.lock()?;
-            jobs.retain(|j| j.status == "running" || crate::modules::automations::now() - j.started_at < 3600);
+            jobs.retain(|j| {
+                j.status == "running" || crate::modules::automations::now() - j.started_at < 3600
+            });
             jobs.push(job.clone());
         }
 
@@ -181,10 +225,14 @@ impl CloneJobs {
         std::thread::spawn(move || {
             let state = app.state::<AppState>();
             let result = run_clone(&url, &dest);
-            let outcome = result.and_then(|()| super::add(&state.db, &[dest.display().to_string()]));
+            let outcome =
+                result.and_then(|()| super::add(&state.db, &[dest.display().to_string()]));
             match outcome {
                 Ok(list) => {
-                    let project_id = list.iter().find(|p| key(Path::new(&p.path)) == key(&dest)).map(|p| p.id);
+                    let project_id = list
+                        .iter()
+                        .find(|p| key(Path::new(&p.path)) == key(&dest))
+                        .map(|p| p.id);
                     state.clones.update(id, |j| {
                         j.status = "done".into();
                         j.project_id = project_id;
@@ -236,11 +284,17 @@ fn run_clone(url: &str, dest: &Path) -> AppResult<()> {
     let mut child = shell::command("git")
         .args(crate::modules::github::credential_args(url))
         .args([
-            "-c", "protocol.allow=never",
-            "-c", "protocol.https.allow=always",
-            "-c", "credential.interactive=never",
-            "-c", "core.askPass=",
-            "clone", "--quiet", "--",
+            "-c",
+            "protocol.allow=never",
+            "-c",
+            "protocol.https.allow=always",
+            "-c",
+            "credential.interactive=never",
+            "-c",
+            "core.askPass=",
+            "clone",
+            "--quiet",
+            "--",
         ])
         .arg(url)
         .arg(dest)
@@ -267,19 +321,33 @@ fn run_clone(url: &str, dest: &Path) -> AppResult<()> {
                 let _ = s.read_to_string(&mut err);
             }
             let lower = err.to_lowercase();
-            let msg = if lower.contains("authentication") || lower.contains("could not read username") || lower.contains("terminal prompts disabled") {
+            let msg = if lower.contains("authentication")
+                || lower.contains("could not read username")
+                || lower.contains("terminal prompts disabled")
+            {
                 "dépôt privé : connectez votre compte GitHub dans DevCenter (Paramètres › GitHub), puis réessayez".to_string()
-            } else if lower.contains("not found") || lower.contains("repository") && lower.contains("does not exist") {
+            } else if lower.contains("not found")
+                || lower.contains("repository") && lower.contains("does not exist")
+            {
                 "dépôt introuvable".to_string()
             } else {
-                err.lines().filter(|l| !l.trim().is_empty()).last().unwrap_or("échec du clonage").trim().chars().take(300).collect()
+                err.lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .last()
+                    .unwrap_or("échec du clonage")
+                    .trim()
+                    .chars()
+                    .take(300)
+                    .collect()
             };
             return Err(AppError::InvalidInput(msg));
         }
         if Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(AppError::InvalidInput("clonage trop long (15 min) : interrompu".into()));
+            return Err(AppError::InvalidInput(
+                "clonage trop long (15 min) : interrompu".into(),
+            ));
         }
         std::thread::sleep(Duration::from_millis(300));
     }
@@ -309,7 +377,10 @@ mod tests {
 
     #[test]
     fn names() {
-        assert_eq!(name_from_url("https://github.com/moi/mon-projet.git"), "mon-projet");
+        assert_eq!(
+            name_from_url("https://github.com/moi/mon-projet.git"),
+            "mon-projet"
+        );
         assert_eq!(name_from_url("https://github.com/moi/app/"), "app");
         assert!(validate_name("mon-projet").is_ok());
         assert!(validate_name("..").is_err());
@@ -325,7 +396,12 @@ mod tests {
         let db = Database::open(&dir.join("t.db")).unwrap();
         crate::modules::projects::add(&db, &[proj.display().to_string()]).unwrap();
         let ws = dir.join("workspace").display().to_string();
-        assert!(roots(&db).unwrap().iter().any(|r| r.eq_ignore_ascii_case(&ws)));
+        assert!(
+            roots(&db)
+                .unwrap()
+                .iter()
+                .any(|r| r.eq_ignore_ascii_case(&ws))
+        );
         assert!(within_roots(&db, &proj.display().to_string()).unwrap());
         assert!(!within_roots(&db, "C:\\Windows").unwrap());
         assert!(!within_roots(&db, &format!("{ws}\\..\\..")).unwrap());

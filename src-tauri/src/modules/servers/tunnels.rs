@@ -82,10 +82,18 @@ pub struct TunnelStatus {
 
 impl TunnelStatus {
     fn stopped() -> Self {
-        Self { state: TunnelState::Stopped, message: None, since: now(), restarts: 0 }
+        Self {
+            state: TunnelState::Stopped,
+            message: None,
+            since: now(),
+            restarts: 0,
+        }
     }
     pub fn is_active(&self) -> bool {
-        matches!(self.state, TunnelState::Starting | TunnelState::Running | TunnelState::Retrying)
+        matches!(
+            self.state,
+            TunnelState::Starting | TunnelState::Running | TunnelState::Retrying
+        )
     }
 }
 
@@ -133,7 +141,10 @@ struct StatusEvent {
 }
 
 fn now() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 // ------------------------------------------------------------------ Validation
@@ -146,13 +157,22 @@ pub fn validate_host(host: &str, what: &str) -> AppResult<()> {
         && host.len() <= 253
         && !host.starts_with('-')
         && match inner {
-            Some(v6) => !v6.is_empty() && v6.chars().all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.'),
-            None => host.chars().all(|c| c.is_ascii_alphanumeric() || ".-_".contains(c)),
+            Some(v6) => {
+                !v6.is_empty()
+                    && v6
+                        .chars()
+                        .all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.')
+            }
+            None => host
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || ".-_".contains(c)),
         };
     if ok {
         Ok(())
     } else {
-        Err(AppError::InvalidInput(format!("{what} invalide : {host} (nom d'hôte, IPv4 ou [IPv6])")))
+        Err(AppError::InvalidInput(format!(
+            "{what} invalide : {host} (nom d'hôte, IPv4 ou [IPv6])"
+        )))
     }
 }
 
@@ -166,24 +186,54 @@ struct Clean {
 fn validate(input: &TunnelInput) -> AppResult<Clean> {
     let name = input.name.trim().to_string();
     if name.is_empty() || name.len() > 80 {
-        return Err(AppError::InvalidInput("le nom doit faire entre 1 et 80 caractères".into()));
+        return Err(AppError::InvalidInput(
+            "le nom doit faire entre 1 et 80 caractères".into(),
+        ));
     }
-    let bind = input.bind_address.as_deref().map(str::trim).filter(|s| !s.is_empty()).unwrap_or("127.0.0.1").to_string();
+    let bind = input
+        .bind_address
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("127.0.0.1")
+        .to_string();
     validate_host(&bind, "adresse locale")?;
     if input.local_port == 0 {
-        return Err(AppError::InvalidInput("port local invalide (1 à 65535)".into()));
+        return Err(AppError::InvalidInput(
+            "port local invalide (1 à 65535)".into(),
+        ));
     }
     let (remote_host, remote_port) = match input.kind {
         TunnelKind::Dynamic => (None, None),
         kind => {
             let default_host = "localhost";
-            let host = input.remote_host.as_deref().map(str::trim).filter(|s| !s.is_empty()).unwrap_or(default_host).to_string();
-            validate_host(&host, if kind == TunnelKind::Local { "hôte de destination" } else { "adresse d'écoute du serveur" })?;
-            let port = input.remote_port.filter(|p| *p != 0).ok_or_else(|| AppError::InvalidInput("port distant invalide (1 à 65535)".into()))?;
+            let host = input
+                .remote_host
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .unwrap_or(default_host)
+                .to_string();
+            validate_host(
+                &host,
+                if kind == TunnelKind::Local {
+                    "hôte de destination"
+                } else {
+                    "adresse d'écoute du serveur"
+                },
+            )?;
+            let port = input.remote_port.filter(|p| *p != 0).ok_or_else(|| {
+                AppError::InvalidInput("port distant invalide (1 à 65535)".into())
+            })?;
             (Some(host), Some(port))
         }
     };
-    Ok(Clean { name, bind, remote_host, remote_port })
+    Ok(Clean {
+        name,
+        bind,
+        remote_host,
+        remote_port,
+    })
 }
 
 // ------------------------------------------------------------------ Stockage
@@ -208,7 +258,11 @@ fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Tunnel> {
 }
 
 /// Tunnels (d'un serveur ou de tous), avec leur statut en direct.
-pub fn list(db: &Database, runtime: &TunnelRuntime, server_id: Option<i64>) -> AppResult<Vec<Tunnel>> {
+pub fn list(
+    db: &Database,
+    runtime: &TunnelRuntime,
+    server_id: Option<i64>,
+) -> AppResult<Vec<Tunnel>> {
     let mut list: Vec<Tunnel> = db.with(|conn| {
         let mut stmt = conn.prepare(&format!(
             "SELECT {COLUMNS} FROM ssh_tunnels t JOIN servers s ON s.id = t.server_id
@@ -236,7 +290,12 @@ pub fn get(db: &Database, id: i64) -> AppResult<Tunnel> {
 }
 
 /// Enregistre un tunnel ; retourne son identifiant. Un tunnel actif modifié est relancé.
-pub fn save(app: &AppHandle, db: &Database, runtime: &TunnelRuntime, input: &TunnelInput) -> AppResult<i64> {
+pub fn save(
+    app: &AppHandle,
+    db: &Database,
+    runtime: &TunnelRuntime,
+    input: &TunnelInput,
+) -> AppResult<i64> {
     let c = validate(input)?;
     super::get(db, input.server_id)?;
     let id = db.with(|conn| {
@@ -283,7 +342,12 @@ pub fn delete(app: &AppHandle, db: &Database, runtime: &TunnelRuntime, id: i64) 
 }
 
 /// Avant la suppression d'un serveur : ferme ses tunnels (les lignes partent en cascade).
-pub fn stop_for_server(app: &AppHandle, db: &Database, runtime: &TunnelRuntime, server_id: i64) -> AppResult<()> {
+pub fn stop_for_server(
+    app: &AppHandle,
+    db: &Database,
+    runtime: &TunnelRuntime,
+    server_id: i64,
+) -> AppResult<()> {
     for t in list(db, runtime, Some(server_id))? {
         runtime.stop(app, t.id)?;
         runtime.live.lock()?.remove(&t.id);
@@ -307,11 +371,25 @@ pub fn ssh_args(server: &Server, t: &Tunnel) -> Vec<String> {
     ] {
         args.extend(["-o".into(), opt.into()]);
     }
-    let remote = || format!("{}:{}", t.remote_host.as_deref().unwrap_or("localhost"), t.remote_port.unwrap_or(0));
+    let remote = || {
+        format!(
+            "{}:{}",
+            t.remote_host.as_deref().unwrap_or("localhost"),
+            t.remote_port.unwrap_or(0)
+        )
+    };
     match t.kind {
-        TunnelKind::Local => args.extend(["-L".into(), format!("{}:{}:{}", t.bind_address, t.local_port, remote())]),
-        TunnelKind::Remote => args.extend(["-R".into(), format!("{}:{}:{}", remote(), t.bind_address, t.local_port)]),
-        TunnelKind::Dynamic => args.extend(["-D".into(), format!("{}:{}", t.bind_address, t.local_port)]),
+        TunnelKind::Local => args.extend([
+            "-L".into(),
+            format!("{}:{}:{}", t.bind_address, t.local_port, remote()),
+        ]),
+        TunnelKind::Remote => args.extend([
+            "-R".into(),
+            format!("{}:{}:{}", remote(), t.bind_address, t.local_port),
+        ]),
+        TunnelKind::Dynamic => {
+            args.extend(["-D".into(), format!("{}:{}", t.bind_address, t.local_port)])
+        }
     }
     args.extend(ssh::base_args(server, true));
     args
@@ -320,15 +398,24 @@ pub fn ssh_args(server: &Server, t: &Tunnel) -> Vec<String> {
 /// Traduit la sortie d'erreur de ssh pour un tunnel.
 fn explain(stderr: &str, code: Option<i32>, t: &Tunnel) -> String {
     let lower = stderr.to_lowercase();
-    if lower.contains("address already in use") || lower.contains("cannot listen to port") || lower.contains("could not request local forwarding") {
-        format!("le port local {} est déjà utilisé (ou interdit) sur ce PC", t.local_port)
+    if lower.contains("address already in use")
+        || lower.contains("cannot listen to port")
+        || lower.contains("could not request local forwarding")
+    {
+        format!(
+            "le port local {} est déjà utilisé (ou interdit) sur ce PC",
+            t.local_port
+        )
     } else if lower.contains("remote port forwarding failed") {
         format!(
             "le serveur a refusé d'écouter sur le port {} (déjà utilisé, port < 1024 ou AllowTcpForwarding/GatewayPorts désactivé)",
             t.remote_port.unwrap_or(0)
         )
     } else if stderr.is_empty() {
-        format!("ssh s'est arrêté (code {})", code.map(|c| c.to_string()).unwrap_or_else(|| "?".into()))
+        format!(
+            "ssh s'est arrêté (code {})",
+            code.map(|c| c.to_string()).unwrap_or_else(|| "?".into())
+        )
     } else {
         ssh::explain(stderr, code)
     }
@@ -359,10 +446,18 @@ pub struct TunnelRuntime {
 }
 
 /// Met à jour le statut (si la génération est toujours la bonne) et prévient l'interface.
-fn set_status(app: &AppHandle, live: &Mutex<HashMap<i64, Live>>, id: i64, generation: u64, f: impl FnOnce(&mut TunnelStatus)) {
+fn set_status(
+    app: &AppHandle,
+    live: &Mutex<HashMap<i64, Live>>,
+    id: i64,
+    generation: u64,
+    f: impl FnOnce(&mut TunnelStatus),
+) {
     let status = {
         let Ok(mut live) = live.lock() else { return };
-        let Some(entry) = live.get_mut(&id).filter(|e| e.generation == generation) else { return };
+        let Some(entry) = live.get_mut(&id).filter(|e| e.generation == generation) else {
+            return;
+        };
         f(&mut entry.status);
         entry.status.since = now();
         entry.status.clone()
@@ -372,7 +467,11 @@ fn set_status(app: &AppHandle, live: &Mutex<HashMap<i64, Live>>, id: i64, genera
 
 impl TunnelRuntime {
     pub fn status(&self, id: i64) -> TunnelStatus {
-        self.live.lock().ok().and_then(|l| l.get(&id).map(|e| e.status.clone())).unwrap_or_else(TunnelStatus::stopped)
+        self.live
+            .lock()
+            .ok()
+            .and_then(|l| l.get(&id).map(|e| e.status.clone()))
+            .unwrap_or_else(TunnelStatus::stopped)
     }
 
     pub fn is_active(&self, id: i64) -> bool {
@@ -406,10 +505,29 @@ impl TunnelRuntime {
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed) + 1;
         let stop = Arc::new(AtomicBool::new(false));
         let child = Arc::new(Mutex::new(None));
-        let status = TunnelStatus { state: TunnelState::Starting, message: None, since: now(), restarts: 0 };
-        live.insert(id, Live { generation, status: status.clone(), stop: Arc::clone(&stop), child: Arc::clone(&child) });
+        let status = TunnelStatus {
+            state: TunnelState::Starting,
+            message: None,
+            since: now(),
+            restarts: 0,
+        };
+        live.insert(
+            id,
+            Live {
+                generation,
+                status: status.clone(),
+                stop: Arc::clone(&stop),
+                child: Arc::clone(&child),
+            },
+        );
         drop(live);
-        let _ = app.emit(EVENT_STATUS, StatusEvent { id, status: status.clone() });
+        let _ = app.emit(
+            EVENT_STATUS,
+            StatusEvent {
+                id,
+                status: status.clone(),
+            },
+        );
 
         let app = app.clone();
         let live = Arc::clone(&self.live);
@@ -421,10 +539,18 @@ impl TunnelRuntime {
     pub fn stop(&self, app: &AppHandle, id: i64) -> AppResult<()> {
         let child = {
             let mut live = self.live.lock()?;
-            let Some(entry) = live.get_mut(&id) else { return Ok(()) };
+            let Some(entry) = live.get_mut(&id) else {
+                return Ok(());
+            };
             entry.stop.store(true, Ordering::SeqCst);
             entry.status = TunnelStatus::stopped();
-            let _ = app.emit(EVENT_STATUS, StatusEvent { id, status: entry.status.clone() });
+            let _ = app.emit(
+                EVENT_STATUS,
+                StatusEvent {
+                    id,
+                    status: entry.status.clone(),
+                },
+            );
             Arc::clone(&entry.child)
         };
         if let Some(c) = child.lock()?.as_mut() {
@@ -442,13 +568,19 @@ impl TunnelRuntime {
             match s.state {
                 TunnelState::Running => return Ok(()),
                 TunnelState::Error | TunnelState::Retrying => {
-                    return Err(AppError::InvalidInput(s.message.unwrap_or_else(|| "le tunnel n'a pas pu s'ouvrir".into())));
+                    return Err(AppError::InvalidInput(
+                        s.message
+                            .unwrap_or_else(|| "le tunnel n'a pas pu s'ouvrir".into()),
+                    ));
                 }
                 TunnelState::Stopped => return Err(AppError::InvalidInput("tunnel fermé".into())),
                 TunnelState::Starting => {}
             }
             if Instant::now() >= end {
-                return Err(AppError::InvalidInput(format!("le tunnel ne s'est pas ouvert en {} s", timeout.as_secs())));
+                return Err(AppError::InvalidInput(format!(
+                    "le tunnel ne s'est pas ouvert en {} s",
+                    timeout.as_secs()
+                )));
             }
             std::thread::sleep(Duration::from_millis(200));
         }
@@ -456,7 +588,9 @@ impl TunnelRuntime {
 
     /// Au lancement de DevCenter : ouvre les tunnels marqués « démarrage automatique ».
     pub fn start_auto(&self, app: &AppHandle, db: &Database) {
-        let Ok(list) = list(db, self, None) else { return };
+        let Ok(list) = list(db, self, None) else {
+            return;
+        };
         for t in list.into_iter().filter(|t| t.auto_start) {
             if let Err(e) = self.start(app, db, t.id) {
                 log::warn!("tunnel « {} » non démarré : {e}", t.name);
@@ -529,7 +663,9 @@ fn supervise(
             std::thread::spawn(move || {
                 for line in BufReader::new(stderr).lines().map_while(Result::ok) {
                     let line = shell::strip_ansi(&line);
-                    if line.starts_with("Authenticated to") || line.starts_with("Authentication succeeded") {
+                    if line.starts_with("Authenticated to")
+                        || line.starts_with("Authentication succeeded")
+                    {
                         authenticated.store(true, Ordering::SeqCst);
                     }
                     if is_noise(&line) {
@@ -574,7 +710,9 @@ fn supervise(
                 if authenticated.load(Ordering::SeqCst) {
                     auth_at.get_or_insert_with(Instant::now);
                 }
-                if auth_at.is_some_and(|t| t.elapsed() >= READY_GRACE) || started.elapsed() >= READY_FALLBACK {
+                if auth_at.is_some_and(|t| t.elapsed() >= READY_GRACE)
+                    || started.elapsed() >= READY_FALLBACK
+                {
                     running = true;
                     set_status(&app, &live, id, generation, |s| {
                         s.state = TunnelState::Running;
@@ -592,13 +730,22 @@ fn supervise(
             let _ = r.join();
         }
         if stop.load(Ordering::SeqCst) {
-            set_status(&app, &live, id, generation, |s| *s = TunnelStatus::stopped());
+            set_status(&app, &live, id, generation, |s| {
+                *s = TunnelStatus::stopped()
+            });
             return;
         }
 
-        let stderr = lines.lock().map(|l| l.iter().cloned().collect::<Vec<_>>().join(" ")).unwrap_or_default();
+        let stderr = lines
+            .lock()
+            .map(|l| l.iter().cloned().collect::<Vec<_>>().join(" "))
+            .unwrap_or_default();
         let message = explain(&stderr, code, &tunnel);
-        log::warn!("tunnel « {} » ({}) fermé : {message}", tunnel.name, server.name);
+        log::warn!(
+            "tunnel « {} » ({}) fermé : {message}",
+            tunnel.name,
+            server.name
+        );
         if !tunnel.auto_restart {
             set_status(&app, &live, id, generation, |s| {
                 s.state = TunnelState::Error;
@@ -654,7 +801,10 @@ mod tests {
     #[test]
     fn validates_hosts_and_ports() {
         assert!(validate(&input(TunnelKind::Local)).is_ok());
-        assert_eq!(validate(&input(TunnelKind::Local)).unwrap().bind, "127.0.0.1");
+        assert_eq!(
+            validate(&input(TunnelKind::Local)).unwrap().bind,
+            "127.0.0.1"
+        );
         assert!(validate_host("[::1]", "x").is_ok());
         assert!(validate_host("::1", "x").is_err());
         assert!(validate_host("-oProxyCommand=calc", "x").is_err());
@@ -673,7 +823,14 @@ mod tests {
 
     #[test]
     fn builds_forward_specs() {
-        let server = Server { id: 1, name: "vps".into(), host: "example.org".into(), port: 22, user: Some("deploy".into()), key_path: None };
+        let server = Server {
+            id: 1,
+            name: "vps".into(),
+            host: "example.org".into(),
+            port: 22,
+            user: Some("deploy".into()),
+            key_path: None,
+        };
         let mut t = Tunnel {
             id: 1,
             server_id: 1,
@@ -690,12 +847,23 @@ mod tests {
         };
         let args = ssh_args(&server, &t);
         assert_eq!(args[0], "-N");
-        assert!(args.windows(2).any(|w| w == ["-L", "127.0.0.1:5433:localhost:5432"]));
+        assert!(
+            args.windows(2)
+                .any(|w| w == ["-L", "127.0.0.1:5433:localhost:5432"])
+        );
         assert!(args.contains(&"ExitOnForwardFailure=yes".to_string()));
         assert_eq!(args.last().unwrap(), "deploy@example.org");
         t.kind = TunnelKind::Remote;
-        assert!(ssh_args(&server, &t).windows(2).any(|w| w == ["-R", "localhost:5432:127.0.0.1:5433"]));
+        assert!(
+            ssh_args(&server, &t)
+                .windows(2)
+                .any(|w| w == ["-R", "localhost:5432:127.0.0.1:5433"])
+        );
         t.kind = TunnelKind::Dynamic;
-        assert!(ssh_args(&server, &t).windows(2).any(|w| w == ["-D", "127.0.0.1:5433"]));
+        assert!(
+            ssh_args(&server, &t)
+                .windows(2)
+                .any(|w| w == ["-D", "127.0.0.1:5433"])
+        );
     }
 }

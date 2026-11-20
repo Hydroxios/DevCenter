@@ -150,7 +150,11 @@ impl From<&DependencyReport> for DependencySummary {
 pub fn load(db: &Database, project_id: i64) -> AppResult<Option<DependencyReport>> {
     let raw: Option<String> = db.with(|conn| {
         Ok(conn
-            .query_row("SELECT report FROM dependency_reports WHERE project_id = ?1", params![project_id], |r| r.get(0))
+            .query_row(
+                "SELECT report FROM dependency_reports WHERE project_id = ?1",
+                params![project_id],
+                |r| r.get(0),
+            )
             .optional()?)
     })?;
     // Rapport illisible (format d'une ancienne version) : comme s'il n'y en avait pas.
@@ -171,7 +175,8 @@ pub fn summaries(db: &Database) -> AppResult<Vec<DependencySummary>> {
 }
 
 fn save(db: &Database, report: &DependencyReport) -> AppResult<()> {
-    let json = serde_json::to_string(report).map_err(|e| AppError::InvalidInput(format!("rapport illisible : {e}")))?;
+    let json = serde_json::to_string(report)
+        .map_err(|e| AppError::InvalidInput(format!("rapport illisible : {e}")))?;
     db.with(|conn| {
         conn.execute(
             "INSERT INTO dependency_reports (project_id, checked_at, report) VALUES (?1, ?2, ?3)
@@ -193,7 +198,9 @@ fn running() -> &'static Mutex<HashSet<i64>> {
 /// quelques minutes) : à appeler depuis une tâche de fond.
 pub fn check(db: &Database, project_id: i64, dir: &Path) -> AppResult<DependencyReport> {
     if !running().lock()?.insert(project_id) {
-        return Err(AppError::InvalidInput("vérification des dépendances déjà en cours".into()));
+        return Err(AppError::InvalidInput(
+            "vérification des dépendances déjà en cours".into(),
+        ));
     }
     let report = collect(project_id, dir);
     running().lock()?.remove(&project_id);
@@ -222,10 +229,16 @@ fn collect(project_id: i64, dir: &Path) -> DependencyReport {
     let mut notes = Vec::new();
 
     if dir.join("package.json").is_file() {
-        let pm = meta.package_manager.as_deref().filter(|p| ["npm", "pnpm", "yarn", "bun"].contains(p)).unwrap_or("npm");
+        let pm = meta
+            .package_manager
+            .as_deref()
+            .filter(|p| ["npm", "pnpm", "yarn", "bun"].contains(p))
+            .unwrap_or("npm");
         node_tasks(pm, dir, &mut tasks, &mut notes);
     }
-    let cargo_dir = [dir.to_path_buf(), dir.join("src-tauri")].into_iter().find(|d| d.join("Cargo.toml").is_file());
+    let cargo_dir = [dir.to_path_buf(), dir.join("src-tauri")]
+        .into_iter()
+        .find(|d| d.join("Cargo.toml").is_file());
     if let Some(cargo_dir) = cargo_dir {
         cargo_tasks(&cargo_dir, &mut tasks, &mut notes);
     }
@@ -235,13 +248,18 @@ fn collect(project_id: i64, dir: &Path) -> DependencyReport {
 
     // Les commandes tournent en parallèle (chacune attend surtout le réseau).
     let results: Vec<(String, Result<Outcome, String>)> = std::thread::scope(|s| {
-        let handles: Vec<_> = tasks.iter().map(|t| s.spawn(move || (t.label.clone(), execute(t)))).collect();
+        let handles: Vec<_> = tasks
+            .iter()
+            .map(|t| s.spawn(move || (t.label.clone(), execute(t))))
+            .collect();
         handles.into_iter().filter_map(|h| h.join().ok()).collect()
     });
 
     let mut report = DependencyReport {
         project_id,
-        checked_at: SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64),
+        checked_at: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64),
         outdated: Vec::new(),
         vulnerabilities: Vec::new(),
         vuln_counts: VulnCounts::default(),
@@ -261,55 +279,92 @@ fn collect(project_id: i64, dir: &Path) -> DependencyReport {
             Err(e) => report.notes.push(format!("{label} a échoué : {e}")),
         }
     }
-    report.outdated.sort_by(|a, b| b.major.cmp(&a.major).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
-    report.vulnerabilities.sort_by(|a, b| b.severity.cmp(&a.severity).then_with(|| a.name.cmp(&b.name)));
+    report.outdated.sort_by(|a, b| {
+        b.major
+            .cmp(&a.major)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    report.vulnerabilities.sort_by(|a, b| {
+        b.severity
+            .cmp(&a.severity)
+            .then_with(|| a.name.cmp(&b.name))
+    });
     report.vuln_counts = VulnCounts::of(&report.vulnerabilities);
     report
 }
 
 fn node_tasks(pm: &str, dir: &Path, tasks: &mut Vec<Task>, notes: &mut Vec<String>) {
-    let Some(program) = shell::package_manager_program(pm) else { return };
-    let Some(program) = shell::which(&[program]) else {
-        notes.push(format!("{pm} introuvable dans le PATH : dépendances Node non vérifiées."));
+    let Some(program) = shell::package_manager_program(pm) else {
         return;
     };
-    let task = |label: &str, args: Vec<&'static str>, parse: fn(&str) -> Result<Outcome, String>| Task {
-        label: label.to_string(),
-        program: program.clone(),
-        args,
-        dir: dir.to_path_buf(),
-        timeout: NODE_TIMEOUT,
-        parse,
+    let Some(program) = shell::which(&[program]) else {
+        notes.push(format!(
+            "{pm} introuvable dans le PATH : dépendances Node non vérifiées."
+        ));
+        return;
     };
+    let task =
+        |label: &str, args: Vec<&'static str>, parse: fn(&str) -> Result<Outcome, String>| Task {
+            label: label.to_string(),
+            program: program.clone(),
+            args,
+            dir: dir.to_path_buf(),
+            timeout: NODE_TIMEOUT,
+            parse,
+        };
     match pm {
         "npm" => {
-            tasks.push(task("npm outdated", vec!["outdated", "--json"], |s| parse_npm_outdated(s).map(Outcome::Outdated)));
-            tasks.push(task("npm audit", vec!["audit", "--json"], |s| parse_npm_audit(s).map(Outcome::Vulns)));
+            tasks.push(task("npm outdated", vec!["outdated", "--json"], |s| {
+                parse_npm_outdated(s).map(Outcome::Outdated)
+            }));
+            tasks.push(task("npm audit", vec!["audit", "--json"], |s| {
+                parse_npm_audit(s).map(Outcome::Vulns)
+            }));
         }
         "pnpm" => {
-            tasks.push(task("pnpm outdated", vec!["outdated", "--format", "json"], |s| parse_npm_outdated(s).map(Outcome::Outdated)));
-            tasks.push(task("pnpm audit", vec!["audit", "--json"], |s| parse_npm_audit(s).map(Outcome::Vulns)));
+            tasks.push(task(
+                "pnpm outdated",
+                vec!["outdated", "--format", "json"],
+                |s| parse_npm_outdated(s).map(Outcome::Outdated),
+            ));
+            tasks.push(task("pnpm audit", vec!["audit", "--json"], |s| {
+                parse_npm_audit(s).map(Outcome::Vulns)
+            }));
         }
         "yarn" if dir.join(".yarnrc.yml").is_file() => {
-            notes.push("Yarn 2+ (Berry) : vérification des dépendances non prise en charge.".into());
+            notes
+                .push("Yarn 2+ (Berry) : vérification des dépendances non prise en charge.".into());
         }
         "yarn" => {
-            tasks.push(task("yarn outdated", vec!["outdated", "--json"], |s| parse_yarn_outdated(s).map(Outcome::Outdated)));
-            tasks.push(task("yarn audit", vec!["audit", "--json"], |s| parse_yarn_audit(s).map(Outcome::Vulns)));
+            tasks.push(task("yarn outdated", vec!["outdated", "--json"], |s| {
+                parse_yarn_outdated(s).map(Outcome::Outdated)
+            }));
+            tasks.push(task("yarn audit", vec!["audit", "--json"], |s| {
+                parse_yarn_audit(s).map(Outcome::Vulns)
+            }));
         }
-        _ => notes.push(format!("{pm} : pas de sortie JSON pour outdated/audit, vérification ignorée.")),
+        _ => notes.push(format!(
+            "{pm} : pas de sortie JSON pour outdated/audit, vérification ignorée."
+        )),
     }
 }
 
 /// Sous-commande Cargo installée (`cargo-outdated`, `cargo-audit`) : PATH, puis `~/.cargo/bin`.
 fn cargo_subcommand(name: &str) -> bool {
-    let exe = if cfg!(windows) { format!("cargo-{name}.exe") } else { format!("cargo-{name}") };
+    let exe = if cfg!(windows) {
+        format!("cargo-{name}.exe")
+    } else {
+        format!("cargo-{name}")
+    };
     if shell::which(&[&exe]).is_some() {
         return true;
     }
     let home = std::env::var_os("CARGO_HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(|h| PathBuf::from(h).join(".cargo")));
+        .or_else(|| {
+            std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+                .map(|h| PathBuf::from(h).join(".cargo"))
+        });
     home.is_some_and(|h| h.join("bin").join(&exe).is_file())
 }
 
@@ -412,7 +467,9 @@ fn execute(task: &Task) -> Result<Outcome, String> {
 
 /// Premier entier d'une version : « ^1.2.3 » → (1, 2).
 fn major_minor(version: &str) -> Option<(u64, u64)> {
-    let v = version.trim().trim_start_matches(|c: char| !c.is_ascii_digit());
+    let v = version
+        .trim()
+        .trim_start_matches(|c: char| !c.is_ascii_digit());
     let mut parts = v.split(|c: char| !c.is_ascii_digit());
     let major = parts.next()?.parse().ok()?;
     let minor = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
@@ -428,7 +485,11 @@ pub fn is_major_bump(from: &str, to: &str) -> bool {
 }
 
 fn str_field(v: &Value, key: &str) -> Option<String> {
-    v.get(key).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(String::from)
+    v.get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
 }
 
 /// JSON en tête de sortie : certains outils écrivent un avertissement avant (ou rien du tout).
@@ -438,7 +499,9 @@ fn parse_json(output: &str) -> Result<Option<Value>, String> {
         return Ok(None);
     }
     let start = text.find(['{', '[']).ok_or("sortie non JSON")?;
-    serde_json::from_str(&text[start..]).map(Some).map_err(|e| format!("JSON illisible : {e}"))
+    serde_json::from_str(&text[start..])
+        .map(Some)
+        .map_err(|e| format!("JSON illisible : {e}"))
 }
 
 /// Erreur structurée renvoyée par npm / pnpm (`{"error": {"code", "summary"}}`).
@@ -453,16 +516,33 @@ fn json_error(v: &Value) -> Option<String> {
     )
 }
 
-fn outdated_entry(ecosystem: &str, name: &str, current: Option<String>, wanted: Option<String>, latest: Option<String>, kind: Option<String>) -> OutdatedPackage {
+fn outdated_entry(
+    ecosystem: &str,
+    name: &str,
+    current: Option<String>,
+    wanted: Option<String>,
+    latest: Option<String>,
+    kind: Option<String>,
+) -> OutdatedPackage {
     let base = current.as_deref().or(wanted.as_deref());
     let major = matches!((base, latest.as_deref()), (Some(b), Some(l)) if is_major_bump(b, l));
-    OutdatedPackage { ecosystem: ecosystem.into(), name: name.into(), current, wanted, latest, major, kind }
+    OutdatedPackage {
+        ecosystem: ecosystem.into(),
+        name: name.into(),
+        current,
+        wanted,
+        latest,
+        major,
+        kind,
+    }
 }
 
 /// `npm outdated --json` et `pnpm outdated --format json` : objet `{ paquet: { current, wanted, latest, type | dependencyType } }`.
 /// Avec les workspaces npm, la valeur peut être un tableau (une entrée par emplacement).
 pub fn parse_npm_outdated(output: &str) -> Result<Vec<OutdatedPackage>, String> {
-    let Some(v) = parse_json(output)? else { return Ok(Vec::new()) };
+    let Some(v) = parse_json(output)? else {
+        return Ok(Vec::new());
+    };
     if let Some(e) = json_error(&v) {
         return Err(e);
     }
@@ -488,8 +568,14 @@ fn npm_fix(fix: Option<&Value>) -> Option<String> {
         Value::Object(o) => {
             let name = o.get("name").and_then(Value::as_str)?;
             let version = o.get("version").and_then(Value::as_str)?;
-            let major = o.get("isSemVerMajor").and_then(Value::as_bool).unwrap_or(false);
-            Some(format!("{name}@{version}{}", if major { " (majeure)" } else { "" }))
+            let major = o
+                .get("isSemVerMajor")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            Some(format!(
+                "{name}@{version}{}",
+                if major { " (majeure)" } else { "" }
+            ))
         }
         _ => None,
     }
@@ -497,23 +583,37 @@ fn npm_fix(fix: Option<&Value>) -> Option<String> {
 
 /// `npm audit --json` (format v2, npm 7+) ou format « advisories » (npm 6, `pnpm audit --json`).
 pub fn parse_npm_audit(output: &str) -> Result<Vec<Vulnerability>, String> {
-    let Some(v) = parse_json(output)? else { return Ok(Vec::new()) };
+    let Some(v) = parse_json(output)? else {
+        return Ok(Vec::new());
+    };
     if let Some(e) = json_error(&v) {
         return Err(e);
     }
     let mut list = Vec::new();
     if let Some(vulns) = v.get("vulnerabilities").and_then(Value::as_object) {
         for (name, entry) in vulns {
-            let via = entry.get("via").and_then(Value::as_array).cloned().unwrap_or_default();
+            let via = entry
+                .get("via")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
             let advisory = via.iter().find(|x| x.is_object());
-            let title = advisory.and_then(|a| str_field(a, "title")).unwrap_or_else(|| {
-                let parents: Vec<&str> = via.iter().filter_map(Value::as_str).collect();
-                if parents.is_empty() { "Vulnérabilité".into() } else { format!("Via {}", parents.join(", ")) }
-            });
+            let title = advisory
+                .and_then(|a| str_field(a, "title"))
+                .unwrap_or_else(|| {
+                    let parents: Vec<&str> = via.iter().filter_map(Value::as_str).collect();
+                    if parents.is_empty() {
+                        "Vulnérabilité".into()
+                    } else {
+                        format!("Via {}", parents.join(", "))
+                    }
+                });
             list.push(Vulnerability {
                 ecosystem: "npm".into(),
                 name: str_field(entry, "name").unwrap_or_else(|| name.clone()),
-                severity: Severity::parse(entry.get("severity").and_then(Value::as_str).unwrap_or("")),
+                severity: Severity::parse(
+                    entry.get("severity").and_then(Value::as_str).unwrap_or(""),
+                ),
                 title,
                 url: advisory.and_then(|a| str_field(a, "url")),
                 range: str_field(entry, "range"),
@@ -543,12 +643,16 @@ fn advisory_entry(a: &Value) -> Vulnerability {
 
 fn dedupe(list: Vec<Vulnerability>) -> Vec<Vulnerability> {
     let mut seen = HashSet::new();
-    list.into_iter().filter(|v| seen.insert((v.name.clone(), v.title.clone()))).collect()
+    list.into_iter()
+        .filter(|v| seen.insert((v.name.clone(), v.title.clone())))
+        .collect()
 }
 
 /// Sortie NDJSON de Yarn 1 : une ligne JSON par événement.
 fn ndjson(output: &str) -> impl Iterator<Item = Value> + '_ {
-    output.lines().filter_map(|l| serde_json::from_str::<Value>(l.trim()).ok())
+    output
+        .lines()
+        .filter_map(|l| serde_json::from_str::<Value>(l.trim()).ok())
 }
 
 /// `yarn outdated --json` (Yarn 1) : ligne `{"type":"table","data":{"head":[…],"body":[[…]]}}`.
@@ -556,21 +660,44 @@ pub fn parse_yarn_outdated(output: &str) -> Result<Vec<OutdatedPackage>, String>
     let mut list = Vec::new();
     for line in ndjson(output) {
         match line.get("type").and_then(Value::as_str) {
-            Some("error") => return Err(str_field(&line, "data").unwrap_or_else(|| "erreur inconnue".into())),
+            Some("error") => {
+                return Err(str_field(&line, "data").unwrap_or_else(|| "erreur inconnue".into()));
+            }
             Some("table") => {}
             _ => continue,
         }
         let data = &line["data"];
-        let head: Vec<String> = data["head"].as_array().map(|h| h.iter().filter_map(|x| x.as_str().map(str::to_lowercase)).collect()).unwrap_or_default();
+        let head: Vec<String> = data["head"]
+            .as_array()
+            .map(|h| {
+                h.iter()
+                    .filter_map(|x| x.as_str().map(str::to_lowercase))
+                    .collect()
+            })
+            .unwrap_or_default();
         let col = |name: &str| head.iter().position(|h| h == name);
-        let (Some(pkg), Some(cur), Some(want), Some(last)) = (col("package"), col("current"), col("wanted"), col("latest")) else {
+        let (Some(pkg), Some(cur), Some(want), Some(last)) =
+            (col("package"), col("current"), col("wanted"), col("latest"))
+        else {
             continue;
         };
         let kind = col("package type");
         for row in data["body"].as_array().into_iter().flatten() {
-            let cell = |i: usize| row.get(i).and_then(Value::as_str).map(String::from).filter(|s| !s.is_empty() && s != "exotic");
+            let cell = |i: usize| {
+                row.get(i)
+                    .and_then(Value::as_str)
+                    .map(String::from)
+                    .filter(|s| !s.is_empty() && s != "exotic")
+            };
             let Some(name) = cell(pkg) else { continue };
-            list.push(outdated_entry("npm", &name, cell(cur), cell(want), cell(last), kind.and_then(cell)));
+            list.push(outdated_entry(
+                "npm",
+                &name,
+                cell(cur),
+                cell(want),
+                cell(last),
+                kind.and_then(cell),
+            ));
         }
     }
     Ok(list)
@@ -581,7 +708,9 @@ pub fn parse_yarn_audit(output: &str) -> Result<Vec<Vulnerability>, String> {
     let mut list = Vec::new();
     for line in ndjson(output) {
         match line.get("type").and_then(Value::as_str) {
-            Some("error") => return Err(str_field(&line, "data").unwrap_or_else(|| "erreur inconnue".into())),
+            Some("error") => {
+                return Err(str_field(&line, "data").unwrap_or_else(|| "erreur inconnue".into()));
+            }
             Some("auditAdvisory") => list.push(advisory_entry(&line["data"]["advisory"])),
             _ => {}
         }
@@ -595,11 +724,18 @@ pub fn parse_cargo_outdated(output: &str) -> Result<Vec<OutdatedPackage>, String
     let clean = |v: &Value, key: &str| str_field(v, key).filter(|s| s != "---" && s != "Removed");
     let mut list: Vec<OutdatedPackage> = Vec::new();
     let mut any = false;
-    for doc in output.lines().filter_map(|l| serde_json::from_str::<Value>(l.trim()).ok()) {
-        let Some(deps) = doc.get("dependencies").and_then(Value::as_array) else { continue };
+    for doc in output
+        .lines()
+        .filter_map(|l| serde_json::from_str::<Value>(l.trim()).ok())
+    {
+        let Some(deps) = doc.get("dependencies").and_then(Value::as_array) else {
+            continue;
+        };
         any = true;
         for d in deps {
-            let Some(name) = str_field(d, "name") else { continue };
+            let Some(name) = str_field(d, "name") else {
+                continue;
+            };
             let current = clean(d, "project");
             let latest = clean(d, "latest");
             let wanted = clean(d, "compat").or_else(|| current.clone());
@@ -611,7 +747,14 @@ pub fn parse_cargo_outdated(output: &str) -> Result<Vec<OutdatedPackage>, String
             if list.iter().any(|p| p.name == name && p.current == current) {
                 continue; // même dépendance dans plusieurs crates du workspace
             }
-            list.push(outdated_entry("cargo", &name, current, wanted, latest, str_field(d, "kind")));
+            list.push(outdated_entry(
+                "cargo",
+                &name,
+                current,
+                wanted,
+                latest,
+                str_field(d, "kind"),
+            ));
         }
     }
     if !any && !output.trim().is_empty() {
@@ -622,13 +765,26 @@ pub fn parse_cargo_outdated(output: &str) -> Result<Vec<OutdatedPackage>, String
 
 /// Score de base CVSS 3.x d'un vecteur (`CVSS:3.1/AV:N/AC:L/…`) → gravité.
 fn cvss_severity(vector: &str) -> Severity {
-    let metric = |key: &str| vector.split('/').find_map(|p| p.strip_prefix(key).and_then(|r| r.strip_prefix(':')));
+    let metric = |key: &str| {
+        vector
+            .split('/')
+            .find_map(|p| p.strip_prefix(key).and_then(|r| r.strip_prefix(':')))
+    };
     let changed = metric("S") == Some("C");
-    let weight = |key: &str, table: &[(&str, f64)]| metric(key).and_then(|m| table.iter().find(|(k, _)| *k == m).map(|(_, w)| *w));
+    let weight = |key: &str, table: &[(&str, f64)]| {
+        metric(key).and_then(|m| table.iter().find(|(k, _)| *k == m).map(|(_, w)| *w))
+    };
     let (Some(av), Some(ac), Some(pr), Some(ui), Some(c), Some(i), Some(a)) = (
         weight("AV", &[("N", 0.85), ("A", 0.62), ("L", 0.55), ("P", 0.2)]),
         weight("AC", &[("L", 0.77), ("H", 0.44)]),
-        weight("PR", if changed { &[("N", 0.85), ("L", 0.68), ("H", 0.5)] } else { &[("N", 0.85), ("L", 0.62), ("H", 0.27)] }),
+        weight(
+            "PR",
+            if changed {
+                &[("N", 0.85), ("L", 0.68), ("H", 0.5)]
+            } else {
+                &[("N", 0.85), ("L", 0.62), ("H", 0.27)]
+            },
+        ),
         weight("UI", &[("N", 0.85), ("R", 0.62)]),
         weight("C", &[("H", 0.56), ("L", 0.22), ("N", 0.0)]),
         weight("I", &[("H", 0.56), ("L", 0.22), ("N", 0.0)]),
@@ -637,7 +793,11 @@ fn cvss_severity(vector: &str) -> Severity {
         return Severity::Unknown;
     };
     let iss = 1.0 - (1.0 - c) * (1.0 - i) * (1.0 - a);
-    let impact = if changed { 7.52 * (iss - 0.029) - 3.25 * (iss - 0.02).powi(15) } else { 6.42 * iss };
+    let impact = if changed {
+        7.52 * (iss - 0.029) - 3.25 * (iss - 0.02).powi(15)
+    } else {
+        6.42 * iss
+    };
     let exploitability = 8.22 * av * ac * pr * ui;
     let roundup = |x: f64| (x * 10.0 - 1e-9).ceil() / 10.0;
     let score = if impact <= 0.0 {
@@ -658,8 +818,13 @@ fn cvss_severity(vector: &str) -> Severity {
 
 /// `cargo audit --json` : `vulnerabilities.list[]` avec `advisory` (id, titre, CVSS) et `package`.
 pub fn parse_cargo_audit(output: &str) -> Result<Vec<Vulnerability>, String> {
-    let Some(v) = parse_json(output)? else { return Err("aucune sortie".into()) };
-    let list = v.pointer("/vulnerabilities/list").and_then(Value::as_array).ok_or("champ « vulnerabilities » absent")?;
+    let Some(v) = parse_json(output)? else {
+        return Err("aucune sortie".into());
+    };
+    let list = v
+        .pointer("/vulnerabilities/list")
+        .and_then(Value::as_array)
+        .ok_or("champ « vulnerabilities » absent")?;
     let mut out = Vec::new();
     for item in list {
         let adv = &item["advisory"];
@@ -670,14 +835,24 @@ pub fn parse_cargo_audit(output: &str) -> Result<Vec<Vulnerability>, String> {
             .map(Severity::parse)
             .or_else(|| adv.get("cvss").and_then(Value::as_str).map(cvss_severity))
             .unwrap_or(Severity::Unknown);
-        let patched: Vec<&str> = item.pointer("/versions/patched").and_then(Value::as_array).map(|p| p.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+        let patched: Vec<&str> = item
+            .pointer("/versions/patched")
+            .and_then(Value::as_array)
+            .map(|p| p.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default();
         let title = str_field(adv, "title").unwrap_or_else(|| "Vulnérabilité".into());
         out.push(Vulnerability {
             ecosystem: "cargo".into(),
-            name: str_field(&item["package"], "name").or_else(|| str_field(adv, "package")).unwrap_or_else(|| "?".into()),
+            name: str_field(&item["package"], "name")
+                .or_else(|| str_field(adv, "package"))
+                .unwrap_or_else(|| "?".into()),
             severity,
-            title: match &id { Some(id) => format!("{id} · {title}"), None => title },
-            url: str_field(adv, "url").or_else(|| id.map(|id| format!("https://rustsec.org/advisories/{id}"))),
+            title: match &id {
+                Some(id) => format!("{id} · {title}"),
+                None => title,
+            },
+            url: str_field(adv, "url")
+                .or_else(|| id.map(|id| format!("https://rustsec.org/advisories/{id}"))),
             range: str_field(&item["package"], "version").map(|v| format!("={v}")),
             fix: (!patched.is_empty()).then(|| patched.join(" ou ")),
         });
@@ -733,7 +908,10 @@ mod tests {
     #[test]
     fn npm_errors_are_reported() {
         let out = r#"{ "error": { "code": "ENOLOCK", "summary": "This command requires an existing lockfile.", "detail": "Try creating one first" } }"#;
-        assert_eq!(parse_npm_audit(out).unwrap_err(), "This command requires an existing lockfile.");
+        assert_eq!(
+            parse_npm_audit(out).unwrap_err(),
+            "This command requires an existing lockfile."
+        );
         assert!(parse_npm_outdated("not json").is_err());
     }
 
@@ -765,7 +943,10 @@ mod tests {
         assert_eq!(list.len(), 3);
         let braces = list.iter().find(|v| v.name == "braces").unwrap();
         assert_eq!(braces.severity, Severity::High);
-        assert_eq!(braces.url.as_deref(), Some("https://github.com/advisories/GHSA-grv7-fg5c-xmjg"));
+        assert_eq!(
+            braces.url.as_deref(),
+            Some("https://github.com/advisories/GHSA-grv7-fg5c-xmjg")
+        );
         assert_eq!(braces.fix.as_deref(), Some("disponible"));
         let mm = list.iter().find(|v| v.name == "micromatch").unwrap();
         assert_eq!(mm.title, "Via braces");
@@ -858,15 +1039,27 @@ mod tests {
         assert_eq!(list[0].fix.as_deref(), Some("^0.3.24 ou >=0.4.2"));
         assert_eq!(list[0].range.as_deref(), Some("=0.3.20"));
         assert_eq!(list[1].severity, Severity::Unknown);
-        assert_eq!(list[1].url.as_deref(), Some("https://rustsec.org/advisories/RUSTSEC-2023-0071"));
+        assert_eq!(
+            list[1].url.as_deref(),
+            Some("https://rustsec.org/advisories/RUSTSEC-2023-0071")
+        );
         assert!(parse_cargo_audit("").is_err());
     }
 
     #[test]
     fn computes_cvss_severity() {
-        assert_eq!(cvss_severity("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"), Severity::Critical); // 9.8
-        assert_eq!(cvss_severity("CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"), Severity::Moderate); // 6.1
-        assert_eq!(cvss_severity("CVSS:3.1/AV:L/AC:H/PR:H/UI:R/S:U/C:L/I:N/A:N"), Severity::Low); // 1.8
+        assert_eq!(
+            cvss_severity("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"),
+            Severity::Critical
+        ); // 9.8
+        assert_eq!(
+            cvss_severity("CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"),
+            Severity::Moderate
+        ); // 6.1
+        assert_eq!(
+            cvss_severity("CVSS:3.1/AV:L/AC:H/PR:H/UI:R/S:U/C:L/I:N/A:N"),
+            Severity::Low
+        ); // 1.8
         assert_eq!(cvss_severity("garbage"), Severity::Unknown);
     }
 
@@ -876,7 +1069,10 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let db = Database::open(&dir.join("t.db")).unwrap();
         db.with(|c| {
-            c.execute("INSERT INTO projects (id, name, path, added_at) VALUES (1, 'a', 'C:\\a', 0)", [])?;
+            c.execute(
+                "INSERT INTO projects (id, name, path, added_at) VALUES (1, 'a', 'C:\\a', 0)",
+                [],
+            )?;
             Ok(())
         })
         .unwrap();
@@ -894,7 +1090,15 @@ mod tests {
         save(&db, &report).unwrap(); // remplace
         assert_eq!(load(&db, 1).unwrap().unwrap().outdated.len(), 3);
         let s = summaries(&db).unwrap();
-        assert_eq!((s.len(), s[0].outdated, s[0].major, s[0].vuln_counts.critical), (1, 3, 1, 1));
+        assert_eq!(
+            (
+                s.len(),
+                s[0].outdated,
+                s[0].major,
+                s[0].vuln_counts.critical
+            ),
+            (1, 3, 1, 1)
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 }

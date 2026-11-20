@@ -79,12 +79,23 @@ fn bus() -> &'static Bus {
 }
 
 fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 impl Entry {
     pub fn new(source: Source, level: Level, title: impl Into<String>) -> Self {
-        Entry { id: 0, timestamp: 0, source, level, title: title.into(), detail: None, link: None }
+        Entry {
+            id: 0,
+            timestamp: 0,
+            source,
+            level,
+            title: title.into(),
+            detail: None,
+            link: None,
+        }
     }
     pub fn info(source: Source, title: impl Into<String>) -> Self {
         Self::new(source, Level::Info, title)
@@ -133,7 +144,11 @@ fn record(mut entry: Entry) -> Entry {
 
 /// Événements en mémoire, du plus ancien au plus récent.
 pub fn backlog() -> Vec<Entry> {
-    bus().entries.lock().map(|e| e.iter().cloned().collect()).unwrap_or_default()
+    bus()
+        .entries
+        .lock()
+        .map(|e| e.iter().cloned().collect())
+        .unwrap_or_default()
 }
 
 /// Vide le journal (toutes les fenêtres sont prévenues).
@@ -151,7 +166,11 @@ fn name_in(app: &AppHandle, table: &str, id: i64) -> Option<String> {
         .db
         .with(|conn| {
             Ok(conn
-                .query_row(&format!("SELECT name FROM {table} WHERE id = ?1"), params![id], |r| r.get::<_, String>(0))
+                .query_row(
+                    &format!("SELECT name FROM {table} WHERE id = ?1"),
+                    params![id],
+                    |r| r.get::<_, String>(0),
+                )
                 .optional()?)
         })
         .ok()
@@ -171,9 +190,14 @@ pub fn workspace_started(app: &AppHandle, id: i64, name: &str, results: &[StepRe
         .map(|r| format!("{} : {}", r.label, r.message.clone().unwrap_or_default()))
         .collect();
     let entry = if failures.is_empty() {
-        Entry::info(Source::Workspace, format!("{name} · session démarrée")).detail(format!("{} étape(s) exécutée(s)", results.len()))
+        Entry::info(Source::Workspace, format!("{name} · session démarrée"))
+            .detail(format!("{} étape(s) exécutée(s)", results.len()))
     } else {
-        Entry::warn(Source::Workspace, format!("{name} · {} étape(s) en échec", failures.len())).detail(failures.join("\n"))
+        Entry::warn(
+            Source::Workspace,
+            format!("{name} · {} étape(s) en échec", failures.len()),
+        )
+        .detail(failures.join("\n"))
     };
     entry.link(format!("/workspaces?workspace={id}")).emit(app);
 }
@@ -181,7 +205,9 @@ pub fn workspace_started(app: &AppHandle, id: i64, name: &str, results: &[StepRe
 /// Arrêt d'une session de workspace.
 pub fn workspace_stopped(app: &AppHandle, id: i64) {
     let name = name_in(app, "workspaces", id).unwrap_or_else(|| format!("workspace {id}"));
-    Entry::info(Source::Workspace, format!("{name} · session arrêtée")).link(format!("/workspaces?workspace={id}")).emit(app);
+    Entry::info(Source::Workspace, format!("{name} · session arrêtée"))
+        .link(format!("/workspaces?workspace={id}"))
+        .emit(app);
 }
 
 /// Fin d'une exécution d'automatisation, niveau selon le statut.
@@ -191,12 +217,22 @@ pub fn automation_finished(app: &AppHandle, name: &str, id: i64, status: &str, l
         .find(|l| l.outcome == "failed")
         .map(|l| format!("{} : {}", l.label, l.message.clone().unwrap_or_default()));
     let entry = match status {
-        "success" => Entry::info(Source::Automation, format!("{name} · réussie")).detail(format!("{} étape(s)", log.len())),
-        "stopped" => Entry::info(Source::Automation, format!("{name} · condition non remplie")),
-        "timeout" => Entry::warn(Source::Automation, format!("{name} · délai maximum dépassé")),
-        _ => Entry::error(Source::Automation, format!("{name} · échec")).detail(failure.unwrap_or_default()),
+        "success" => Entry::info(Source::Automation, format!("{name} · réussie"))
+            .detail(format!("{} étape(s)", log.len())),
+        "stopped" => Entry::info(
+            Source::Automation,
+            format!("{name} · condition non remplie"),
+        ),
+        "timeout" => Entry::warn(
+            Source::Automation,
+            format!("{name} · délai maximum dépassé"),
+        ),
+        _ => Entry::error(Source::Automation, format!("{name} · échec"))
+            .detail(failure.unwrap_or_default()),
     };
-    entry.link(format!("/automations?automation={id}")).emit(app);
+    entry
+        .link(format!("/automations?automation={id}"))
+        .emit(app);
 }
 
 /// Vérification des mises à jour : une version disponible n'est notée qu'une fois.
@@ -209,19 +245,35 @@ pub fn update_checked(app: &AppHandle, available: Option<&str>) {
     }
     *last = Some(version.to_string());
     drop(last);
-    Entry::info(Source::Update, format!("Mise à jour disponible : {version}")).link("/settings").emit(app);
+    Entry::info(
+        Source::Update,
+        format!("Mise à jour disponible : {version}"),
+    )
+    .link("/settings")
+    .emit(app);
 }
 
 /// Fin d'un script : terminé (code 0), arrêté à la main, ou planté (code non nul).
 pub fn run_finished(app: &AppHandle, run: &RunInfo) {
     let name = project_name(app, run.project_id);
-    let code = run.exit_code.map(|c| c.to_string()).unwrap_or_else(|| "?".into());
+    let code = run
+        .exit_code
+        .map(|c| c.to_string())
+        .unwrap_or_else(|| "?".into());
     let entry = match run.status {
-        RunStatus::Failed => Entry::error(Source::Runner, format!("{name} · {} a planté", run.script)).detail(format!("Code de sortie {code}")),
-        RunStatus::Stopped => Entry::info(Source::Runner, format!("{name} · {} arrêté", run.script)),
-        _ => Entry::info(Source::Runner, format!("{name} · {} terminé", run.script)).detail(format!("Code de sortie {code}")),
+        RunStatus::Failed => {
+            Entry::error(Source::Runner, format!("{name} · {} a planté", run.script))
+                .detail(format!("Code de sortie {code}"))
+        }
+        RunStatus::Stopped => {
+            Entry::info(Source::Runner, format!("{name} · {} arrêté", run.script))
+        }
+        _ => Entry::info(Source::Runner, format!("{name} · {} terminé", run.script))
+            .detail(format!("Code de sortie {code}")),
     };
-    entry.link(format!("/projects?project={}", run.project_id)).emit(app);
+    entry
+        .link(format!("/projects?project={}", run.project_id))
+        .emit(app);
 }
 
 /// Note le résultat d'une vérification de serveur, seulement quand son état change
@@ -239,7 +291,8 @@ pub fn server_status(app: &AppHandle, id: i64, name: &str, error: Option<String>
     let entry = if online {
         Entry::info(Source::Server, format!("{name} · de nouveau joignable"))
     } else {
-        Entry::error(Source::Server, format!("{name} · injoignable")).detail(error.unwrap_or_default())
+        Entry::error(Source::Server, format!("{name} · injoignable"))
+            .detail(error.unwrap_or_default())
     };
     entry.link(link).emit(app);
 }

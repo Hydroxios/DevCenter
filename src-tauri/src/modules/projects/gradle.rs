@@ -30,8 +30,18 @@ const BUILD_FILES: &[&str] = &[
 ];
 
 /// Groupes Gradle standard, dans l'ordre d'affichage. Les groupes propres au projet passent avant.
-const STANDARD_GROUPS: &[&str] =
-    &["Application", "Build", "Verification", "Documentation", "Distribution", "Publishing", "Shadow", "Other", "Build Setup", "Help"];
+const STANDARD_GROUPS: &[&str] = &[
+    "Application",
+    "Build",
+    "Verification",
+    "Documentation",
+    "Distribution",
+    "Publishing",
+    "Shadow",
+    "Other",
+    "Build Setup",
+    "Help",
+];
 
 const TIMEOUT: Duration = Duration::from_secs(240);
 
@@ -54,7 +64,11 @@ fn loading() -> &'static Mutex<HashSet<PathBuf>> {
 fn fingerprint(dir: &Path) -> u128 {
     BUILD_FILES
         .iter()
-        .filter_map(|f| std::fs::metadata(dir.join(f)).and_then(|m| m.modified()).ok())
+        .filter_map(|f| {
+            std::fs::metadata(dir.join(f))
+                .and_then(|m| m.modified())
+                .ok()
+        })
         .filter_map(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
         .map(|d| d.as_nanos())
         .max()
@@ -69,11 +83,18 @@ pub fn cached(dir: &Path) -> Option<Vec<Script>> {
 }
 
 fn rank(group: &str) -> usize {
-    STANDARD_GROUPS.iter().position(|g| g.eq_ignore_ascii_case(group)).map_or(0, |i| i + 1)
+    STANDARD_GROUPS
+        .iter()
+        .position(|g| g.eq_ignore_ascii_case(group))
+        .map_or(0, |i| i + 1)
 }
 
 fn valid_task(name: &str) -> bool {
-    !name.is_empty() && name.len() <= 200 && name.chars().all(|c| c.is_ascii_alphanumeric() || ":_-.".contains(c))
+    !name.is_empty()
+        && name.len() <= 200
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || ":_-.".contains(c))
 }
 
 /// Analyse la sortie de `gradle tasks --all` : un groupe par titre souligné de tirets,
@@ -89,10 +110,18 @@ pub fn parse(output: &str, exe: &str) -> Vec<Script> {
         }
         if lines.get(i + 1).is_some_and(|next| is_rule(next)) {
             // Titre de section ; l'en-tête « Tasks runnable from… » est encadré de tirets.
-            group = (!lines.get(i.wrapping_sub(1)).is_some_and(|prev| is_rule(prev))).then(|| line.trim().to_string());
+            group = (!lines
+                .get(i.wrapping_sub(1))
+                .is_some_and(|prev| is_rule(prev)))
+            .then(|| line.trim().to_string());
             continue;
         }
-        let Some(g) = group.as_deref().map(|g| g.strip_suffix(" tasks").unwrap_or(g)) else { continue };
+        let Some(g) = group
+            .as_deref()
+            .map(|g| g.strip_suffix(" tasks").unwrap_or(g))
+        else {
+            continue;
+        };
         if g.eq_ignore_ascii_case("Rules") {
             continue;
         }
@@ -103,8 +132,20 @@ pub fn parse(output: &str, exe: &str) -> Vec<Script> {
         if !valid_task(name) || tasks.iter().any(|(_, _, s)| s.name == name) {
             continue;
         }
-        let command = if about.is_empty() { format!("{exe} {name}") } else { format!("{exe} {name} · {about}") };
-        tasks.push((rank(g), tasks.len(), Script { name: name.to_string(), command, group: Some(g.to_string()) }));
+        let command = if about.is_empty() {
+            format!("{exe} {name}")
+        } else {
+            format!("{exe} {name} · {about}")
+        };
+        tasks.push((
+            rank(g),
+            tasks.len(),
+            Script {
+                name: name.to_string(),
+                command,
+                group: Some(g.to_string()),
+            },
+        ));
     }
     // Groupes du projet d'abord, puis groupes standard ; ordre de Gradle à l'intérieur d'un groupe.
     tasks.sort_by_key(|(r, i, _)| (*r, *i));
@@ -117,19 +158,34 @@ pub fn load(dir: &Path) -> AppResult<Vec<Script>> {
         return Ok(tasks);
     }
     if !loading().lock()?.insert(dir.to_path_buf()) {
-        return Err(AppError::InvalidInput("lecture des tâches Gradle déjà en cours".into()));
+        return Err(AppError::InvalidInput(
+            "lecture des tâches Gradle déjà en cours".into(),
+        ));
     }
     let result = run(dir);
     loading().lock()?.remove(dir);
     let tasks = result?;
-    cache().lock()?.insert(dir.to_path_buf(), Entry { fingerprint: fingerprint(dir), tasks: tasks.clone() });
+    cache().lock()?.insert(
+        dir.to_path_buf(),
+        Entry {
+            fingerprint: fingerprint(dir),
+            tasks: tasks.clone(),
+        },
+    );
     Ok(tasks)
 }
 
 fn run(dir: &Path) -> AppResult<Vec<Script>> {
-    let program = shell::gradle_program(dir)
-        .ok_or_else(|| AppError::InvalidInput("Gradle introuvable : ni gradlew dans le projet, ni gradle dans le PATH".into()))?;
-    let exe = if program.starts_with(dir) { "gradlew" } else { "gradle" };
+    let program = shell::gradle_program(dir).ok_or_else(|| {
+        AppError::InvalidInput(
+            "Gradle introuvable : ni gradlew dans le projet, ni gradle dans le PATH".into(),
+        )
+    })?;
+    let exe = if program.starts_with(dir) {
+        "gradlew"
+    } else {
+        "gradle"
+    };
     let mut child = shell::command(&program)
         .args(["tasks", "--all", "--console=plain", "-q"])
         .current_dir(dir)
@@ -161,15 +217,23 @@ fn run(dir: &Path) -> AppResult<Vec<Script>> {
         if started.elapsed() > TIMEOUT {
             crate::modules::runner::kill_tree(child.id());
             let _ = child.wait();
-            return Err(AppError::InvalidInput("Gradle n'a pas répondu à temps (4 min)".into()));
+            return Err(AppError::InvalidInput(
+                "Gradle n'a pas répondu à temps (4 min)".into(),
+            ));
         }
         std::thread::sleep(Duration::from_millis(150));
     };
     let out = out.join().unwrap_or_default();
     let err = err.join().unwrap_or_default();
     if !status.success() {
-        let detail = err.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with('*')).unwrap_or("erreur inconnue");
-        return Err(AppError::InvalidInput(format!("gradle tasks a échoué : {detail}")));
+        let detail = err
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty() && !l.starts_with('*'))
+            .unwrap_or("erreur inconnue");
+        return Err(AppError::InvalidInput(format!(
+            "gradle tasks a échoué : {detail}"
+        )));
     }
     let tasks = parse(&out, exe);
     if tasks.is_empty() {
@@ -218,17 +282,31 @@ Pattern: clean<TaskName>: Cleans the output files of a task.
         let names: Vec<&str> = tasks.iter().map(|t| t.name.as_str()).collect();
         assert_eq!(
             names,
-            ["deploy", "runServer", "assemble", "build", "compileJava", "prepareKotlinBuildScriptModel", "app:assembleDebug", "tasks"]
+            [
+                "deploy",
+                "runServer",
+                "assemble",
+                "build",
+                "compileJava",
+                "prepareKotlinBuildScriptModel",
+                "app:assembleDebug",
+                "tasks"
+            ]
         );
         assert_eq!(tasks[0].group.as_deref(), Some("Uhc"));
-        assert_eq!(tasks[1].command, "gradlew runServer · Builds, deploys and starts the test server.");
+        assert_eq!(
+            tasks[1].command,
+            "gradlew runServer · Builds, deploys and starts the test server."
+        );
         assert!(!names.iter().any(|n| n.starts_with("Pattern")));
     }
 
     /// Projet Gradle réel : `DEVCENTER_GRADLE_PROJECT=<dossier> cargo test gradle`.
     #[test]
     fn loads_real_project_tasks() {
-        let Some(dir) = std::env::var_os("DEVCENTER_GRADLE_PROJECT").map(PathBuf::from) else { return };
+        let Some(dir) = std::env::var_os("DEVCENTER_GRADLE_PROJECT").map(PathBuf::from) else {
+            return;
+        };
         let tasks = load(&dir).unwrap();
         for t in &tasks {
             eprintln!("{:<14} {}", t.group.as_deref().unwrap_or(""), t.command);

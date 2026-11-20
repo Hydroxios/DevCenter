@@ -38,7 +38,9 @@ fn git(dir: &Path, args: &[&str]) -> Option<String> {
         .args(args)
         .output()
         .ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 pub fn status(dir: &Path) -> Option<GitStatus> {
@@ -105,7 +107,10 @@ mod tests {
         );
         assert_eq!(s.branch.as_deref(), Some("main"));
         assert_eq!((s.ahead, s.behind), (2, 1));
-        assert_eq!((s.staged, s.modified, s.untracked, s.conflicts), (2, 2, 1, 1));
+        assert_eq!(
+            (s.staged, s.modified, s.untracked, s.conflicts),
+            (2, 2, 1, 1)
+        );
     }
 
     #[test]

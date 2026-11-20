@@ -12,8 +12,8 @@ use tauri::{AppHandle, Emitter};
 
 use crate::database::Database;
 use crate::error::{AppError, AppResult};
-use crate::modules::settings::SettingsService;
 use crate::modules::servers::tunnels;
+use crate::modules::settings::SettingsService;
 use crate::modules::{apps, editor, events, projects, runner};
 use crate::state::AppState;
 
@@ -21,20 +21,37 @@ pub const EVENT_CHANGED: &str = "workspace://changed";
 const MAX_STEPS: usize = 30;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum Step {
     /// Ouvre le projet dans l'éditeur.
     Editor { project_id: i64 },
     /// Ouvre le dossier du projet dans l'Explorateur.
     Folder { project_id: i64 },
     /// Lance un script du package.json ; ouvre éventuellement le navigateur quand le serveur est prêt.
-    Script { project_id: i64, script: String, #[serde(default)] open_browser: bool },
+    Script {
+        project_id: i64,
+        script: String,
+        #[serde(default)]
+        open_browser: bool,
+    },
     /// Lance une application enregistrée ; `close_on_stop` la ferme à l'arrêt de la session (.exe uniquement).
-    App { app_id: i64, #[serde(default)] close_on_stop: bool },
+    App {
+        app_id: i64,
+        #[serde(default)]
+        close_on_stop: bool,
+    },
     /// Ouvre une adresse http(s) dans le navigateur.
     Url { url: String },
     /// Ouvre un tunnel SSH ; `close_on_stop` le ferme à l'arrêt de la session.
-    TunnelOpen { tunnel_id: i64, #[serde(default)] close_on_stop: bool },
+    TunnelOpen {
+        tunnel_id: i64,
+        #[serde(default)]
+        close_on_stop: bool,
+    },
     /// Ferme un tunnel SSH.
     TunnelClose { tunnel_id: i64 },
 }
@@ -119,26 +136,43 @@ fn now() -> i64 {
 fn exists(db: &Database, table: &str, id: i64) -> AppResult<bool> {
     // `table` vient uniquement de ce module (jamais du frontend).
     db.with(|conn| {
-        Ok(conn.query_row(&format!("SELECT 1 FROM {table} WHERE id = ?1"), params![id], |_| Ok(())).optional()?.is_some())
+        Ok(conn
+            .query_row(
+                &format!("SELECT 1 FROM {table} WHERE id = ?1"),
+                params![id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
     })
 }
 
 fn validate(db: &Database, input: &WorkspaceInput) -> AppResult<()> {
     let name = input.name.trim();
     if name.is_empty() || name.len() > 80 {
-        return Err(AppError::InvalidInput("le nom doit faire entre 1 et 80 caractères".into()));
+        return Err(AppError::InvalidInput(
+            "le nom doit faire entre 1 et 80 caractères".into(),
+        ));
     }
     if input.description.len() > 300 {
-        return Err(AppError::InvalidInput("description trop longue (300 caractères max.)".into()));
+        return Err(AppError::InvalidInput(
+            "description trop longue (300 caractères max.)".into(),
+        ));
     }
     if input.steps.len() > MAX_STEPS {
-        return Err(AppError::InvalidInput(format!("{MAX_STEPS} étapes maximum")));
+        return Err(AppError::InvalidInput(format!(
+            "{MAX_STEPS} étapes maximum"
+        )));
     }
     for step in &input.steps {
         match step {
-            Step::Editor { project_id } | Step::Folder { project_id } | Step::Script { project_id, .. } => {
+            Step::Editor { project_id }
+            | Step::Folder { project_id }
+            | Step::Script { project_id, .. } => {
                 if !exists(db, "projects", *project_id)? {
-                    return Err(AppError::InvalidInput(format!("projet {project_id} inconnu")));
+                    return Err(AppError::InvalidInput(format!(
+                        "projet {project_id} inconnu"
+                    )));
                 }
                 if let Step::Script { script, .. } = step {
                     if script.trim().is_empty() {
@@ -148,13 +182,17 @@ fn validate(db: &Database, input: &WorkspaceInput) -> AppResult<()> {
             }
             Step::App { app_id, .. } => {
                 if !exists(db, "app_shortcuts", *app_id)? {
-                    return Err(AppError::InvalidInput(format!("application {app_id} inconnue")));
+                    return Err(AppError::InvalidInput(format!(
+                        "application {app_id} inconnue"
+                    )));
                 }
             }
             Step::Url { url } => validate_url(url)?,
             Step::TunnelOpen { tunnel_id, .. } | Step::TunnelClose { tunnel_id } => {
                 if !exists(db, "ssh_tunnels", *tunnel_id)? {
-                    return Err(AppError::InvalidInput(format!("tunnel {tunnel_id} inconnu")));
+                    return Err(AppError::InvalidInput(format!(
+                        "tunnel {tunnel_id} inconnu"
+                    )));
                 }
             }
         }
@@ -164,18 +202,28 @@ fn validate(db: &Database, input: &WorkspaceInput) -> AppResult<()> {
 
 fn validate_url(url: &str) -> AppResult<()> {
     let lower = url.trim().to_ascii_lowercase();
-    if !(lower.starts_with("http://") || lower.starts_with("https://")) || url.len() > 2000 || url.contains(char::is_whitespace) {
-        return Err(AppError::InvalidInput(format!("URL invalide : {url} (http:// ou https:// attendu)")));
+    if !(lower.starts_with("http://") || lower.starts_with("https://"))
+        || url.len() > 2000
+        || url.contains(char::is_whitespace)
+    {
+        return Err(AppError::InvalidInput(format!(
+            "URL invalide : {url} (http:// ou https:// attendu)"
+        )));
     }
     Ok(())
 }
 
 fn load_steps(db: &Database, workspace_id: i64) -> AppResult<Vec<Step>> {
     db.with(|conn| {
-        let mut stmt = conn.prepare("SELECT action FROM workspace_steps WHERE workspace_id = ?1 ORDER BY position")?;
+        let mut stmt = conn.prepare(
+            "SELECT action FROM workspace_steps WHERE workspace_id = ?1 ORDER BY position",
+        )?;
         let rows = stmt.query_map(params![workspace_id], |r| r.get::<_, String>(0))?;
         // Une étape illisible (format modifié) est ignorée plutôt que de casser tout le workspace.
-        Ok(rows.filter_map(|r| r.ok()).filter_map(|json| serde_json::from_str(&json).ok()).collect())
+        Ok(rows
+            .filter_map(|r| r.ok())
+            .filter_map(|json| serde_json::from_str(&json).ok())
+            .collect())
     })
 }
 
@@ -186,7 +234,15 @@ pub fn list(db: &Database, runtime: &WorkspaceRuntime) -> AppResult<Vec<Workspac
                     (SELECT MAX(started_at) FROM workspace_sessions s WHERE s.workspace_id = w.id)
              FROM workspaces w ORDER BY w.favorite DESC, w.name COLLATE NOCASE",
         )?;
-        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get::<_, i64>(3)? != 0, r.get(4)?)))?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get::<_, i64>(3)? != 0,
+                r.get(4)?,
+            ))
+        })?;
         Ok(rows.collect::<Result<_, _>>()?)
     })?;
     let active = runtime.active.lock()?;
@@ -243,7 +299,9 @@ pub fn save(db: &Database, input: &WorkspaceInput) -> AppResult<i64> {
 
 pub fn delete(db: &Database, runtime: &WorkspaceRuntime, id: i64) -> AppResult<()> {
     if runtime.active.lock()?.contains_key(&id) {
-        return Err(AppError::InvalidInput("arrêtez la session avant de supprimer ce workspace".into()));
+        return Err(AppError::InvalidInput(
+            "arrêtez la session avant de supprimer ce workspace".into(),
+        ));
     }
     db.with(|conn| {
         conn.execute("DELETE FROM workspaces WHERE id = ?1", params![id])?;
@@ -253,7 +311,10 @@ pub fn delete(db: &Database, runtime: &WorkspaceRuntime, id: i64) -> AppResult<(
 
 pub fn set_favorite(db: &Database, id: i64, favorite: bool) -> AppResult<()> {
     db.with(|conn| {
-        conn.execute("UPDATE workspaces SET favorite = ?1 WHERE id = ?2", params![favorite as i64, id])?;
+        conn.execute(
+            "UPDATE workspaces SET favorite = ?1 WHERE id = ?2",
+            params![favorite as i64, id],
+        )?;
         Ok(())
     })
 }
@@ -297,7 +358,11 @@ pub fn mark_interrupted(db: &Database) -> AppResult<()> {
 fn project_label(db: &Database, project_id: i64) -> String {
     db.with(|conn| {
         Ok(conn
-            .query_row("SELECT name FROM projects WHERE id = ?1", params![project_id], |r| r.get::<_, String>(0))
+            .query_row(
+                "SELECT name FROM projects WHERE id = ?1",
+                params![project_id],
+                |r| r.get::<_, String>(0),
+            )
             .optional()?)
     })
     .ok()
@@ -315,10 +380,16 @@ struct Launched {
 
 impl Launched {
     fn run(run_id: u64) -> AppResult<Self> {
-        Ok(Self { run_id: Some(run_id), ..Default::default() })
+        Ok(Self {
+            run_id: Some(run_id),
+            ..Default::default()
+        })
     }
     fn pid(pid: Option<u32>) -> AppResult<Self> {
-        Ok(Self { pid, ..Default::default() })
+        Ok(Self {
+            pid,
+            ..Default::default()
+        })
     }
     fn nothing() -> AppResult<Self> {
         Ok(Self::default())
@@ -329,7 +400,9 @@ impl Launched {
 const TUNNEL_READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
 fn tunnel_label(db: &Database, tunnel_id: i64) -> String {
-    tunnels::get(db, tunnel_id).map(|t| format!("{} ({})", t.name, t.server_name)).unwrap_or_else(|_| format!("tunnel {tunnel_id}"))
+    tunnels::get(db, tunnel_id)
+        .map(|t| format!("{} ({})", t.name, t.server_name))
+        .unwrap_or_else(|_| format!("tunnel {tunnel_id}"))
 }
 
 /// Exécute une étape. Retourne le libellé et ce qui a été lancé.
@@ -352,22 +425,44 @@ fn run_step(app: &AppHandle, state: &AppState, step: &Step) -> (String, AppResul
                 Launched::nothing()
             }),
         ),
-        Step::Script { project_id, script, open_browser } => (
+        Step::Script {
+            project_id,
+            script,
+            open_browser,
+        } => (
             format!("{} : {script}", project_label(db, *project_id)),
             projects::path_of(db, *project_id).and_then(|path| {
                 let meta = projects::detect::detect(&path);
-                let declared = meta
-                    .scripts
-                    .iter()
-                    .find(|s| &s.name == script)
-                    .ok_or_else(|| AppError::InvalidInput(format!("script « {script} » absent du package.json")))?;
+                let declared =
+                    meta.scripts
+                        .iter()
+                        .find(|s| &s.name == script)
+                        .ok_or_else(|| {
+                            AppError::InvalidInput(format!(
+                                "script « {script} » absent du package.json"
+                            ))
+                        })?;
                 let pm = meta.package_manager.as_deref().unwrap_or("npm");
-                let run = state.runner.start(app, *project_id, &path, pm, &declared.name, &declared.command, *open_browser)?;
+                let run = state.runner.start(
+                    app,
+                    *project_id,
+                    &path,
+                    pm,
+                    &declared.name,
+                    &declared.command,
+                    *open_browser,
+                )?;
                 Launched::run(run.id)
             }),
         ),
-        Step::App { app_id, close_on_stop } => (
-            format!("Lancer {}", apps::name_of(db, *app_id).unwrap_or_else(|| format!("application {app_id}"))),
+        Step::App {
+            app_id,
+            close_on_stop,
+        } => (
+            format!(
+                "Lancer {}",
+                apps::name_of(db, *app_id).unwrap_or_else(|| format!("application {app_id}"))
+            ),
             apps::resolve(db, *app_id).and_then(|path| {
                 let pid = apps::launch(&path)?;
                 Launched::pid(if *close_on_stop { pid } else { None })
@@ -376,18 +471,25 @@ fn run_step(app: &AppHandle, state: &AppState, step: &Step) -> (String, AppResul
         Step::Url { url } => (
             format!("Ouvrir {url}"),
             validate_url(url).and_then(|_| {
-                tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| AppError::InvalidInput(e.to_string()))?;
+                tauri_plugin_opener::open_url(url, None::<&str>)
+                    .map_err(|e| AppError::InvalidInput(e.to_string()))?;
                 Launched::nothing()
             }),
         ),
-        Step::TunnelOpen { tunnel_id, close_on_stop } => (
+        Step::TunnelOpen {
+            tunnel_id,
+            close_on_stop,
+        } => (
             format!("Ouvrir le tunnel {}", tunnel_label(db, *tunnel_id)),
             (|| {
                 let already = state.tunnels.is_active(*tunnel_id);
                 state.tunnels.start(app, db, *tunnel_id)?;
                 state.tunnels.wait_ready(*tunnel_id, TUNNEL_READY_TIMEOUT)?;
                 // Un tunnel déjà ouvert avant la session n'est pas fermé par elle.
-                Ok(Launched { tunnel_id: (*close_on_stop && !already).then_some(*tunnel_id), ..Default::default() })
+                Ok(Launched {
+                    tunnel_id: (*close_on_stop && !already).then_some(*tunnel_id),
+                    ..Default::default()
+                })
             })(),
         ),
         Step::TunnelClose { tunnel_id } => (
@@ -402,15 +504,27 @@ fn run_step(app: &AppHandle, state: &AppState, step: &Step) -> (String, AppResul
 
 pub fn start(app: &AppHandle, state: &AppState, id: i64) -> AppResult<ActiveInfo> {
     if state.workspaces.active.lock()?.contains_key(&id) {
-        return Err(AppError::InvalidInput("ce workspace est déjà démarré".into()));
+        return Err(AppError::InvalidInput(
+            "ce workspace est déjà démarré".into(),
+        ));
     }
     let name: String = state
         .db
-        .with(|conn| Ok(conn.query_row("SELECT name FROM workspaces WHERE id = ?1", params![id], |r| r.get(0)).optional()?))?
+        .with(|conn| {
+            Ok(conn
+                .query_row(
+                    "SELECT name FROM workspaces WHERE id = ?1",
+                    params![id],
+                    |r| r.get(0),
+                )
+                .optional()?)
+        })?
         .ok_or_else(|| AppError::InvalidInput(format!("workspace {id} inconnu")))?;
     let steps = load_steps(&state.db, id)?;
     if steps.is_empty() {
-        return Err(AppError::InvalidInput("ce workspace n'a aucune étape".into()));
+        return Err(AppError::InvalidInput(
+            "ce workspace n'a aucune étape".into(),
+        ));
     }
 
     let started_at = now();
@@ -426,13 +540,25 @@ pub fn start(app: &AppHandle, state: &AppState, id: i64) -> AppResult<ActiveInfo
                 run_ids.extend(launched.run_id);
                 app_pids.extend(launched.pid);
                 tunnel_ids.extend(launched.tunnel_id);
-                results.push(StepResult { label, ok: true, message: None });
+                results.push(StepResult {
+                    label,
+                    ok: true,
+                    message: None,
+                });
             }
-            Err(e) => results.push(StepResult { label, ok: false, message: Some(e.to_string()) }),
+            Err(e) => results.push(StepResult {
+                label,
+                ok: false,
+                message: Some(e.to_string()),
+            }),
         }
     }
 
-    let status = if results.iter().all(|r| r.ok) { "running" } else { "partial" };
+    let status = if results.iter().all(|r| r.ok) {
+        "running"
+    } else {
+        "partial"
+    };
     let results_json = serde_json::to_string(&results).unwrap_or_else(|_| "[]".into());
     let session_id = state.db.with(|conn| {
         conn.execute(
@@ -452,14 +578,30 @@ pub fn start(app: &AppHandle, state: &AppState, id: i64) -> AppResult<ActiveInfo
                 target: Some(crate::modules::notify::Target::Workspace { workspace_id: id }),
                 retry: Some(crate::modules::notify::Retry::Workspace { id }),
                 title: format!("{} · {} étape(s) en échec", name, failures.len()),
-                body: failures.iter().map(|f| format!("{} : {}", f.label, f.message.clone().unwrap_or_default())).collect::<Vec<_>>().join("\n"),
+                body: failures
+                    .iter()
+                    .map(|f| format!("{} : {}", f.label, f.message.clone().unwrap_or_default()))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
                 tab: Some("workspaces".into()),
                 tag: Some(format!("workspace-{id}")),
             },
         );
     }
-    let info = ActiveInfo { session_id, started_at, run_ids, results };
-    state.workspaces.active.lock()?.insert(id, ActiveSession { info: info.clone(), app_pids, tunnel_ids });
+    let info = ActiveInfo {
+        session_id,
+        started_at,
+        run_ids,
+        results,
+    };
+    state.workspaces.active.lock()?.insert(
+        id,
+        ActiveSession {
+            info: info.clone(),
+            app_pids,
+            tunnel_ids,
+        },
+    );
     let _ = app.emit(EVENT_CHANGED, id);
     events::workspace_started(app, id, &name, &info.results);
     Ok(info)
@@ -467,12 +609,10 @@ pub fn start(app: &AppHandle, state: &AppState, id: i64) -> AppResult<ActiveInfo
 
 /// Arrête tout ce que la session a lancé : scripts (arbre de processus) et applications marquées.
 pub fn stop(app: &AppHandle, state: &AppState, id: i64) -> AppResult<()> {
-    let session = state
-        .workspaces
-        .active
-        .lock()?
-        .remove(&id)
-        .ok_or_else(|| AppError::InvalidInput("aucune session active pour ce workspace".into()))?;
+    let session =
+        state.workspaces.active.lock()?.remove(&id).ok_or_else(|| {
+            AppError::InvalidInput("aucune session active pour ce workspace".into())
+        })?;
     for run_id in &session.info.run_ids {
         let _ = state.runner.stop(*run_id);
     }
@@ -482,7 +622,11 @@ pub fn stop(app: &AppHandle, state: &AppState, id: i64) -> AppResult<()> {
     for tunnel_id in &session.tunnel_ids {
         let _ = state.tunnels.stop(app, *tunnel_id);
     }
-    let status = if session.info.results.iter().all(|r| r.ok) { "completed" } else { "partial" };
+    let status = if session.info.results.iter().all(|r| r.ok) {
+        "completed"
+    } else {
+        "partial"
+    };
     state.db.with(|conn| {
         conn.execute(
             "UPDATE workspace_sessions SET ended_at = ?1, status = ?2 WHERE id = ?3",
@@ -497,7 +641,9 @@ pub fn stop(app: &AppHandle, state: &AppState, id: i64) -> AppResult<()> {
 
 /// Fermeture de DevCenter : clôture les sessions (les scripts sont arrêtés par le runner).
 pub fn close_all(state: &AppState) {
-    let Ok(mut active) = state.workspaces.active.lock() else { return };
+    let Ok(mut active) = state.workspaces.active.lock() else {
+        return;
+    };
     for (_, session) in active.drain() {
         for pid in &session.app_pids {
             runner::kill_tree(*pid);
@@ -520,7 +666,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!(
             "devcenter-ws-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         std::fs::create_dir_all(&dir).unwrap();
         (Database::open(&dir.join("t.db")).unwrap(), dir)
@@ -528,11 +677,24 @@ mod tests {
 
     #[test]
     fn step_json_format() {
-        let s = Step::Script { project_id: 3, script: "dev".into(), open_browser: true };
+        let s = Step::Script {
+            project_id: 3,
+            script: "dev".into(),
+            open_browser: true,
+        };
         let json = serde_json::to_string(&s).unwrap();
-        assert_eq!(json, r#"{"kind":"script","projectId":3,"script":"dev","openBrowser":true}"#);
+        assert_eq!(
+            json,
+            r#"{"kind":"script","projectId":3,"script":"dev","openBrowser":true}"#
+        );
         let back: Step = serde_json::from_str(r#"{"kind":"app","appId":1}"#).unwrap();
-        assert_eq!(back, Step::App { app_id: 1, close_on_stop: false });
+        assert_eq!(
+            back,
+            Step::App {
+                app_id: 1,
+                close_on_stop: false
+            }
+        );
     }
 
     #[test]
@@ -544,23 +706,60 @@ mod tests {
         let pid = projects::add(&db, &[project.display().to_string()]).unwrap()[0].id;
 
         // Références inconnues et URL non http refusées.
-        let bad = WorkspaceInput { id: None, name: "Dev".into(), description: String::new(), favorite: false, steps: vec![Step::Editor { project_id: 999 }] };
+        let bad = WorkspaceInput {
+            id: None,
+            name: "Dev".into(),
+            description: String::new(),
+            favorite: false,
+            steps: vec![Step::Editor { project_id: 999 }],
+        };
         assert!(save(&db, &bad).is_err());
-        let bad_url = WorkspaceInput { steps: vec![Step::Url { url: "file:///C:/Windows".into() }], ..bad };
+        let bad_url = WorkspaceInput {
+            steps: vec![Step::Url {
+                url: "file:///C:/Windows".into(),
+            }],
+            ..bad
+        };
         assert!(save(&db, &bad_url).is_err());
 
         let steps = vec![
             Step::Editor { project_id: pid },
-            Step::Script { project_id: pid, script: "dev".into(), open_browser: true },
-            Step::Url { url: "http://localhost:5173".into() },
+            Step::Script {
+                project_id: pid,
+                script: "dev".into(),
+                open_browser: true,
+            },
+            Step::Url {
+                url: "http://localhost:5173".into(),
+            },
         ];
-        let id = save(&db, &WorkspaceInput { id: None, name: " Front ".into(), description: "x".into(), favorite: true, steps: steps.clone() }).unwrap();
+        let id = save(
+            &db,
+            &WorkspaceInput {
+                id: None,
+                name: " Front ".into(),
+                description: "x".into(),
+                favorite: true,
+                steps: steps.clone(),
+            },
+        )
+        .unwrap();
         let list = list(&db, &runtime).unwrap();
         assert_eq!(list[0].name, "Front");
         assert_eq!(list[0].steps, steps);
 
         // Mise à jour : les étapes sont remplacées, pas ajoutées.
-        save(&db, &WorkspaceInput { id: Some(id), name: "Front".into(), description: String::new(), favorite: false, steps: vec![Step::Folder { project_id: pid }] }).unwrap();
+        save(
+            &db,
+            &WorkspaceInput {
+                id: Some(id),
+                name: "Front".into(),
+                description: String::new(),
+                favorite: false,
+                steps: vec![Step::Folder { project_id: pid }],
+            },
+        )
+        .unwrap();
         assert_eq!(super::list(&db, &runtime).unwrap()[0].steps.len(), 1);
 
         // Supprimer le projet supprime l'étape ? Non : l'étape reste mais échouera au démarrage.

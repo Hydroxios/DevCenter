@@ -40,7 +40,11 @@ const B64: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456
 pub fn b64url(data: &[u8]) -> String {
     let mut out = String::with_capacity(data.len() * 4 / 3 + 2);
     for chunk in data.chunks(3) {
-        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
         let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
         for i in 0..=chunk.len() {
             out.push(B64[((n >> (18 - 6 * i)) & 63) as usize] as char);
@@ -73,7 +77,8 @@ pub fn b64url_decode(s: &str) -> Option<Vec<u8>> {
 
 fn random<const N: usize>() -> AppResult<[u8; N]> {
     let mut b = [0u8; N];
-    getrandom::fill(&mut b).map_err(|e| AppError::InvalidInput(format!("aléa indisponible : {e}")))?;
+    getrandom::fill(&mut b)
+        .map_err(|e| AppError::InvalidInput(format!("aléa indisponible : {e}")))?;
     Ok(b)
 }
 
@@ -93,9 +98,17 @@ fn public_bytes(pk: &PublicKey) -> Vec<u8> {
 
 fn vapid_secret(db: &Database) -> AppResult<SecretKey> {
     let stored: Option<String> = db.with(|c| {
-        Ok(c.query_row("SELECT value FROM app_secrets WHERE key = 'vapid_private'", [], |r| r.get(0)).optional()?)
+        Ok(c.query_row(
+            "SELECT value FROM app_secrets WHERE key = 'vapid_private'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()?)
     })?;
-    if let Some(k) = stored.and_then(|s| b64url_decode(&s)).and_then(|b| SecretKey::from_slice(&b).ok()) {
+    if let Some(k) = stored
+        .and_then(|s| b64url_decode(&s))
+        .and_then(|b| SecretKey::from_slice(&b).ok())
+    {
         return Ok(k);
     }
     let key = new_secret()?;
@@ -115,16 +128,25 @@ pub fn public_key(db: &Database) -> AppResult<String> {
 }
 
 fn vapid_header(secret: &SecretKey, endpoint: &str) -> AppResult<String> {
-    let origin = endpoint.splitn(4, '/').take(3).collect::<Vec<_>>().join("/");
+    let origin = endpoint
+        .splitn(4, '/')
+        .take(3)
+        .collect::<Vec<_>>()
+        .join("/");
     let exp = crate::modules::automations::now() + 12 * 3600;
     let header = b64url(br#"{"typ":"JWT","alg":"ES256"}"#);
     let claims = b64url(
-        serde_json::json!({ "aud": origin, "exp": exp, "sub": "mailto:devcenter@example.com" }).to_string().as_bytes(),
+        serde_json::json!({ "aud": origin, "exp": exp, "sub": "mailto:devcenter@example.com" })
+            .to_string()
+            .as_bytes(),
     );
     let signing_input = format!("{header}.{claims}");
     let signature: Signature = SigningKey::from(secret).sign(signing_input.as_bytes());
     let jwt = format!("{signing_input}.{}", b64url(&signature.to_bytes()));
-    Ok(format!("vapid t={jwt}, k={}", b64url(&public_bytes(&secret.public_key()))))
+    Ok(format!(
+        "vapid t={jwt}, k={}",
+        b64url(&public_bytes(&secret.public_key()))
+    ))
 }
 
 // ------------------------------------------------------------------ Chiffrement RFC 8291
@@ -153,8 +175,10 @@ pub fn encrypt(payload: &[u8], ua_public: &[u8], auth: &[u8]) -> AppResult<Vec<u
     let hk = Hkdf::<Sha256>::new(Some(&salt), &ikm);
     let mut cek = [0u8; 16];
     let mut nonce = [0u8; 12];
-    hk.expand(b"Content-Encoding: aes128gcm\0", &mut cek).map_err(|_| invalid("hkdf"))?;
-    hk.expand(b"Content-Encoding: nonce\0", &mut nonce).map_err(|_| invalid("hkdf"))?;
+    hk.expand(b"Content-Encoding: aes128gcm\0", &mut cek)
+        .map_err(|_| invalid("hkdf"))?;
+    hk.expand(b"Content-Encoding: nonce\0", &mut nonce)
+        .map_err(|_| invalid("hkdf"))?;
 
     let mut plaintext = payload.to_vec();
     plaintext.push(0x02); // délimiteur du dernier enregistrement
@@ -201,16 +225,29 @@ fn validate_endpoint(endpoint: &str) -> AppResult<()> {
     let rest = endpoint
         .strip_prefix("https://")
         .ok_or_else(|| AppError::InvalidInput("point d'envoi push non HTTPS".into()))?;
-    let host = rest.split(['/', ':']).next().unwrap_or("").to_ascii_lowercase();
+    let host = rest
+        .split(['/', ':'])
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
     let ok = endpoint.len() <= 1024
         && !endpoint.contains(char::is_whitespace)
-        && ALLOWED_HOSTS.iter().any(|h| host == *h || host.ends_with(&format!(".{h}")));
-    if ok { Ok(()) } else { Err(AppError::InvalidInput(format!("service de push non reconnu : {host}"))) }
+        && ALLOWED_HOSTS
+            .iter()
+            .any(|h| host == *h || host.ends_with(&format!(".{h}")));
+    if ok {
+        Ok(())
+    } else {
+        Err(AppError::InvalidInput(format!(
+            "service de push non reconnu : {host}"
+        )))
+    }
 }
 
 pub fn subscribe(db: &Database, device_id: i64, input: &SubscriptionInput) -> AppResult<()> {
     validate_endpoint(&input.endpoint)?;
-    let p256dh = b64url_decode(&input.keys.p256dh).filter(|k| PublicKey::from_sec1_bytes(k).is_ok());
+    let p256dh =
+        b64url_decode(&input.keys.p256dh).filter(|k| PublicKey::from_sec1_bytes(k).is_ok());
     let auth = b64url_decode(&input.keys.auth).filter(|a| a.len() == 16);
     if p256dh.is_none() || auth.is_none() {
         return Err(AppError::InvalidInput("clés d'abonnement invalides".into()));
@@ -227,13 +264,24 @@ pub fn subscribe(db: &Database, device_id: i64, input: &SubscriptionInput) -> Ap
 
 pub fn unsubscribe(db: &Database, device_id: i64) -> AppResult<()> {
     db.with(|c| {
-        c.execute("DELETE FROM push_subscriptions WHERE device_id = ?1", params![device_id])?;
+        c.execute(
+            "DELETE FROM push_subscriptions WHERE device_id = ?1",
+            params![device_id],
+        )?;
         Ok(())
     })
 }
 
 pub fn is_subscribed(db: &Database, device_id: i64) -> AppResult<bool> {
-    db.with(|c| Ok(c.query_row("SELECT 1 FROM push_subscriptions WHERE device_id = ?1", params![device_id], |_| Ok(())).optional()?.is_some()))
+    db.with(|c| {
+        Ok(c.query_row(
+            "SELECT 1 FROM push_subscriptions WHERE device_id = ?1",
+            params![device_id],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+    })
 }
 
 pub fn subscribed_devices(db: &Database) -> AppResult<Vec<i64>> {
@@ -247,9 +295,24 @@ pub fn subscribed_devices(db: &Database) -> AppResult<Vec<i64>> {
 /// Envoie une requête au service de push ; retourne le code HTTP.
 fn post(endpoint: &str, authorization: &str, body: &[u8]) -> AppResult<u16> {
     let mut child = shell::command("curl.exe")
-        .args(["-sS", "-o", "NUL", "-w", "%{http_code}", "--max-time", "15", "-X", "POST"])
+        .args([
+            "-sS",
+            "-o",
+            "NUL",
+            "-w",
+            "%{http_code}",
+            "--max-time",
+            "15",
+            "-X",
+            "POST",
+        ])
         .args(["-H", &format!("Authorization: {authorization}")])
-        .args(["-H", "Content-Encoding: aes128gcm", "-H", "Content-Type: application/octet-stream"])
+        .args([
+            "-H",
+            "Content-Encoding: aes128gcm",
+            "-H",
+            "Content-Type: application/octet-stream",
+        ])
         .args(["-H", "TTL: 86400", "-H", "Urgency: normal"])
         .args(["--data-binary", "@-", endpoint])
         .stdin(Stdio::piped())
@@ -259,9 +322,15 @@ fn post(endpoint: &str, authorization: &str, body: &[u8]) -> AppResult<u16> {
         .map_err(|e| AppError::InvalidInput(format!("curl indisponible : {e}")))?;
     child.stdin.take().expect("stdin").write_all(body)?;
     let out = child.wait_with_output()?;
-    let code = String::from_utf8_lossy(&out.stdout).trim().parse().unwrap_or(0);
+    let code = String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .parse()
+        .unwrap_or(0);
     if code == 0 {
-        return Err(AppError::InvalidInput(format!("envoi push impossible : {}", String::from_utf8_lossy(&out.stderr).trim())));
+        return Err(AppError::InvalidInput(format!(
+            "envoi push impossible : {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        )));
     }
     Ok(code)
 }
@@ -278,10 +347,13 @@ pub fn send(db: &Database, device: Option<i64>, notification: &Notification) -> 
         return Ok(0);
     }
     let secret = vapid_secret(db)?;
-    let payload = serde_json::to_vec(notification).map_err(|e| AppError::InvalidInput(e.to_string()))?;
+    let payload =
+        serde_json::to_vec(notification).map_err(|e| AppError::InvalidInput(e.to_string()))?;
     let mut sent = 0;
     for (id, endpoint, p256dh, auth) in subs {
-        let (Some(ua), Some(auth)) = (b64url_decode(&p256dh), b64url_decode(&auth)) else { continue };
+        let (Some(ua), Some(auth)) = (b64url_decode(&p256dh), b64url_decode(&auth)) else {
+            continue;
+        };
         let body = encrypt(&payload, &ua, &auth)?;
         match post(&endpoint, &vapid_header(&secret, &endpoint)?, &body) {
             Ok(code) if (200..300).contains(&code) => sent += 1,
@@ -344,17 +416,26 @@ mod tests {
         let as_public = &body[21..21 + idlen];
         let ciphertext = &body[21 + idlen..];
 
-        let shared = p256::ecdh::diffie_hellman(ua_secret.to_nonzero_scalar(), PublicKey::from_sec1_bytes(as_public).unwrap().as_affine());
+        let shared = p256::ecdh::diffie_hellman(
+            ua_secret.to_nonzero_scalar(),
+            PublicKey::from_sec1_bytes(as_public).unwrap().as_affine(),
+        );
         let mut key_info = b"WebPush: info\0".to_vec();
         key_info.extend_from_slice(&ua_public);
         key_info.extend_from_slice(as_public);
         let mut ikm = [0u8; 32];
-        Hkdf::<Sha256>::new(Some(&auth), shared.raw_secret_bytes()).expand(&key_info, &mut ikm).unwrap();
+        Hkdf::<Sha256>::new(Some(&auth), shared.raw_secret_bytes())
+            .expand(&key_info, &mut ikm)
+            .unwrap();
         let hk = Hkdf::<Sha256>::new(Some(salt), &ikm);
         let (mut cek, mut nonce) = ([0u8; 16], [0u8; 12]);
-        hk.expand(b"Content-Encoding: aes128gcm\0", &mut cek).unwrap();
+        hk.expand(b"Content-Encoding: aes128gcm\0", &mut cek)
+            .unwrap();
         hk.expand(b"Content-Encoding: nonce\0", &mut nonce).unwrap();
-        let plain = Aes128Gcm::new_from_slice(&cek).unwrap().decrypt(Nonce::from_slice(&nonce), ciphertext).unwrap();
+        let plain = Aes128Gcm::new_from_slice(&cek)
+            .unwrap()
+            .decrypt(Nonce::from_slice(&nonce), ciphertext)
+            .unwrap();
         assert_eq!(&plain[..plain.len() - 1], b"{\"title\":\"Salut\"}");
         assert_eq!(*plain.last().unwrap(), 0x02);
     }
@@ -365,12 +446,20 @@ mod tests {
         use p256::ecdsa::signature::Verifier;
         let secret = new_secret().unwrap();
         let header = vapid_header(&secret, "https://web.push.apple.com/abc").unwrap();
-        let jwt = header.strip_prefix("vapid t=").unwrap().split(", k=").next().unwrap();
+        let jwt = header
+            .strip_prefix("vapid t=")
+            .unwrap()
+            .split(", k=")
+            .next()
+            .unwrap();
         let parts: Vec<&str> = jwt.split('.').collect();
-        let claims: serde_json::Value = serde_json::from_slice(&b64url_decode(parts[1]).unwrap()).unwrap();
+        let claims: serde_json::Value =
+            serde_json::from_slice(&b64url_decode(parts[1]).unwrap()).unwrap();
         assert_eq!(claims["aud"], "https://web.push.apple.com");
         let sig = Signature::from_slice(&b64url_decode(parts[2]).unwrap()).unwrap();
-        VerifyingKey::from(&secret.public_key()).verify(format!("{}.{}", parts[0], parts[1]).as_bytes(), &sig).unwrap();
+        VerifyingKey::from(&secret.public_key())
+            .verify(format!("{}.{}", parts[0], parts[1]).as_bytes(), &sig)
+            .unwrap();
     }
 
     /// Envoi réel via curl.exe vers un mini-serveur local : en-têtes et corps binaire intacts.
@@ -381,7 +470,8 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let server = std::thread::spawn(move || {
             let (mut sock, _) = listener.accept().unwrap();
-            sock.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+            sock.set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .unwrap();
             let mut buf = Vec::new();
             let mut chunk = [0u8; 4096];
             loop {
@@ -392,17 +482,29 @@ mod tests {
                 buf.extend_from_slice(&chunk[..n]);
                 if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
                     let head = String::from_utf8_lossy(&buf[..pos]).to_lowercase();
-                    let len: usize = head.lines().find_map(|l| l.strip_prefix("content-length: ")).and_then(|v| v.trim().parse().ok()).unwrap_or(0);
+                    let len: usize = head
+                        .lines()
+                        .find_map(|l| l.strip_prefix("content-length: "))
+                        .and_then(|v| v.trim().parse().ok())
+                        .unwrap_or(0);
                     if buf.len() >= pos + 4 + len {
                         break;
                     }
                 }
             }
-            sock.write_all(b"HTTP/1.1 201 Created\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+            sock.write_all(
+                b"HTTP/1.1 201 Created\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            )
+            .unwrap();
             buf
         });
         let body = [0u8, 1, 2, 255, 13, 10, 0];
-        let code = post(&format!("http://127.0.0.1:{port}/push/abc"), "vapid t=x, k=y", &body).unwrap();
+        let code = post(
+            &format!("http://127.0.0.1:{port}/push/abc"),
+            "vapid t=x, k=y",
+            &body,
+        )
+        .unwrap();
         assert_eq!(code, 201);
         let req = server.join().unwrap();
         let text = String::from_utf8_lossy(&req).to_lowercase();

@@ -162,7 +162,9 @@ pub struct Database {
 fn apply(conn: &Connection, sql: &str) -> rusqlite::Result<()> {
     if let Some((table, column)) = add_column_target(sql) {
         let exists = conn
-            .prepare(&format!("SELECT 1 FROM pragma_table_info('{table}') WHERE name = ?1"))?
+            .prepare(&format!(
+                "SELECT 1 FROM pragma_table_info('{table}') WHERE name = ?1"
+            ))?
             .exists([column])?;
         if exists {
             return Ok(());
@@ -175,8 +177,11 @@ fn apply(conn: &Connection, sql: &str) -> rusqlite::Result<()> {
 fn add_column_target(sql: &str) -> Option<(&str, &str)> {
     let words: Vec<&str> = sql.split_whitespace().collect();
     match words.as_slice() {
-        ["ALTER", "TABLE", table, "ADD", "COLUMN", column, ..] if !sql.trim_end().trim_end_matches(';').contains(';') => {
-            let ok = |w: &str| !w.is_empty() && w.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        ["ALTER", "TABLE", table, "ADD", "COLUMN", column, ..]
+            if !sql.trim_end().trim_end_matches(';').contains(';') =>
+        {
+            let ok =
+                |w: &str| !w.is_empty() && w.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
             (ok(table) && ok(column)).then_some((*table, *column))
         }
         _ => None,
@@ -191,7 +196,9 @@ impl Database {
         let conn = Connection::open(path)?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
-        let db = Self { conn: Mutex::new(conn) };
+        let db = Self {
+            conn: Mutex::new(conn),
+        };
         db.migrate()?;
         Ok(db)
     }
@@ -223,26 +230,40 @@ mod tests {
     /// poste de développement) doit migrer sans erreur jusqu'à la dernière version.
     #[test]
     fn migrations_from_9_are_idempotent() {
-        let path = std::env::temp_dir().join(format!("devcenter-migrate-{}.db", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("devcenter-migrate-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
         {
             let db = Database::open(&path).unwrap();
-            db.with(|c| Ok(c.pragma_update(None, "user_version", 9)?)).unwrap();
+            db.with(|c| Ok(c.pragma_update(None, "user_version", 9)?))
+                .unwrap();
         }
         let db = Database::open(&path).unwrap();
-        let version: i64 = db.with(|c| Ok(c.pragma_query_value(None, "user_version", |r| r.get(0))?)).unwrap();
+        let version: i64 = db
+            .with(|c| Ok(c.pragma_query_value(None, "user_version", |r| r.get(0))?))
+            .unwrap();
         assert_eq!(version, MIGRATIONS.len() as i64);
         let has = |sql: &str| db.with(|c| Ok(c.prepare(sql)?.exists([])?)).unwrap();
-        assert!(has("SELECT 1 FROM pragma_table_info('projects') WHERE name = 'env_file'"));
-        assert!(has("SELECT 1 FROM pragma_table_info('automation_runs') WHERE name = 'context'"));
+        assert!(has(
+            "SELECT 1 FROM pragma_table_info('projects') WHERE name = 'env_file'"
+        ));
+        assert!(has(
+            "SELECT 1 FROM pragma_table_info('automation_runs') WHERE name = 'context'"
+        ));
         drop(db);
         let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn detects_add_column() {
-        assert_eq!(add_column_target("ALTER TABLE projects ADD COLUMN env_file TEXT;"), Some(("projects", "env_file")));
+        assert_eq!(
+            add_column_target("ALTER TABLE projects ADD COLUMN env_file TEXT;"),
+            Some(("projects", "env_file"))
+        );
         assert_eq!(add_column_target("CREATE TABLE x (a INT);"), None);
-        assert_eq!(add_column_target("ALTER TABLE a ADD COLUMN b INT; DROP TABLE c;"), None);
+        assert_eq!(
+            add_column_target("ALTER TABLE a ADD COLUMN b INT; DROP TABLE c;"),
+            None
+        );
     }
 }

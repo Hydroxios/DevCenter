@@ -55,7 +55,15 @@ pub struct ListeningPort {
 }
 
 /// États TCP d'écoute (netstat les traduit sur certaines versions localisées de Windows).
-const LISTEN_STATES: &[&str] = &["LISTENING", "LISTEN", "ABHÖREN", "EN ESCUCHA", "IN ASCOLTO", "ESCUTANDO", "ÉCOUTE"];
+const LISTEN_STATES: &[&str] = &[
+    "LISTENING",
+    "LISTEN",
+    "ABHÖREN",
+    "EN ESCUCHA",
+    "IN ASCOLTO",
+    "ESCUTANDO",
+    "ÉCOUTE",
+];
 /// États TCP anglais connus autres que l'écoute.
 const OTHER_STATES: &[&str] = &[
     "ESTABLISHED",
@@ -122,7 +130,12 @@ pub fn parse_line(line: &str) -> Option<RawSocket> {
     if pid == 0 {
         return None;
     }
-    Some(RawSocket { protocol, address, port, pid })
+    Some(RawSocket {
+        protocol,
+        address,
+        port,
+        pid,
+    })
 }
 
 /// Analyse la sortie complète de `netstat -ano`.
@@ -139,25 +152,38 @@ pub fn group(sockets: Vec<RawSocket>) -> Vec<(Protocol, u16, u32, Vec<String>)> 
             addrs.push(s.address);
         }
     }
-    map.into_iter().map(|((p, port, pid), addrs)| (p, port, pid, addrs)).collect()
+    map.into_iter()
+        .map(|((p, port, pid), addrs)| (p, port, pid, addrs))
+        .collect()
 }
 
 fn run_netstat() -> AppResult<String> {
     let out = shell::command("netstat").arg("-ano").output()?;
     if !out.status.success() {
-        return Err(AppError::InvalidInput(format!("netstat a échoué (code {:?})", out.status.code())));
+        return Err(AppError::InvalidInput(format!(
+            "netstat a échoué (code {:?})",
+            out.status.code()
+        )));
     }
     // Sortie en page de code OEM : seules les lignes ASCII (TCP/UDP) sont exploitées.
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// Cherche, en remontant les parents, le script DevCenter en cours dont descend `pid`.
-fn owning_run(pid: u32, parents: &HashMap<u32, u32>, runs: &HashMap<u32, &RunInfo>) -> Option<PortRun> {
+fn owning_run(
+    pid: u32,
+    parents: &HashMap<u32, u32>,
+    runs: &HashMap<u32, &RunInfo>,
+) -> Option<PortRun> {
     let mut current = pid;
     // Profondeur bornée : protège d'un cycle (PID parent réattribué).
     for _ in 0..32 {
         if let Some(run) = runs.get(&current) {
-            return Some(PortRun { run_id: run.id, project_id: run.project_id, script: run.script.clone() });
+            return Some(PortRun {
+                run_id: run.id,
+                project_id: run.project_id,
+                script: run.script.clone(),
+            });
         }
         match parents.get(&current) {
             Some(&parent) if parent != current && parent != 0 => current = parent,
@@ -177,8 +203,11 @@ pub fn list(sys: &mut System, runs: &[RunInfo]) -> AppResult<Vec<ListeningPort>>
             parents.insert(p.pid().as_u32(), parent.as_u32());
         }
     }
-    let runs: HashMap<u32, &RunInfo> =
-        runs.iter().filter(|r| r.status == RunStatus::Running).map(|r| (r.pid, r)).collect();
+    let runs: HashMap<u32, &RunInfo> = runs
+        .iter()
+        .filter(|r| r.status == RunStatus::Running)
+        .map(|r| (r.pid, r))
+        .collect();
 
     Ok(group(sockets)
         .into_iter()
@@ -225,17 +254,32 @@ Connexions actives
         assert_eq!(sockets.len(), 6);
         assert_eq!(
             sockets[1],
-            RawSocket { protocol: Protocol::Tcp, address: "127.0.0.1".into(), port: 3000, pid: 9876 }
+            RawSocket {
+                protocol: Protocol::Tcp,
+                address: "127.0.0.1".into(),
+                port: 3000,
+                pid: 9876
+            }
         );
         assert_eq!(sockets[3].address, "::1");
-        assert_eq!(sockets[4], RawSocket { protocol: Protocol::Udp, address: "0.0.0.0".into(), port: 5353, pid: 5224 });
+        assert_eq!(
+            sockets[4],
+            RawSocket {
+                protocol: Protocol::Udp,
+                address: "0.0.0.0".into(),
+                port: 5353,
+                pid: 5224
+            }
+        );
         // Identifiant de zone retiré.
         assert_eq!(sockets[5].address, "fe80::1");
     }
 
     #[test]
     fn ignores_non_listening_and_noise() {
-        assert!(parse_line("  TCP    127.0.0.1:5354   127.0.0.1:49670   ESTABLISHED   6276").is_none());
+        assert!(
+            parse_line("  TCP    127.0.0.1:5354   127.0.0.1:49670   ESTABLISHED   6276").is_none()
+        );
         assert!(parse_line("  Proto  Adresse locale   Adresse distante   État").is_none());
         assert!(parse_line("Connexions actives").is_none());
         assert!(parse_line("").is_none());
@@ -259,7 +303,10 @@ Connexions actives
     #[test]
     fn groups_addresses_per_port_and_pid() {
         let grouped = group(parse_netstat(SAMPLE));
-        let web = grouped.iter().find(|g| g.1 == 3000 && g.0 == Protocol::Tcp).unwrap();
+        let web = grouped
+            .iter()
+            .find(|g| g.1 == 3000 && g.0 == Protocol::Tcp)
+            .unwrap();
         assert_eq!(web.2, 9876);
         assert_eq!(web.3, vec!["127.0.0.1".to_string(), "::1".to_string()]);
         let rpc = grouped.iter().find(|g| g.1 == 135).unwrap();
@@ -282,7 +329,9 @@ Connexions actives
         };
         let runs: HashMap<u32, &RunInfo> = [(100, &run)].into_iter().collect();
         // node (300) ← cmd (200) ← pnpm (100, lancé par DevCenter)
-        let parents: HashMap<u32, u32> = [(300, 200), (200, 100), (100, 1), (400, 1)].into_iter().collect();
+        let parents: HashMap<u32, u32> = [(300, 200), (200, 100), (100, 1), (400, 1)]
+            .into_iter()
+            .collect();
         assert_eq!(owning_run(300, &parents, &runs).unwrap().run_id, 7);
         assert!(owning_run(400, &parents, &runs).is_none());
         // Cycle : pas de boucle infinie.

@@ -68,7 +68,9 @@ const PROTECTED_NAMES: &[&str] = &[
 ];
 
 pub(super) fn is_protected(pid: u32, name: &str) -> bool {
-    pid <= 4 || pid == std::process::id() || PROTECTED_NAMES.contains(&name.to_ascii_lowercase().as_str())
+    pid <= 4
+        || pid == std::process::id()
+        || PROTECTED_NAMES.contains(&name.to_ascii_lowercase().as_str())
 }
 
 fn status_label(status: ProcessStatus) -> String {
@@ -119,7 +121,11 @@ pub fn list(sys: &mut System, cores: usize) -> Vec<ProcessInfo> {
 /// si le PID a été réattribué entre-temps à un autre programme, l'arrêt est refusé.
 pub fn kill(sys: &mut System, pid: u32, start_time: u64) -> AppResult<KillOutcome> {
     let spid = Pid::from_u32(pid);
-    sys.refresh_processes_specifics(ProcessesToUpdate::Some(&[spid]), true, ProcessRefreshKind::nothing());
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[spid]),
+        true,
+        ProcessRefreshKind::nothing(),
+    );
 
     let process = sys
         .process(spid)
@@ -132,7 +138,9 @@ pub fn kill(sys: &mut System, pid: u32, start_time: u64) -> AppResult<KillOutcom
         )));
     }
     if is_protected(pid, &name) {
-        return Err(AppError::InvalidInput(format!("{name} est un processus protégé")));
+        return Err(AppError::InvalidInput(format!(
+            "{name} est un processus protégé"
+        )));
     }
 
     let killed = process.kill();

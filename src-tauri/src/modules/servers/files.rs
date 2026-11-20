@@ -61,11 +61,19 @@ pub fn validate_name(name: &str) -> AppResult<()> {
         && name != ".."
         && !name.contains('/')
         && !name.contains('\0');
-    if ok { Ok(()) } else { Err(invalid(format!("nom invalide : {name}"))) }
+    if ok {
+        Ok(())
+    } else {
+        Err(invalid(format!("nom invalide : {name}")))
+    }
 }
 
 pub fn join(dir: &str, name: &str) -> String {
-    if dir.ends_with('/') { format!("{dir}{name}") } else { format!("{dir}/{name}") }
+    if dir.ends_with('/') {
+        format!("{dir}{name}")
+    } else {
+        format!("{dir}/{name}")
+    }
 }
 
 /// Dossier parent d'un chemin absolu (`/` pour un élément à la racine).
@@ -107,7 +115,10 @@ fn failure(stderr: &[u8], code: Option<i32>) -> String {
         return ssh::explain(&msg, code);
     }
     if msg.is_empty() {
-        format!("la commande distante a échoué (code {})", code.map(|c| c.to_string()).unwrap_or_else(|| "?".into()))
+        format!(
+            "la commande distante a échoué (code {})",
+            code.map(|c| c.to_string()).unwrap_or_else(|| "?".into())
+        )
     } else {
         msg
     }
@@ -164,7 +175,9 @@ pub struct RemoteListing {
 const FIND_FORMAT: &str = r"%y\t%Y\t%s\t%T@\t%M\t%P\0";
 
 fn list_script(path: Option<&str>) -> String {
-    let cd = path.map(|p| format!("cd -- {} && ", quote(p))).unwrap_or_default();
+    let cd = path
+        .map(|p| format!("cd -- {} && ", quote(p)))
+        .unwrap_or_default();
     format!(
         "{cd}printf '%s\\0' \"$PWD\" && LC_ALL=C find . -mindepth 1 -maxdepth 1 -printf {}",
         quote(FIND_FORMAT)
@@ -183,9 +196,13 @@ fn kind_of(c: &str) -> EntryKind {
 /// Analyse la sortie de `list_script` : `$PWD\0` puis une entrée par bloc terminé par `\0`.
 pub fn parse_listing(raw: &[u8]) -> AppResult<RemoteListing> {
     let mut chunks = raw.split(|b| *b == 0);
-    let path = String::from_utf8_lossy(chunks.next().unwrap_or_default()).trim_end_matches(['\r', '\n']).to_string();
+    let path = String::from_utf8_lossy(chunks.next().unwrap_or_default())
+        .trim_end_matches(['\r', '\n'])
+        .to_string();
     if !path.starts_with('/') {
-        return Err(invalid("réponse inattendue du serveur (dossier courant introuvable)"));
+        return Err(invalid(
+            "réponse inattendue du serveur (dossier courant introuvable)",
+        ));
     }
     let mut entries = Vec::new();
     for chunk in chunks {
@@ -195,7 +212,9 @@ pub fn parse_listing(raw: &[u8]) -> AppResult<RemoteListing> {
         let text = String::from_utf8_lossy(chunk);
         // Le nom est le dernier champ : il peut contenir des tabulations, pas d'octet nul.
         let fields: Vec<&str> = text.splitn(6, '\t').collect();
-        let [ty, target_ty, size, mtime, mode, name] = fields[..] else { continue };
+        let [ty, target_ty, size, mtime, mode, name] = fields[..] else {
+            continue;
+        };
         if name.is_empty() || name == "." || name == ".." || name.contains('/') {
             continue;
         }
@@ -211,7 +230,11 @@ pub fn parse_listing(raw: &[u8]) -> AppResult<RemoteListing> {
             mode: mode.to_string(),
         });
     }
-    entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    entries.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
     Ok(RemoteListing { path, entries })
 }
 
@@ -224,8 +247,14 @@ pub fn list(server: &Server, path: Option<&str>) -> AppResult<RemoteListing> {
     if !out.status.success() {
         let msg = failure(&out.stderr, out.status.code());
         let lower = msg.to_lowercase();
-        if lower.contains("printf") && (lower.contains("unknown") || lower.contains("unrecognized") || lower.contains("invalid")) {
-            return Err(invalid("le serveur n'a pas GNU find (option -printf) : navigateur de fichiers indisponible"));
+        if lower.contains("printf")
+            && (lower.contains("unknown")
+                || lower.contains("unrecognized")
+                || lower.contains("invalid"))
+        {
+            return Err(invalid(
+                "le serveur n'a pas GNU find (option -printf) : navigateur de fichiers indisponible",
+            ));
         }
         // Quelques entrées illisibles ne doivent pas masquer tout le dossier.
         if out.status.code() == Some(1) && out.stdout.contains(&0) {
@@ -267,20 +296,31 @@ pub fn rename(server: &Server, path: &str, new_name: &str) -> AppResult<()> {
     let out = run(server, &rename_script(path, &target))?;
     match out.status.code() {
         Some(0) => Ok(()),
-        Some(EXISTS_CODE) => Err(invalid(format!("« {new_name} » existe déjà dans ce dossier"))),
+        Some(EXISTS_CODE) => Err(invalid(format!(
+            "« {new_name} » existe déjà dans ce dossier"
+        ))),
         code => Err(invalid(failure(&out.stderr, code))),
     }
 }
 
 fn delete_script(path: &str, recursive: bool) -> String {
-    format!("rm -{}f -- {}", if recursive { "r" } else { "" }, quote(path))
+    format!(
+        "rm -{}f -- {}",
+        if recursive { "r" } else { "" },
+        quote(path)
+    )
 }
 
 pub fn delete(server: &Server, path: &str, recursive: bool) -> AppResult<()> {
     validate_path(path)?;
-    let depth = path.split('/').filter(|c| !c.is_empty() && *c != ".").count();
+    let depth = path
+        .split('/')
+        .filter(|c| !c.is_empty() && *c != ".")
+        .count();
     if depth == 0 || (recursive && depth < 2) {
-        return Err(invalid(format!("suppression refusée par sécurité : {path}")));
+        return Err(invalid(format!(
+            "suppression refusée par sécurité : {path}"
+        )));
     }
     run_ok(server, &delete_script(path, recursive)).map(|_| ())
 }
@@ -335,18 +375,32 @@ pub struct Transfers {
 }
 
 fn now_secs() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 /// Nom de fichier utilisable sous Windows.
 pub fn sanitize_local_name(name: &str) -> String {
-    let mut out: String = name.chars().map(|c| if c.is_control() || "<>:\"/\\|?*".contains(c) { '_' } else { c }).collect();
+    let mut out: String = name
+        .chars()
+        .map(|c| {
+            if c.is_control() || "<>:\"/\\|?*".contains(c) {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
     while out.ends_with(['.', ' ']) {
         out.pop();
     }
     let stem = out.split('.').next().unwrap_or("").to_ascii_uppercase();
     let reserved = ["CON", "PRN", "AUX", "NUL"].contains(&stem.as_str())
-        || ((stem.starts_with("COM") || stem.starts_with("LPT")) && stem.len() == 4 && stem.as_bytes()[3].is_ascii_digit());
+        || ((stem.starts_with("COM") || stem.starts_with("LPT"))
+            && stem.len() == 4
+            && stem.as_bytes()[3].is_ascii_digit());
     if out.is_empty() || reserved {
         out.insert(0, '_');
     }
@@ -363,7 +417,10 @@ fn unique_path(dir: &Path, name: &str) -> PathBuf {
         Some(i) if i > 0 => (&name[..i], &name[i..]),
         _ => (name, ""),
     };
-    (1..10_000).map(|i| dir.join(format!("{stem} ({i}){ext}"))).find(|p| !p.exists()).unwrap_or(first)
+    (1..10_000)
+        .map(|i| dir.join(format!("{stem} ({i}){ext}")))
+        .find(|p| !p.exists())
+        .unwrap_or(first)
 }
 
 fn spawn_ssh(server: &Server, script: &str, stdin: Stdio) -> AppResult<Child> {
@@ -419,8 +476,12 @@ struct Ctx {
 impl Ctx {
     fn update(&self, f: impl FnOnce(&mut TransferInfo)) {
         let snapshot = {
-            let Ok(mut jobs) = self.jobs.lock() else { return };
-            let Some(job) = jobs.get_mut(&self.id) else { return };
+            let Ok(mut jobs) = self.jobs.lock() else {
+                return;
+            };
+            let Some(job) = jobs.get_mut(&self.id) else {
+                return;
+            };
             job.info.transferred = self.progress.load(Ordering::Relaxed);
             f(&mut job.info);
             job.info.clone()
@@ -437,7 +498,12 @@ impl Ctx {
     }
 
     /// Fin du transfert : état final selon l'annulation, le code de sortie et l'erreur locale.
-    fn finish(&self, status: Option<std::process::ExitStatus>, stderr: &[u8], local_err: Option<String>) -> bool {
+    fn finish(
+        &self,
+        status: Option<std::process::ExitStatus>,
+        stderr: &[u8],
+        local_err: Option<String>,
+    ) -> bool {
         let cancelled = self.cancel.load(Ordering::Relaxed);
         let ok = !cancelled && local_err.is_none() && status.map(|s| s.success()).unwrap_or(false);
         self.update(|info| {
@@ -450,7 +516,9 @@ impl Ctx {
                 }
             } else {
                 info.status = TransferStatus::Error;
-                info.error = Some(local_err.unwrap_or_else(|| failure(stderr, status.and_then(|s| s.code()))));
+                info.error = Some(
+                    local_err.unwrap_or_else(|| failure(stderr, status.and_then(|s| s.code()))),
+                );
             }
         });
         ok
@@ -462,14 +530,20 @@ const EMIT_EVERY: Duration = Duration::from_millis(200);
 
 impl Transfers {
     pub fn list(&self) -> Vec<TransferInfo> {
-        let mut v: Vec<TransferInfo> = self.jobs.lock().map(|j| j.values().map(|j| j.info.clone()).collect()).unwrap_or_default();
+        let mut v: Vec<TransferInfo> = self
+            .jobs
+            .lock()
+            .map(|j| j.values().map(|j| j.info.clone()).collect())
+            .unwrap_or_default();
         v.sort_by_key(|t| t.id);
         v
     }
 
     pub fn cancel(&self, id: u64) -> AppResult<()> {
         let jobs = self.jobs.lock()?;
-        let job = jobs.get(&id).ok_or_else(|| invalid(format!("transfert {id} inconnu")))?;
+        let job = jobs
+            .get(&id)
+            .ok_or_else(|| invalid(format!("transfert {id} inconnu")))?;
         job.cancel.store(true, Ordering::Relaxed);
         if let Some(child) = job.child.lock()?.as_mut() {
             let _ = child.kill();
@@ -479,13 +553,19 @@ impl Transfers {
 
     /// Retire un transfert terminé de la liste (et tous les terminés si `id` vaut `None`).
     pub fn dismiss(&self, id: Option<u64>) -> AppResult<()> {
-        self.jobs.lock()?.retain(|k, j| j.info.status == TransferStatus::Running || id.is_some_and(|id| id != *k));
+        self.jobs.lock()?.retain(|k, j| {
+            j.info.status == TransferStatus::Running || id.is_some_and(|id| id != *k)
+        });
         Ok(())
     }
 
     /// Arrête tous les transferts (fermeture de l'application).
     pub fn cancel_all(&self) {
-        let ids: Vec<u64> = self.jobs.lock().map(|j| j.keys().copied().collect()).unwrap_or_default();
+        let ids: Vec<u64> = self
+            .jobs
+            .lock()
+            .map(|j| j.keys().copied().collect())
+            .unwrap_or_default();
         for id in ids {
             let _ = self.cancel(id);
         }
@@ -496,11 +576,33 @@ impl Transfers {
         let cancel = Arc::new(AtomicBool::new(false));
         let id = info.id;
         let _ = app.emit(EVENT_TRANSFER, &info);
-        self.jobs.lock()?.insert(id, Job { info, child: child.clone(), cancel: cancel.clone() });
-        Ok(Ctx { app: app.clone(), jobs: self.jobs.clone(), id, progress: Arc::new(AtomicU64::new(0)), cancel, child })
+        self.jobs.lock()?.insert(
+            id,
+            Job {
+                info,
+                child: child.clone(),
+                cancel: cancel.clone(),
+            },
+        );
+        Ok(Ctx {
+            app: app.clone(),
+            jobs: self.jobs.clone(),
+            id,
+            progress: Arc::new(AtomicU64::new(0)),
+            cancel,
+            child,
+        })
     }
 
-    fn new_info(&self, server: &Server, direction: Direction, name: String, remote: String, local: String, total: u64) -> TransferInfo {
+    fn new_info(
+        &self,
+        server: &Server,
+        direction: Direction,
+        name: String,
+        remote: String,
+        local: String,
+        total: u64,
+    ) -> TransferInfo {
         TransferInfo {
             id: self.next_id.fetch_add(1, Ordering::Relaxed) + 1,
             server_id: server.id,
@@ -517,20 +619,36 @@ impl Transfers {
     }
 
     /// Télécharge le fichier distant `remote_path` dans le dossier local `dest_dir`.
-    pub fn download(&self, app: &AppHandle, server: &Server, remote_path: &str, size: u64, dest_dir: &str) -> AppResult<TransferInfo> {
+    pub fn download(
+        &self,
+        app: &AppHandle,
+        server: &Server,
+        remote_path: &str,
+        size: u64,
+        dest_dir: &str,
+    ) -> AppResult<TransferInfo> {
         validate_path(remote_path)?;
         let name = basename(remote_path);
         validate_name(name)?;
         let dir = Path::new(dest_dir);
         if !dir.is_absolute() || !dir.is_dir() {
-            return Err(invalid(format!("dossier de destination introuvable : {dest_dir}")));
+            return Err(invalid(format!(
+                "dossier de destination introuvable : {dest_dir}"
+            )));
         }
         let local_name = sanitize_local_name(name);
         let target = unique_path(dir, &local_name);
-        let part = dir.join(format!("{}.part", target.file_name().unwrap_or_default().to_string_lossy()));
+        let part = dir.join(format!(
+            "{}.part",
+            target.file_name().unwrap_or_default().to_string_lossy()
+        ));
         let mut file = File::create(&part)?;
 
-        let mut child = match spawn_ssh(server, &format!("cat -- {}", quote(remote_path)), Stdio::null()) {
+        let mut child = match spawn_ssh(
+            server,
+            &format!("cat -- {}", quote(remote_path)),
+            Stdio::null(),
+        ) {
             Ok(c) => c,
             Err(e) => {
                 drop(file);
@@ -540,7 +658,14 @@ impl Transfers {
         };
         let mut stdout = child.stdout.take().expect("stdout");
         let stderr = read_stderr(child.stderr.take());
-        let info = self.new_info(server, Direction::Download, name.to_string(), remote_path.to_string(), target.display().to_string(), size);
+        let info = self.new_info(
+            server,
+            Direction::Download,
+            name.to_string(),
+            remote_path.to_string(),
+            target.display().to_string(),
+            size,
+        );
         let ctx = self.register(app, info.clone(), child)?;
 
         std::thread::spawn(move || {
@@ -574,9 +699,18 @@ impl Transfers {
             let status = wait_child(&ctx.child);
             let err_bytes = stderr.join().unwrap_or_default();
             // Pas de renommage si une annulation est arrivée entre-temps.
-            let rename_err = if !ctx.cancel.load(Ordering::Relaxed) && local_err.is_none() && status.is_some_and(|s| s.success()) {
-                let dest = if target.exists() { unique_path(target.parent().unwrap_or(Path::new(".")), &local_name) } else { target.clone() };
-                std::fs::rename(&part, &dest).err().map(|e| format!("renommage du fichier téléchargé impossible : {e}"))
+            let rename_err = if !ctx.cancel.load(Ordering::Relaxed)
+                && local_err.is_none()
+                && status.is_some_and(|s| s.success())
+            {
+                let dest = if target.exists() {
+                    unique_path(target.parent().unwrap_or(Path::new(".")), &local_name)
+                } else {
+                    target.clone()
+                };
+                std::fs::rename(&part, &dest)
+                    .err()
+                    .map(|e| format!("renommage du fichier téléchargé impossible : {e}"))
             } else {
                 None
             };
@@ -589,12 +723,21 @@ impl Transfers {
     }
 
     /// Envoie le fichier local `local_path` dans le dossier distant `remote_dir` (écrase s'il existe).
-    pub fn upload(&self, app: &AppHandle, server: &Server, local_path: &str, remote_dir: &str) -> AppResult<TransferInfo> {
+    pub fn upload(
+        &self,
+        app: &AppHandle,
+        server: &Server,
+        local_path: &str,
+        remote_dir: &str,
+    ) -> AppResult<TransferInfo> {
         validate_path(remote_dir)?;
         let local = Path::new(local_path);
-        let meta = std::fs::metadata(local).map_err(|_| invalid(format!("fichier introuvable : {local_path}")))?;
+        let meta = std::fs::metadata(local)
+            .map_err(|_| invalid(format!("fichier introuvable : {local_path}")))?;
         if meta.is_dir() {
-            return Err(invalid(format!("les dossiers ne peuvent pas être envoyés : {local_path}")));
+            return Err(invalid(format!(
+                "les dossiers ne peuvent pas être envoyés : {local_path}"
+            )));
         }
         let name = local
             .file_name()
@@ -607,7 +750,11 @@ impl Transfers {
         let size = meta.len();
         let mut file = File::open(local)?;
 
-        let mut child = spawn_ssh(server, &upload_script(remote_dir, &name, size), Stdio::piped())?;
+        let mut child = spawn_ssh(
+            server,
+            &upload_script(remote_dir, &name, size),
+            Stdio::piped(),
+        )?;
         let mut stdin = child.stdin.take().expect("stdin");
         // stdout non utilisé : vidé pour ne jamais bloquer le processus distant.
         let mut stdout = child.stdout.take().expect("stdout");
@@ -615,7 +762,14 @@ impl Transfers {
             let _ = std::io::copy(&mut stdout, &mut std::io::sink());
         });
         let stderr = read_stderr(child.stderr.take());
-        let info = self.new_info(server, Direction::Upload, name, target, local_path.to_string(), size);
+        let info = self.new_info(
+            server,
+            Direction::Upload,
+            name,
+            target,
+            local_path.to_string(),
+            size,
+        );
         let ctx = self.register(app, info.clone(), child)?;
 
         std::thread::spawn(move || {
@@ -695,7 +849,11 @@ mod tests {
         assert_eq!(notes.mode, "-rw-r--r--");
         let broken = l.entries.iter().find(|e| e.name == "broken").unwrap();
         assert!(!broken.is_dir);
-        assert!(l.entries.iter().any(|e| e.name == "weird\tname\nwith  spaces"));
+        assert!(
+            l.entries
+                .iter()
+                .any(|e| e.name == "weird\tname\nwith  spaces")
+        );
     }
 
     #[test]
@@ -737,7 +895,10 @@ mod tests {
     fn quotes_remote_scripts() {
         // Le script entier est cité pour le shell de connexion, chaque chemin pour `sh`.
         assert_eq!(sh("echo 'a'"), r#"sh -c 'echo '\''a'\'''"#);
-        assert_eq!(delete_script("/tmp/it's; rm -rf ~", true), r"rm -rf -- '/tmp/it'\''s; rm -rf ~'");
+        assert_eq!(
+            delete_script("/tmp/it's; rm -rf ~", true),
+            r"rm -rf -- '/tmp/it'\''s; rm -rf ~'"
+        );
         assert_eq!(delete_script("/tmp/f", false), "rm -f -- '/tmp/f'");
         let s = list_script(Some("/srv/$(id)"));
         assert!(s.starts_with("cd -- '/srv/$(id)' && "));
@@ -747,7 +908,9 @@ mod tests {
         let u = upload_script("/data", "r'port.pdf", 42);
         assert!(u.contains(r"cat > '/data/.r'\''port.pdf.devcenter-part'"));
         assert!(u.contains("-eq 42"));
-        assert!(u.contains(r"mv -f -- '/data/.r'\''port.pdf.devcenter-part' '/data/r'\''port.pdf'"));
+        assert!(
+            u.contains(r"mv -f -- '/data/.r'\''port.pdf.devcenter-part' '/data/r'\''port.pdf'")
+        );
     }
 
     #[test]

@@ -67,7 +67,9 @@ pub fn validate_command(command: &str) -> AppResult<String> {
         return Err(AppError::InvalidInput("commande manquante".into()));
     }
     if command.len() > MAX_COMMAND || command.contains('\0') {
-        return Err(AppError::InvalidInput(format!("commande trop longue ({MAX_COMMAND} caractères maximum)")));
+        return Err(AppError::InvalidInput(format!(
+            "commande trop longue ({MAX_COMMAND} caractères maximum)"
+        )));
     }
     Ok(command)
 }
@@ -87,15 +89,25 @@ const COLUMNS: &str = "id, name, command, server_id, confirm, sudo";
 
 pub fn list(db: &Database) -> AppResult<Vec<Snippet>> {
     db.with(|conn| {
-        let mut stmt = conn.prepare(&format!("SELECT {COLUMNS} FROM server_snippets ORDER BY name COLLATE NOCASE"))?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {COLUMNS} FROM server_snippets ORDER BY name COLLATE NOCASE"
+        ))?;
         let rows = stmt.query_map([], row)?;
         Ok(rows.collect::<Result<_, _>>()?)
     })
 }
 
 pub fn get(db: &Database, id: i64) -> AppResult<Snippet> {
-    db.with(|conn| Ok(conn.query_row(&format!("SELECT {COLUMNS} FROM server_snippets WHERE id = ?1"), params![id], row).optional()?))?
-        .ok_or_else(|| AppError::InvalidInput(format!("commande {id} inconnue")))
+    db.with(|conn| {
+        Ok(conn
+            .query_row(
+                &format!("SELECT {COLUMNS} FROM server_snippets WHERE id = ?1"),
+                params![id],
+                row,
+            )
+            .optional()?)
+    })?
+    .ok_or_else(|| AppError::InvalidInput(format!("commande {id} inconnue")))
 }
 
 /// La commande est-elle proposée sur ce serveur (globale ou propre au serveur) ?
@@ -106,7 +118,9 @@ pub fn available_on(snippet: &Snippet, server_id: i64) -> bool {
 pub fn save(db: &Database, input: &SnippetInput) -> AppResult<Vec<Snippet>> {
     let name = input.name.trim().to_string();
     if name.is_empty() || name.chars().count() > 80 {
-        return Err(AppError::InvalidInput("le nom doit faire entre 1 et 80 caractères".into()));
+        return Err(AppError::InvalidInput(
+            "le nom doit faire entre 1 et 80 caractères".into(),
+        ));
     }
     let command = validate_command(&input.command)?;
     if let Some(server_id) = input.server_id {
@@ -146,7 +160,11 @@ pub fn delete(db: &Database, id: i64) -> AppResult<Vec<Snippet>> {
 /// Commande distante finale : `sudo -n sh -c '…'` pour que sudo couvre toute la ligne
 /// (tubes, `&&`…) et échoue immédiatement s'il faudrait un mot de passe.
 pub fn remote_command(command: &str, sudo: bool) -> String {
-    if sudo { format!("sudo -n sh -c {}", quote(command)) } else { command.to_string() }
+    if sudo {
+        format!("sudo -n sh -c {}", quote(command))
+    } else {
+        command.to_string()
+    }
 }
 
 fn clip(bytes: &[u8], truncated: &mut bool) -> String {
@@ -164,7 +182,12 @@ fn clip(bytes: &[u8], truncated: &mut bool) -> String {
 
 /// Exécute une commande et retourne ses sorties et son code, même non nul.
 /// Seules les erreurs de connexion SSH (code 255 de `ssh`) sont remontées comme erreur.
-pub fn execute(server: &Server, command: &str, sudo: bool, timeout: Duration) -> AppResult<CommandResult> {
+pub fn execute(
+    server: &Server,
+    command: &str,
+    sudo: bool,
+    timeout: Duration,
+) -> AppResult<CommandResult> {
     let command = validate_command(command)?;
     let start = Instant::now();
     let out = ssh::exec(server, &remote_command(&command, sudo), timeout)?;
@@ -178,15 +201,32 @@ pub fn execute(server: &Server, command: &str, sudo: bool, timeout: Duration) ->
         .join("\n");
     let exit_code = out.status.code();
     if exit_code == Some(255) && ssh::is_connection_error(&stderr) {
-        return Err(AppError::InvalidInput(ssh::explain(stderr.trim(), exit_code)));
+        return Err(AppError::InvalidInput(ssh::explain(
+            stderr.trim(),
+            exit_code,
+        )));
     }
-    Ok(CommandResult { stdout, stderr, exit_code, duration_ms, truncated })
+    Ok(CommandResult {
+        stdout,
+        stderr,
+        exit_code,
+        duration_ms,
+        truncated,
+    })
 }
 
-pub fn run(db: &Database, server: &Server, snippet_id: i64, timeout: Duration) -> AppResult<CommandResult> {
+pub fn run(
+    db: &Database,
+    server: &Server,
+    snippet_id: i64,
+    timeout: Duration,
+) -> AppResult<CommandResult> {
     let snippet = get(db, snippet_id)?;
     if !available_on(&snippet, server.id) {
-        return Err(AppError::InvalidInput(format!("la commande « {} » n'est pas disponible sur ce serveur", snippet.name)));
+        return Err(AppError::InvalidInput(format!(
+            "la commande « {} » n'est pas disponible sur ce serveur",
+            snippet.name
+        )));
     }
     execute(server, &snippet.command, snippet.sudo, timeout)
 }
@@ -198,8 +238,14 @@ mod tests {
     #[test]
     fn builds_remote_command() {
         assert_eq!(remote_command("df -h", false), "df -h");
-        assert_eq!(remote_command("apt-get update && apt-get -y upgrade", true), "sudo -n sh -c 'apt-get update && apt-get -y upgrade'");
-        assert_eq!(remote_command("echo 'a'", true), r"sudo -n sh -c 'echo '\''a'\'''");
+        assert_eq!(
+            remote_command("apt-get update && apt-get -y upgrade", true),
+            "sudo -n sh -c 'apt-get update && apt-get -y upgrade'"
+        );
+        assert_eq!(
+            remote_command("echo 'a'", true),
+            r"sudo -n sh -c 'echo '\''a'\'''"
+        );
     }
 
     #[test]

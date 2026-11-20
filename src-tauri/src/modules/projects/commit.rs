@@ -26,17 +26,29 @@ pub struct ChangedFile {
 }
 
 fn git(dir: &Path, args: &[&str]) -> std::io::Result<Output> {
-    shell::command("git").args(["-c", "core.quotepath=off", "-C"]).arg(dir).args(args).output()
+    shell::command("git")
+        .args(["-c", "core.quotepath=off", "-C"])
+        .arg(dir)
+        .args(args)
+        .output()
 }
 
 fn error_of(out: &Output) -> AppError {
-    let text = format!("{}\n{}", String::from_utf8_lossy(&out.stderr), String::from_utf8_lossy(&out.stdout));
+    let text = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&out.stderr),
+        String::from_utf8_lossy(&out.stdout)
+    );
     let msg: Vec<&str> = text
         .lines()
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with("hint:"))
         .collect();
-    AppError::InvalidInput(if msg.is_empty() { "commande git en échec".into() } else { msg.join("\n") })
+    AppError::InvalidInput(if msg.is_empty() {
+        "commande git en échec".into()
+    } else {
+        msg.join("\n")
+    })
 }
 
 fn run(dir: &Path, args: &[&str]) -> AppResult<String> {
@@ -60,7 +72,10 @@ fn check_paths(paths: &[String]) -> AppResult<()> {
 }
 
 pub fn changes(dir: &Path) -> AppResult<Vec<ChangedFile>> {
-    let text = run(dir, &["status", "--porcelain=v2", "-z", "--untracked-files=all"])?;
+    let text = run(
+        dir,
+        &["status", "--porcelain=v2", "-z", "--untracked-files=all"],
+    )?;
     Ok(parse(&text))
 }
 
@@ -138,7 +153,11 @@ pub fn unstage(dir: &Path, paths: &[String]) -> AppResult<()> {
     check_paths(paths)?;
     let has_head = run(dir, &["rev-parse", "--verify", "--quiet", "HEAD"]).is_ok();
     // Sans commit, il n'y a pas de HEAD à restaurer : on retire simplement de l'index.
-    let mut args = if has_head { vec!["restore", "--staged", "--"] } else { vec!["rm", "--cached", "-r", "-q", "--"] };
+    let mut args = if has_head {
+        vec!["restore", "--staged", "--"]
+    } else {
+        vec!["rm", "--cached", "-r", "-q", "--"]
+    };
     args.extend(paths.iter().map(String::as_str));
     run(dir, &args).map(|_| ())
 }
@@ -147,14 +166,37 @@ pub fn unstage(dir: &Path, paths: &[String]) -> AppResult<()> {
 pub fn diff(dir: &Path, path: &str, staged: bool) -> AppResult<String> {
     check_paths(&[path.to_string()])?;
     let out = if staged {
-        git(dir, &["diff", "--cached", "--no-color", "--no-ext-diff", "--", path])?
+        git(
+            dir,
+            &[
+                "diff",
+                "--cached",
+                "--no-color",
+                "--no-ext-diff",
+                "--",
+                path,
+            ],
+        )?
     } else {
-        let tracked = git(dir, &["ls-files", "--error-unmatch", "--", path])?.status.success();
+        let tracked = git(dir, &["ls-files", "--error-unmatch", "--", path])?
+            .status
+            .success();
         if tracked {
             git(dir, &["diff", "--no-color", "--no-ext-diff", "--", path])?
         } else {
             // Fichier non suivi : comparé au vide. `--no-index` sort avec le code 1 s'il y a une différence.
-            git(dir, &["diff", "--no-color", "--no-ext-diff", "--no-index", "--", "/dev/null", path])?
+            git(
+                dir,
+                &[
+                    "diff",
+                    "--no-color",
+                    "--no-ext-diff",
+                    "--no-index",
+                    "--",
+                    "/dev/null",
+                    path,
+                ],
+            )?
         }
     };
     if !matches!(out.status.code(), Some(0 | 1)) {
@@ -210,18 +252,31 @@ pub fn commit(dir: &Path, message: &str, all: bool) -> AppResult<()> {
 /// Pousse la branche courante. Sans branche suivie, la publie sur le dépôt distant
 /// (`origin` de préférence) et la fait suivre (`-u`).
 pub fn push(dir: &Path) -> AppResult<()> {
-    let branch = run(dir, &["symbolic-ref", "--quiet", "--short", "HEAD"])
-        .map_err(|_| AppError::InvalidInput("HEAD détachée : basculez sur une branche pour pousser".into()))?;
+    let branch = run(dir, &["symbolic-ref", "--quiet", "--short", "HEAD"]).map_err(|_| {
+        AppError::InvalidInput("HEAD détachée : basculez sur une branche pour pousser".into())
+    })?;
     let branch = branch.trim();
-    let has_upstream = run(dir, &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).is_ok();
+    let has_upstream = run(
+        dir,
+        &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+    )
+    .is_ok();
     let mut args = vec!["push", "--porcelain"];
     let remotes = run(dir, &["remote"])?;
     let remote;
     if !has_upstream {
-        let list: Vec<&str> = remotes.lines().map(str::trim).filter(|r| !r.is_empty()).collect();
+        let list: Vec<&str> = remotes
+            .lines()
+            .map(str::trim)
+            .filter(|r| !r.is_empty())
+            .collect();
         remote = match list.iter().find(|r| **r == "origin").or(list.first()) {
             Some(r) => r.to_string(),
-            None => return Err(AppError::InvalidInput("aucun dépôt distant configuré (git remote add origin …)".into())),
+            None => {
+                return Err(AppError::InvalidInput(
+                    "aucun dépôt distant configuré (git remote add origin …)".into(),
+                ));
+            }
         };
         args.extend(["-u", remote.as_str(), branch]);
     }
@@ -289,13 +344,23 @@ mod tests {
 
         run(&work, &["remote", "add", "origin", bare.to_str().unwrap()]).unwrap();
         push(&work).unwrap();
-        assert_eq!(run(&work, &["rev-parse", "--abbrev-ref", "@{u}"]).unwrap().trim(), "origin/main");
+        assert_eq!(
+            run(&work, &["rev-parse", "--abbrev-ref", "@{u}"])
+                .unwrap()
+                .trim(),
+            "origin/main"
+        );
 
         std::fs::write(work.join("a.txt"), "2").unwrap();
         stage(&work, &["a.txt".into()]).unwrap();
         commit(&work, "second", false).unwrap();
         push(&work).unwrap();
-        assert_eq!(run(&bare, &["log", "-1", "--format=%s", "main"]).unwrap().trim(), "second");
+        assert_eq!(
+            run(&bare, &["log", "-1", "--format=%s", "main"])
+                .unwrap()
+                .trim(),
+            "second"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 }

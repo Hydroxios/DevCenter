@@ -4,6 +4,7 @@
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::error::{AppError, AppResult};
+use crate::modules::apps::{self, AppShortcut};
 use crate::modules::automations::{self, Automation, AutomationInput, RunSummary};
 use crate::modules::backup::{self, ImportSummary};
 use crate::modules::editor;
@@ -13,22 +14,24 @@ use crate::modules::projects::branches::{self, Branch};
 use crate::modules::projects::deps::{self, DependencyReport, DependencySummary};
 use crate::modules::projects::history::{CommitDetails, GitLog};
 use crate::modules::projects::import::CloneJob;
-use crate::modules::push;
-use crate::modules::shell;
-use crate::modules::tailscale::{self, TailscaleStatus};
-use crate::modules::remote::{self as remote_access, PairingCode, RemoteStatus};
 use crate::modules::projects::{self, Project, ProjectDetails, ScanCandidate};
+use crate::modules::push;
+use crate::modules::remote::{self as remote_access, PairingCode, RemoteStatus};
 use crate::modules::runner::RunInfo;
-use crate::modules::servers::remote::{self, Container, RemoteMetrics, RemoteService};
 use crate::modules::servers::agent::KeyStatus;
-use crate::modules::servers::snippets::{self, CommandResult, Snippet, SnippetInput};
 use crate::modules::servers::files::{self, RemoteListing, TransferInfo};
+use crate::modules::servers::remote::{self, Container, RemoteMetrics, RemoteService};
+use crate::modules::servers::snippets::{self, CommandResult, Snippet, SnippetInput};
 use crate::modules::servers::tunnels::{self, Tunnel, TunnelInput};
 use crate::modules::servers::{self, Server, ServerInput};
-use crate::modules::workspaces::{self, ActiveInfo, SessionRecord, Workspace, WorkspaceInput};
 use crate::modules::settings::{Settings, SettingsService};
-use crate::modules::apps::{self, AppShortcut};
-use crate::modules::system::{HardwareSnapshot, KillOutcome, ListeningPort, ProcessInfo, ProcessSort, SystemInfo, SystemSnapshot};
+use crate::modules::shell;
+use crate::modules::system::{
+    HardwareSnapshot, KillOutcome, ListeningPort, ProcessInfo, ProcessSort, SystemInfo,
+    SystemSnapshot,
+};
+use crate::modules::tailscale::{self, TailscaleStatus};
+use crate::modules::workspaces::{self, ActiveInfo, SessionRecord, Workspace, WorkspaceInput};
 use crate::state::AppState;
 
 // ---------------------------------------------------------------- Journal
@@ -63,7 +66,9 @@ pub fn app_version(app: AppHandle) -> String {
 }
 
 #[tauri::command]
-pub async fn update_check(app: AppHandle) -> AppResult<Option<crate::modules::updates::UpdateInfo>> {
+pub async fn update_check(
+    app: AppHandle,
+) -> AppResult<Option<crate::modules::updates::UpdateInfo>> {
     crate::modules::updates::check(&app).await
 }
 
@@ -71,7 +76,12 @@ pub async fn update_check(app: AppHandle) -> AppResult<Option<crate::modules::up
 pub async fn update_install(app: AppHandle) -> AppResult<()> {
     crate::modules::updates::install(&app)
         .await
-        .inspect_err(|e| events::Entry::error(Source::Update, "Échec de la mise à jour").detail(e.to_string()).link("/settings").emit(&app))
+        .inspect_err(|e| {
+            events::Entry::error(Source::Update, "Échec de la mise à jour")
+                .detail(e.to_string())
+                .link("/settings")
+                .emit(&app)
+        })
 }
 
 /// Ouvre le dossier des journaux (pour joindre `devcenter.log` à un rapport de bug).
@@ -79,7 +89,8 @@ pub async fn update_install(app: AppHandle) -> AppResult<()> {
 pub fn open_log_folder(app: AppHandle) -> AppResult<()> {
     let dir = app.path().app_log_dir()?;
     std::fs::create_dir_all(&dir)?;
-    tauri_plugin_opener::open_path(&dir, None::<&str>).map_err(|e| AppError::InvalidInput(format!("impossible d'ouvrir {} : {e}", dir.display())))
+    tauri_plugin_opener::open_path(&dir, None::<&str>)
+        .map_err(|e| AppError::InvalidInput(format!("impossible d'ouvrir {} : {e}", dir.display())))
 }
 
 #[tauri::command]
@@ -118,7 +129,11 @@ pub async fn get_hardware(app: AppHandle) -> AppResult<HardwareSnapshot> {
 
 /// `sort` (`cpu` | `memory`) et `limit` : tri et coupe côté Rust (le widget n'affiche que le haut du classement).
 #[tauri::command]
-pub async fn list_processes(app: AppHandle, sort: Option<ProcessSort>, limit: Option<usize>) -> AppResult<Vec<ProcessInfo>> {
+pub async fn list_processes(
+    app: AppHandle,
+    sort: Option<ProcessSort>,
+    limit: Option<usize>,
+) -> AppResult<Vec<ProcessInfo>> {
     blocking(move || app.state::<AppState>().system.processes(sort, limit)).await
 }
 
@@ -144,7 +159,11 @@ pub fn list_apps(state: State<'_, AppState>) -> AppResult<Vec<AppShortcut>> {
 }
 
 #[tauri::command]
-pub fn add_app(state: State<'_, AppState>, name: String, path: String) -> AppResult<Vec<AppShortcut>> {
+pub fn add_app(
+    state: State<'_, AppState>,
+    name: String,
+    path: String,
+) -> AppResult<Vec<AppShortcut>> {
     apps::add(&state.db, &name, &path)
 }
 
@@ -185,15 +204,30 @@ pub fn remove_project(state: State<'_, AppState>, id: i64) -> AppResult<Vec<Proj
 }
 
 #[tauri::command]
-pub fn rename_project(state: State<'_, AppState>, id: i64, name: String) -> AppResult<Vec<Project>> {
+pub fn rename_project(
+    state: State<'_, AppState>,
+    id: i64,
+    name: String,
+) -> AppResult<Vec<Project>> {
     projects::rename(&state.db, id, &name)
 }
 
 /// Git + lecture de fichiers : exécuté hors du thread principal.
 #[tauri::command]
-pub async fn project_details(state: State<'_, AppState>, id: i64, force: Option<bool>) -> AppResult<ProjectDetails> {
+pub async fn project_details(
+    state: State<'_, AppState>,
+    id: i64,
+    force: Option<bool>,
+) -> AppResult<ProjectDetails> {
     let path = projects::path_of(&state.db, id)?;
-    blocking(move || Ok(if force.unwrap_or(false) { projects::details_fresh(id, &path) } else { projects::details(id, &path) })).await
+    blocking(move || {
+        Ok(if force.unwrap_or(false) {
+            projects::details_fresh(id, &path)
+        } else {
+            projects::details(id, &path)
+        })
+    })
+    .await
 }
 
 /// Lit les tâches Gradle réelles du projet (plusieurs secondes la première fois, puis en cache).
@@ -209,7 +243,10 @@ pub async fn gradle_tasks(state: State<'_, AppState>, id: i64) -> AppResult<Proj
 
 /// Dernier rapport de dépendances enregistré (aucune commande lancée).
 #[tauri::command]
-pub fn dependency_report(state: State<'_, AppState>, id: i64) -> AppResult<Option<DependencyReport>> {
+pub fn dependency_report(
+    state: State<'_, AppState>,
+    id: i64,
+) -> AppResult<Option<DependencyReport>> {
     deps::load(&state.db, id)
 }
 
@@ -250,8 +287,9 @@ pub async fn open_in_editor(app: AppHandle, id: i64) -> AppResult<()> {
 pub async fn open_project_folder(app: AppHandle, id: i64) -> AppResult<()> {
     blocking(move || {
         let path = projects::path_of(&app.state::<AppState>().db, id)?;
-        tauri_plugin_opener::open_path(&path, None::<&str>)
-            .map_err(|e| AppError::InvalidInput(format!("impossible d'ouvrir {} : {e}", path.display())))
+        tauri_plugin_opener::open_path(&path, None::<&str>).map_err(|e| {
+            AppError::InvalidInput(format!("impossible d'ouvrir {} : {e}", path.display()))
+        })
     })
     .await
 }
@@ -260,7 +298,8 @@ pub async fn open_project_folder(app: AppHandle, id: i64) -> AppResult<()> {
 pub async fn open_project_terminal(app: AppHandle, id: i64) -> AppResult<()> {
     blocking(move || {
         let path = projects::path_of(&app.state::<AppState>().db, id)?;
-        shell::open_terminal(&path).map_err(|e| AppError::InvalidInput(format!("impossible d'ouvrir un terminal : {e}")))
+        shell::open_terminal(&path)
+            .map_err(|e| AppError::InvalidInput(format!("impossible d'ouvrir un terminal : {e}")))
     })
     .await
 }
@@ -269,7 +308,10 @@ pub async fn open_project_terminal(app: AppHandle, id: i64) -> AppResult<()> {
 
 /// Fichiers `.env*` du projet et profil actif. Les valeurs ne sont jamais journalisées.
 #[tauri::command]
-pub async fn env_overview(app: AppHandle, project_id: i64) -> AppResult<projects::env::EnvOverview> {
+pub async fn env_overview(
+    app: AppHandle,
+    project_id: i64,
+) -> AppResult<projects::env::EnvOverview> {
     blocking(move || {
         let db = &app.state::<AppState>().db;
         projects::env::overview(db, project_id, &projects::path_of(db, project_id)?)
@@ -278,8 +320,18 @@ pub async fn env_overview(app: AppHandle, project_id: i64) -> AppResult<projects
 }
 
 #[tauri::command]
-pub async fn env_read(app: AppHandle, project_id: i64, name: String) -> AppResult<projects::env::EnvFile> {
-    blocking(move || projects::env::read(&projects::path_of(&app.state::<AppState>().db, project_id)?, &name)).await
+pub async fn env_read(
+    app: AppHandle,
+    project_id: i64,
+    name: String,
+) -> AppResult<projects::env::EnvFile> {
+    blocking(move || {
+        projects::env::read(
+            &projects::path_of(&app.state::<AppState>().db, project_id)?,
+            &name,
+        )
+    })
+    .await
 }
 
 #[tauri::command]
@@ -298,7 +350,12 @@ pub async fn env_save(
 }
 
 #[tauri::command]
-pub async fn env_create(app: AppHandle, project_id: i64, name: String, copy_from: Option<String>) -> AppResult<projects::env::EnvFile> {
+pub async fn env_create(
+    app: AppHandle,
+    project_id: i64,
+    name: String,
+    copy_from: Option<String>,
+) -> AppResult<projects::env::EnvFile> {
     blocking(move || {
         let dir = projects::path_of(&app.state::<AppState>().db, project_id)?;
         projects::env::create(&dir, &name, copy_from.as_deref())
@@ -307,17 +364,29 @@ pub async fn env_create(app: AppHandle, project_id: i64, name: String, copy_from
 }
 
 #[tauri::command]
-pub async fn env_set_active(app: AppHandle, project_id: i64, name: Option<String>) -> AppResult<projects::env::EnvOverview> {
+pub async fn env_set_active(
+    app: AppHandle,
+    project_id: i64,
+    name: Option<String>,
+) -> AppResult<projects::env::EnvOverview> {
     blocking(move || {
         let db = &app.state::<AppState>().db;
-        projects::env::set_active(db, project_id, &projects::path_of(db, project_id)?, name.as_deref())
+        projects::env::set_active(
+            db,
+            project_id,
+            &projects::path_of(db, project_id)?,
+            name.as_deref(),
+        )
     })
     .await
 }
 
 #[tauri::command]
 pub async fn detect_editor() -> Option<String> {
-    blocking(|| Ok(editor::detect().map(|p| p.display().to_string()))).await.ok().flatten()
+    blocking(|| Ok(editor::detect().map(|p| p.display().to_string())))
+        .await
+        .ok()
+        .flatten()
 }
 
 // ---------------------------------------------------------------- Scripts
@@ -337,8 +406,18 @@ pub fn run_logs(state: State<'_, AppState>, run_id: u64) -> AppResult<Vec<String
 #[tauri::command]
 pub async fn run_script(app: AppHandle, project_id: i64, script: String) -> AppResult<RunInfo> {
     blocking(move || {
-        projects::run_script(&app, project_id, &script)
-            .inspect_err(|e| events::Entry::error(Source::Runner, format!("{} · {script} n'a pas pu démarrer", events::project_name(&app, project_id))).detail(e.to_string()).link(format!("/projects?project={project_id}")).emit(&app))
+        projects::run_script(&app, project_id, &script).inspect_err(|e| {
+            events::Entry::error(
+                Source::Runner,
+                format!(
+                    "{} · {script} n'a pas pu démarrer",
+                    events::project_name(&app, project_id)
+                ),
+            )
+            .detail(e.to_string())
+            .link(format!("/projects?project={project_id}"))
+            .emit(&app)
+        })
     })
     .await
 }
@@ -353,8 +432,12 @@ pub fn dismiss_run(state: State<'_, AppState>, run_id: u64) -> AppResult<()> {
     state.runner.dismiss(run_id)
 }
 
-async fn blocking<T: Send + 'static>(f: impl FnOnce() -> AppResult<T> + Send + 'static) -> AppResult<T> {
-    tauri::async_runtime::spawn_blocking(f).await.map_err(|_| AppError::Unavailable("tâche de fond"))?
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> AppResult<T> + Send + 'static,
+) -> AppResult<T> {
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|_| AppError::Unavailable("tâche de fond"))?
 }
 
 // ---------------------------------------------------------------- Workspaces
@@ -365,7 +448,10 @@ pub fn list_workspaces(state: State<'_, AppState>) -> AppResult<Vec<Workspace>> 
 }
 
 #[tauri::command]
-pub fn save_workspace(state: State<'_, AppState>, input: WorkspaceInput) -> AppResult<Vec<Workspace>> {
+pub fn save_workspace(
+    state: State<'_, AppState>,
+    input: WorkspaceInput,
+) -> AppResult<Vec<Workspace>> {
     workspaces::save(&state.db, &input)?;
     workspaces::list(&state.db, &state.workspaces)
 }
@@ -377,7 +463,11 @@ pub fn delete_workspace(state: State<'_, AppState>, id: i64) -> AppResult<Vec<Wo
 }
 
 #[tauri::command]
-pub fn set_workspace_favorite(state: State<'_, AppState>, id: i64, favorite: bool) -> AppResult<Vec<Workspace>> {
+pub fn set_workspace_favorite(
+    state: State<'_, AppState>,
+    id: i64,
+    favorite: bool,
+) -> AppResult<Vec<Workspace>> {
     workspaces::set_favorite(&state.db, id, favorite)?;
     workspaces::list(&state.db, &state.workspaces)
 }
@@ -386,8 +476,12 @@ pub fn set_workspace_favorite(state: State<'_, AppState>, id: i64, favorite: boo
 #[tauri::command]
 pub async fn start_workspace(app: AppHandle, id: i64) -> AppResult<ActiveInfo> {
     blocking(move || {
-        workspaces::start(&app, &app.state::<AppState>(), id)
-            .inspect_err(|e| events::Entry::error(Source::Workspace, "Échec du démarrage du workspace").detail(e.to_string()).link(format!("/workspaces?workspace={id}")).emit(&app))
+        workspaces::start(&app, &app.state::<AppState>(), id).inspect_err(|e| {
+            events::Entry::error(Source::Workspace, "Échec du démarrage du workspace")
+                .detail(e.to_string())
+                .link(format!("/workspaces?workspace={id}"))
+                .emit(&app)
+        })
     })
     .await
 }
@@ -398,7 +492,10 @@ pub async fn stop_workspace(app: AppHandle, id: i64) -> AppResult<()> {
 }
 
 #[tauri::command]
-pub fn workspace_history(state: State<'_, AppState>, limit: Option<u32>) -> AppResult<Vec<SessionRecord>> {
+pub fn workspace_history(
+    state: State<'_, AppState>,
+    limit: Option<u32>,
+) -> AppResult<Vec<SessionRecord>> {
     workspaces::history(&state.db, limit.unwrap_or(50))
 }
 
@@ -416,14 +513,20 @@ pub fn save_server(state: State<'_, AppState>, input: ServerInput) -> AppResult<
 }
 
 #[tauri::command]
-pub fn delete_server(app: AppHandle, state: State<'_, AppState>, id: i64) -> AppResult<Vec<Server>> {
+pub fn delete_server(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: i64,
+) -> AppResult<Vec<Server>> {
     tunnels::stop_for_server(&app, &state.db, &state.tunnels, id)?;
     servers::delete(&state.db, id)
 }
 
 #[tauri::command]
 pub async fn find_ssh_keys() -> Vec<String> {
-    blocking(|| Ok(servers::find_keys())).await.unwrap_or_default()
+    blocking(|| Ok(servers::find_keys()))
+        .await
+        .unwrap_or_default()
 }
 
 fn server_of(app: &AppHandle, id: i64) -> AppResult<Server> {
@@ -435,7 +538,12 @@ pub async fn ping_server(app: AppHandle, id: i64) -> AppResult<u64> {
     blocking(move || {
         let server = server_of(&app, id)?;
         let result = remote::ping(&server);
-        events::server_status(&app, id, &server.name, result.as_ref().err().map(|e| e.to_string()));
+        events::server_status(
+            &app,
+            id,
+            &server.name,
+            result.as_ref().err().map(|e| e.to_string()),
+        );
         result
     })
     .await
@@ -452,12 +560,22 @@ pub async fn server_services(app: AppHandle, id: i64) -> AppResult<Vec<RemoteSer
 }
 
 #[tauri::command]
-pub async fn server_service_action(app: AppHandle, id: i64, name: String, action: String) -> AppResult<()> {
+pub async fn server_service_action(
+    app: AppHandle,
+    id: i64,
+    name: String,
+    action: String,
+) -> AppResult<()> {
     blocking(move || remote::service_action(&server_of(&app, id)?, &name, &action)).await
 }
 
 #[tauri::command]
-pub async fn server_service_logs(app: AppHandle, id: i64, name: String, lines: Option<u32>) -> AppResult<String> {
+pub async fn server_service_logs(
+    app: AppHandle,
+    id: i64,
+    name: String,
+    lines: Option<u32>,
+) -> AppResult<String> {
     blocking(move || remote::service_logs(&server_of(&app, id)?, &name, lines.unwrap_or(300))).await
 }
 
@@ -467,13 +585,26 @@ pub async fn server_containers(app: AppHandle, id: i64) -> AppResult<Vec<Contain
 }
 
 #[tauri::command]
-pub async fn server_container_action(app: AppHandle, id: i64, container: String, action: String) -> AppResult<()> {
+pub async fn server_container_action(
+    app: AppHandle,
+    id: i64,
+    container: String,
+    action: String,
+) -> AppResult<()> {
     blocking(move || remote::container_action(&server_of(&app, id)?, &container, &action)).await
 }
 
 #[tauri::command]
-pub async fn server_container_logs(app: AppHandle, id: i64, container: String, lines: Option<u32>) -> AppResult<String> {
-    blocking(move || remote::container_logs(&server_of(&app, id)?, &container, lines.unwrap_or(300))).await
+pub async fn server_container_logs(
+    app: AppHandle,
+    id: i64,
+    container: String,
+    lines: Option<u32>,
+) -> AppResult<String> {
+    blocking(move || {
+        remote::container_logs(&server_of(&app, id)?, &container, lines.unwrap_or(300))
+    })
+    .await
 }
 
 #[tauri::command]
@@ -492,10 +623,19 @@ pub fn delete_snippet(state: State<'_, AppState>, id: i64) -> AppResult<Vec<Snip
 }
 
 #[tauri::command]
-pub async fn server_run_snippet(app: AppHandle, id: i64, snippet_id: i64) -> AppResult<CommandResult> {
+pub async fn server_run_snippet(
+    app: AppHandle,
+    id: i64,
+    snippet_id: i64,
+) -> AppResult<CommandResult> {
     blocking(move || {
         let server = server_of(&app, id)?;
-        snippets::run(&app.state::<AppState>().db, &server, snippet_id, snippets::DEFAULT_TIMEOUT)
+        snippets::run(
+            &app.state::<AppState>().db,
+            &server,
+            snippet_id,
+            snippets::DEFAULT_TIMEOUT,
+        )
     })
     .await
 }
@@ -528,7 +668,11 @@ pub fn terminal_close(state: State<'_, AppState>, id: u64) -> AppResult<()> {
 // ---------------------------------------------------------------- Fichiers distants
 
 #[tauri::command]
-pub async fn server_list_dir(app: AppHandle, id: i64, path: Option<String>) -> AppResult<RemoteListing> {
+pub async fn server_list_dir(
+    app: AppHandle,
+    id: i64,
+    path: Option<String>,
+) -> AppResult<RemoteListing> {
     blocking(move || files::list(&server_of(&app, id)?, path.as_deref())).await
 }
 
@@ -538,27 +682,50 @@ pub async fn server_make_dir(app: AppHandle, id: i64, dir: String, name: String)
 }
 
 #[tauri::command]
-pub async fn server_rename_path(app: AppHandle, id: i64, path: String, new_name: String) -> AppResult<()> {
+pub async fn server_rename_path(
+    app: AppHandle,
+    id: i64,
+    path: String,
+    new_name: String,
+) -> AppResult<()> {
     blocking(move || files::rename(&server_of(&app, id)?, &path, &new_name)).await
 }
 
 #[tauri::command]
-pub async fn server_delete_path(app: AppHandle, id: i64, path: String, recursive: bool) -> AppResult<()> {
+pub async fn server_delete_path(
+    app: AppHandle,
+    id: i64,
+    path: String,
+    recursive: bool,
+) -> AppResult<()> {
     blocking(move || files::delete(&server_of(&app, id)?, &path, recursive)).await
 }
 
 #[tauri::command]
-pub async fn server_download(app: AppHandle, id: i64, remote_path: String, size: u64, dest_dir: String) -> AppResult<TransferInfo> {
+pub async fn server_download(
+    app: AppHandle,
+    id: i64,
+    remote_path: String,
+    size: u64,
+    dest_dir: String,
+) -> AppResult<TransferInfo> {
     blocking(move || {
         let server = server_of(&app, id)?;
-        app.state::<AppState>().transfers.download(&app, &server, &remote_path, size, &dest_dir)
+        app.state::<AppState>()
+            .transfers
+            .download(&app, &server, &remote_path, size, &dest_dir)
     })
     .await
 }
 
 /// Un transfert par fichier ; les fichiers refusés (dossier, introuvable) sont signalés ensemble.
 #[tauri::command]
-pub async fn server_upload(app: AppHandle, id: i64, local_paths: Vec<String>, remote_dir: String) -> AppResult<Vec<TransferInfo>> {
+pub async fn server_upload(
+    app: AppHandle,
+    id: i64,
+    local_paths: Vec<String>,
+    remote_dir: String,
+) -> AppResult<Vec<TransferInfo>> {
     blocking(move || {
         let server = server_of(&app, id)?;
         let state = app.state::<AppState>();
@@ -595,16 +762,28 @@ pub fn server_transfer_dismiss(state: State<'_, AppState>, id: Option<u64>) -> A
 
 #[tauri::command]
 pub async fn server_key_status(app: AppHandle, id: i64) -> AppResult<KeyStatus> {
-    blocking(move || Ok(servers::agent::status(server_of(&app, id)?.key_path.as_deref()))).await
+    blocking(move || {
+        Ok(servers::agent::status(
+            server_of(&app, id)?.key_path.as_deref(),
+        ))
+    })
+    .await
 }
 
 /// Ouvre `ssh-add` pour la clé du serveur (chemin déjà validé à l'enregistrement).
 #[tauri::command]
-pub async fn terminal_open_ssh_add(app: AppHandle, server_id: i64, cols: u16, rows: u16) -> AppResult<u64> {
+pub async fn terminal_open_ssh_add(
+    app: AppHandle,
+    server_id: i64,
+    cols: u16,
+    rows: u16,
+) -> AppResult<u64> {
     blocking(move || {
         let state = app.state::<AppState>();
         let server = servers::get(&state.db, server_id)?;
-        state.terminals.open_ssh_add(&app, server.key_path.as_deref(), cols, rows)
+        state
+            .terminals
+            .open_ssh_add(&app, server.key_path.as_deref(), cols, rows)
     })
     .await
 }
@@ -661,7 +840,10 @@ pub fn list_automations(state: State<'_, AppState>) -> AppResult<Vec<Automation>
 }
 
 #[tauri::command]
-pub fn save_automation(state: State<'_, AppState>, input: AutomationInput) -> AppResult<Vec<Automation>> {
+pub fn save_automation(
+    state: State<'_, AppState>,
+    input: AutomationInput,
+) -> AppResult<Vec<Automation>> {
     automations::save(&state.db, &input)?;
     automations::list(&state.db, &state.automations)
 }
@@ -673,7 +855,11 @@ pub fn delete_automation(state: State<'_, AppState>, id: i64) -> AppResult<Vec<A
 }
 
 #[tauri::command]
-pub fn set_automation_enabled(state: State<'_, AppState>, id: i64, enabled: bool) -> AppResult<Vec<Automation>> {
+pub fn set_automation_enabled(
+    state: State<'_, AppState>,
+    id: i64,
+    enabled: bool,
+) -> AppResult<Vec<Automation>> {
     automations::set_enabled(&state.db, id, enabled)?;
     automations::list(&state.db, &state.automations)
 }
@@ -703,9 +889,18 @@ pub fn remote_status(state: State<'_, AppState>) -> AppResult<RemoteStatus> {
 
 /// Active/désactive le tableau de bord mobile et (re)démarre le serveur local.
 #[tauri::command]
-pub fn remote_configure(app: AppHandle, state: State<'_, AppState>, enabled: bool, port: u16) -> AppResult<RemoteStatus> {
-    state.settings.set(&state.db, "remotePort", serde_json::json!(port))?;
-    state.settings.set(&state.db, "remoteEnabled", serde_json::json!(enabled))?;
+pub fn remote_configure(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+    port: u16,
+) -> AppResult<RemoteStatus> {
+    state
+        .settings
+        .set(&state.db, "remotePort", serde_json::json!(port))?;
+    state
+        .settings
+        .set(&state.db, "remoteEnabled", serde_json::json!(enabled))?;
     if enabled {
         state.remote.start(&app, port)?;
     } else {
@@ -816,17 +1011,29 @@ pub async fn github_inbox() -> AppResult<github::GithubInbox> {
 // ---------------------------------------------------------------- Notes du tableau de bord
 
 #[tauri::command]
-pub fn dashboard_notes_get(state: State<'_, AppState>, widget: String) -> AppResult<Option<serde_json::Value>> {
+pub fn dashboard_notes_get(
+    state: State<'_, AppState>,
+    widget: String,
+) -> AppResult<Option<serde_json::Value>> {
     crate::modules::dashboard::get_notes(&state.db, &widget)
 }
 
 #[tauri::command]
-pub fn dashboard_notes_set(state: State<'_, AppState>, widget: String, value: serde_json::Value) -> AppResult<()> {
+pub fn dashboard_notes_set(
+    state: State<'_, AppState>,
+    widget: String,
+    value: serde_json::Value,
+) -> AppResult<()> {
     crate::modules::dashboard::set_notes(&state.db, &widget, &value)
 }
 
 #[tauri::command]
-pub fn clone_repo(app: AppHandle, state: State<'_, AppState>, url: String, name: Option<String>) -> AppResult<CloneJob> {
+pub fn clone_repo(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    url: String,
+    name: Option<String>,
+) -> AppResult<CloneJob> {
     state.clones.start(&app, &url, name.as_deref())
 }
 
@@ -839,19 +1046,36 @@ pub fn list_clone_jobs(state: State<'_, AppState>) -> Vec<CloneJob> {
 
 /// Commits par jour de l'utilisateur, tous projets confondus.
 #[tauri::command]
-pub async fn commit_activity(app: AppHandle, days: Option<u32>) -> AppResult<crate::modules::activity::CommitActivity> {
+pub async fn commit_activity(
+    app: AppHandle,
+    days: Option<u32>,
+) -> AppResult<crate::modules::activity::CommitActivity> {
     blocking(move || {
-        let paths = projects::list(&app.state::<AppState>().db)?.into_iter().filter(|p| p.exists).map(|p| p.path).collect();
-        Ok(crate::modules::activity::commits(paths, days.unwrap_or(371)))
+        let paths = projects::list(&app.state::<AppState>().db)?
+            .into_iter()
+            .filter(|p| p.exists)
+            .map(|p| p.path)
+            .collect();
+        Ok(crate::modules::activity::commits(
+            paths,
+            days.unwrap_or(371),
+        ))
     })
     .await
 }
 
 /// Détail des commits de l'utilisateur pour un jour (`AAAA-MM-JJ`).
 #[tauri::command]
-pub async fn commits_on_day(app: AppHandle, date: String) -> AppResult<Vec<crate::modules::activity::DayCommit>> {
+pub async fn commits_on_day(
+    app: AppHandle,
+    date: String,
+) -> AppResult<Vec<crate::modules::activity::DayCommit>> {
     blocking(move || {
-        let list = projects::list(&app.state::<AppState>().db)?.into_iter().filter(|p| p.exists).map(|p| (p.id, p.name, p.path)).collect();
+        let list = projects::list(&app.state::<AppState>().db)?
+            .into_iter()
+            .filter(|p| p.exists)
+            .map(|p| (p.id, p.name, p.path))
+            .collect();
         crate::modules::activity::commits_on(list, &date)
     })
     .await
@@ -859,9 +1083,15 @@ pub async fn commits_on_day(app: AppHandle, date: String) -> AppResult<Vec<crate
 
 /// Détail Claude Code d'un jour (`AAAA-MM-JJ`) : coût par projet et fenêtres de 5 h.
 #[tauri::command]
-pub async fn ccusage_day(app: AppHandle, date: String) -> AppResult<crate::modules::activity::DayUsage> {
+pub async fn ccusage_day(
+    app: AppHandle,
+    date: String,
+) -> AppResult<crate::modules::activity::DayUsage> {
     blocking(move || {
-        let list = projects::list(&app.state::<AppState>().db)?.into_iter().map(|p| (p.id, p.name, p.path)).collect();
+        let list = projects::list(&app.state::<AppState>().db)?
+            .into_iter()
+            .map(|p| (p.id, p.name, p.path))
+            .collect();
         crate::modules::activity::ccusage_day(list, &date)
     })
     .await
@@ -876,19 +1106,30 @@ pub async fn ccusage_total(force: Option<bool>) -> AppResult<crate::modules::act
 /// Consommation Claude Code relevée par `ccusage daily --json`.
 #[tauri::command]
 pub async fn ccusage_daily(days: Option<u32>, force: Option<bool>) -> AppResult<serde_json::Value> {
-    blocking(move || crate::modules::activity::ccusage(days.unwrap_or(30), force.unwrap_or(false))).await
+    blocking(move || crate::modules::activity::ccusage(days.unwrap_or(30), force.unwrap_or(false)))
+        .await
 }
 
 /// Temps passé par workspace et par projet, et commits par projet, sur les `days` derniers jours.
 #[tauri::command]
-pub async fn time_stats(app: AppHandle, days: Option<u32>) -> AppResult<crate::modules::stats::TimeStats> {
-    blocking(move || crate::modules::stats::time_stats(&app.state::<AppState>().db, days.unwrap_or(30))).await
+pub async fn time_stats(
+    app: AppHandle,
+    days: Option<u32>,
+) -> AppResult<crate::modules::stats::TimeStats> {
+    blocking(move || {
+        crate::modules::stats::time_stats(&app.state::<AppState>().db, days.unwrap_or(30))
+    })
+    .await
 }
 
 // ---------------------------------------------------------------- Historique Git
 
 #[tauri::command]
-pub async fn git_log(app: AppHandle, project_id: i64, limit: Option<usize>) -> AppResult<std::sync::Arc<GitLog>> {
+pub async fn git_log(
+    app: AppHandle,
+    project_id: i64,
+    limit: Option<usize>,
+) -> AppResult<std::sync::Arc<GitLog>> {
     blocking(move || {
         let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
         projects::gitcache::log(&path, limit.unwrap_or(300))
@@ -897,7 +1138,11 @@ pub async fn git_log(app: AppHandle, project_id: i64, limit: Option<usize>) -> A
 }
 
 #[tauri::command]
-pub async fn git_commit(app: AppHandle, project_id: i64, hash: String) -> AppResult<std::sync::Arc<CommitDetails>> {
+pub async fn git_commit(
+    app: AppHandle,
+    project_id: i64,
+    hash: String,
+) -> AppResult<std::sync::Arc<CommitDetails>> {
     blocking(move || {
         let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
         projects::gitcache::commit(&path, &hash)
@@ -917,7 +1162,12 @@ pub async fn git_branches(app: AppHandle, project_id: i64) -> AppResult<Vec<Bran
 }
 
 #[tauri::command]
-pub async fn git_checkout(app: AppHandle, project_id: i64, name: String, remote: bool) -> AppResult<ProjectDetails> {
+pub async fn git_checkout(
+    app: AppHandle,
+    project_id: i64,
+    name: String,
+    remote: bool,
+) -> AppResult<ProjectDetails> {
     blocking(move || {
         let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
         branches::checkout(&path, &name, remote)?;
@@ -945,7 +1195,10 @@ pub async fn git_create_branch(
 // ---------------------------------------------------------------- Commit
 
 #[tauri::command]
-pub async fn git_changes(app: AppHandle, project_id: i64) -> AppResult<Vec<projects::commit::ChangedFile>> {
+pub async fn git_changes(
+    app: AppHandle,
+    project_id: i64,
+) -> AppResult<Vec<projects::commit::ChangedFile>> {
     blocking(move || {
         let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
         projects::commit::changes(&path)
@@ -954,7 +1207,12 @@ pub async fn git_changes(app: AppHandle, project_id: i64) -> AppResult<Vec<proje
 }
 
 #[tauri::command]
-pub async fn git_stage(app: AppHandle, project_id: i64, paths: Vec<String>, staged: bool) -> AppResult<Vec<projects::commit::ChangedFile>> {
+pub async fn git_stage(
+    app: AppHandle,
+    project_id: i64,
+    paths: Vec<String>,
+    staged: bool,
+) -> AppResult<Vec<projects::commit::ChangedFile>> {
     blocking(move || {
         let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
         if staged {
@@ -968,7 +1226,12 @@ pub async fn git_stage(app: AppHandle, project_id: i64, paths: Vec<String>, stag
 }
 
 #[tauri::command]
-pub async fn git_file_diff(app: AppHandle, project_id: i64, path: String, staged: bool) -> AppResult<String> {
+pub async fn git_file_diff(
+    app: AppHandle,
+    project_id: i64,
+    path: String,
+    staged: bool,
+) -> AppResult<String> {
     blocking(move || {
         let dir = projects::path_of(&app.state::<AppState>().db, project_id)?;
         projects::commit::diff(&dir, &path, staged)
@@ -977,7 +1240,12 @@ pub async fn git_file_diff(app: AppHandle, project_id: i64, path: String, staged
 }
 
 #[tauri::command]
-pub async fn git_create_commit(app: AppHandle, project_id: i64, message: String, all: bool) -> AppResult<ProjectDetails> {
+pub async fn git_create_commit(
+    app: AppHandle,
+    project_id: i64,
+    message: String,
+    all: bool,
+) -> AppResult<ProjectDetails> {
     blocking(move || {
         let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
         projects::commit::commit(&path, &message, all)?;
@@ -1010,7 +1278,11 @@ pub async fn git_fetch(app: AppHandle, project_id: i64) -> AppResult<ProjectDeta
 
 /// `mode` : `ffOnly` (par défaut), `rebase` ou `merge`.
 #[tauri::command]
-pub async fn git_pull(app: AppHandle, project_id: i64, mode: Option<projects::sync::PullMode>) -> AppResult<ProjectDetails> {
+pub async fn git_pull(
+    app: AppHandle,
+    project_id: i64,
+    mode: Option<projects::sync::PullMode>,
+) -> AppResult<ProjectDetails> {
     blocking(move || {
         let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
         projects::sync::pull(&path, mode.unwrap_or_default())?;
@@ -1020,7 +1292,10 @@ pub async fn git_pull(app: AppHandle, project_id: i64, mode: Option<projects::sy
 }
 
 #[tauri::command]
-pub async fn git_stash_list(app: AppHandle, project_id: i64) -> AppResult<Vec<projects::sync::StashEntry>> {
+pub async fn git_stash_list(
+    app: AppHandle,
+    project_id: i64,
+) -> AppResult<Vec<projects::sync::StashEntry>> {
     blocking(move || {
         let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
         projects::sync::stash_list(&path)
@@ -1044,7 +1319,11 @@ pub async fn git_stash_push(
 }
 
 #[tauri::command]
-pub async fn git_stash_apply(app: AppHandle, project_id: i64, hash: String) -> AppResult<ProjectDetails> {
+pub async fn git_stash_apply(
+    app: AppHandle,
+    project_id: i64,
+    hash: String,
+) -> AppResult<ProjectDetails> {
     blocking(move || {
         let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
         projects::sync::stash_apply(&path, &hash)?;
@@ -1054,7 +1333,11 @@ pub async fn git_stash_apply(app: AppHandle, project_id: i64, hash: String) -> A
 }
 
 #[tauri::command]
-pub async fn git_stash_pop(app: AppHandle, project_id: i64, hash: String) -> AppResult<ProjectDetails> {
+pub async fn git_stash_pop(
+    app: AppHandle,
+    project_id: i64,
+    hash: String,
+) -> AppResult<ProjectDetails> {
     blocking(move || {
         let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
         projects::sync::stash_pop(&path, &hash)?;
@@ -1064,7 +1347,11 @@ pub async fn git_stash_pop(app: AppHandle, project_id: i64, hash: String) -> App
 }
 
 #[tauri::command]
-pub async fn git_stash_drop(app: AppHandle, project_id: i64, hash: String) -> AppResult<Vec<projects::sync::StashEntry>> {
+pub async fn git_stash_drop(
+    app: AppHandle,
+    project_id: i64,
+    hash: String,
+) -> AppResult<Vec<projects::sync::StashEntry>> {
     blocking(move || {
         let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
         projects::sync::stash_drop(&path, &hash)?;

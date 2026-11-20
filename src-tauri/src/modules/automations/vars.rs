@@ -16,7 +16,10 @@ pub fn base(automation: &str, origin: &str, context: Option<&str>) -> Vars {
     v.insert("context".into(), context.unwrap_or_default().into());
     v.insert("date".into(), now.format("%d/%m/%Y").to_string());
     v.insert("time".into(), now.format("%H:%M").to_string());
-    v.insert("datetime".into(), now.to_rfc3339_opts(chrono::SecondsFormat::Secs, false));
+    v.insert(
+        "datetime".into(),
+        now.to_rfc3339_opts(chrono::SecondsFormat::Secs, false),
+    );
     v
 }
 
@@ -49,7 +52,10 @@ pub fn render(template: &str, vars: &Vars, escape: Escape) -> String {
         let name = after.find("}}").map(|end| (end, after[..end].trim()));
         match name {
             Some((end, name)) if is_name(name) => {
-                out.push_str(&escape_value(vars.get(name).map(String::as_str).unwrap_or_default(), escape));
+                out.push_str(&escape_value(
+                    vars.get(name).map(String::as_str).unwrap_or_default(),
+                    escape,
+                ));
                 rest = &after[end + 2..];
             }
             _ => {
@@ -70,7 +76,10 @@ fn is_name(s: &str) -> bool {
 fn escape_value(value: &str, escape: Escape) -> String {
     match escape {
         Escape::Raw => value.to_string(),
-        Escape::Header => value.chars().map(|c| if c == '\r' || c == '\n' { ' ' } else { c }).collect(),
+        Escape::Header => value
+            .chars()
+            .map(|c| if c == '\r' || c == '\n' { ' ' } else { c })
+            .collect(),
         Escape::Url => {
             let mut s = String::new();
             for b in value.bytes() {
@@ -102,8 +111,9 @@ fn escape_value(value: &str, escape: Escape) -> String {
 
 /// Le corps est-il du JSON (en-tête Content-Type ou forme du texte) ?
 pub fn body_is_json(headers: &[(String, String)], body: &str) -> bool {
-    headers.iter().any(|(k, v)| k.eq_ignore_ascii_case("content-type") && v.to_ascii_lowercase().contains("json"))
-        || matches!(body.trim_start().chars().next(), Some('{') | Some('['))
+    headers.iter().any(|(k, v)| {
+        k.eq_ignore_ascii_case("content-type") && v.to_ascii_lowercase().contains("json")
+    }) || matches!(body.trim_start().chars().next(), Some('{') | Some('['))
 }
 
 #[cfg(test)]
@@ -111,30 +121,52 @@ mod tests {
     use super::*;
 
     fn vars() -> Vars {
-        of([("project", "DevHub".into()), ("message", "fix: \"quotes\" \\ et\nligne".into()), ("branch", "feat/x y".into())])
+        of([
+            ("project", "DevHub".into()),
+            ("message", "fix: \"quotes\" \\ et\nligne".into()),
+            ("branch", "feat/x y".into()),
+        ])
     }
 
     #[test]
     fn renders_and_escapes() {
         let v = vars();
-        assert_eq!(render("{{project}} · {{ branch }}", &v, Escape::Raw), "DevHub · feat/x y");
-        assert_eq!(render(r#"{"content":"{{message}}"}"#, &v, Escape::Json), r#"{"content":"fix: \"quotes\" \\ et\nligne"}"#);
-        assert_eq!(render("https://x.test/?b={{branch}}", &v, Escape::Url), "https://x.test/?b=feat%2Fx%20y");
-        assert_eq!(render("{{message}}", &v, Escape::Header), "fix: \"quotes\" \\ et ligne");
+        assert_eq!(
+            render("{{project}} · {{ branch }}", &v, Escape::Raw),
+            "DevHub · feat/x y"
+        );
+        assert_eq!(
+            render(r#"{"content":"{{message}}"}"#, &v, Escape::Json),
+            r#"{"content":"fix: \"quotes\" \\ et\nligne"}"#
+        );
+        assert_eq!(
+            render("https://x.test/?b={{branch}}", &v, Escape::Url),
+            "https://x.test/?b=feat%2Fx%20y"
+        );
+        assert_eq!(
+            render("{{message}}", &v, Escape::Header),
+            "fix: \"quotes\" \\ et ligne"
+        );
     }
 
     #[test]
     fn unknown_and_malformed() {
         let v = vars();
         assert_eq!(render("a{{inconnue}}b", &v, Escape::Raw), "ab");
-        assert_eq!(render("{{ pas une var }} {{", &v, Escape::Raw), "{{ pas une var }} {{");
+        assert_eq!(
+            render("{{ pas une var }} {{", &v, Escape::Raw),
+            "{{ pas une var }} {{"
+        );
         assert_eq!(render("{{{project}}}", &v, Escape::Raw), "{DevHub}");
         assert_eq!(render("x {{ }} y", &v, Escape::Raw), "x {{ }} y");
     }
 
     #[test]
     fn detects_json_body() {
-        assert!(body_is_json(&[("Content-Type".into(), "application/json".into())], "x"));
+        assert!(body_is_json(
+            &[("Content-Type".into(), "application/json".into())],
+            "x"
+        ));
         assert!(body_is_json(&[], "  {\"a\":1}"));
         assert!(!body_is_json(&[], "texte"));
     }

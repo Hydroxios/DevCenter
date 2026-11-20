@@ -64,7 +64,9 @@ fn is_key_char(c: char) -> bool {
 
 pub fn valid_key(key: &str) -> bool {
     let mut chars = key.chars();
-    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_') && chars.all(is_key_char) && key.len() <= 200
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
+        && chars.all(is_key_char)
+        && key.len() <= 200
 }
 
 /// Position du guillemet fermant (non échappé pour `"`), dans `s` qui suit le guillemet ouvrant.
@@ -127,7 +129,9 @@ fn escape_double(s: &str) -> String {
 
 /// Encode une valeur en gardant si possible le style de guillemets d'origine.
 fn encode_value(value: &str, preferred: Quote) -> (String, Quote) {
-    let bare_ok = !value.chars().any(|c| c.is_whitespace() || matches!(c, '#' | '"' | '\'' | '`'));
+    let bare_ok = !value
+        .chars()
+        .any(|c| c.is_whitespace() || matches!(c, '#' | '"' | '\'' | '`'));
     let single_ok = !value.contains('\'') && !value.contains('\n') && !value.contains('\r');
     let backtick_ok = !value.contains('`') && !value.contains('\n') && !value.contains('\r');
     match preferred {
@@ -195,7 +199,15 @@ fn parse_entry(lines: &[&str], i: usize, sep_nl: &str) -> Option<(Entry, usize)>
                     _ => inner.to_string(),
                 };
                 return Some((
-                    Entry { prefix, key: key.into(), sep: sep.into(), raw, value, quote, trailing: trailing.into() },
+                    Entry {
+                        prefix,
+                        key: key.into(),
+                        sep: sep.into(),
+                        raw,
+                        value,
+                        quote,
+                        trailing: trailing.into(),
+                    },
                     consumed,
                 ));
             }
@@ -210,7 +222,15 @@ fn parse_entry(lines: &[&str], i: usize, sep_nl: &str) -> Option<(Entry, usize)>
         let raw = value_part.trim_end().to_string();
         let trailing = value_part[raw.len()..].to_string();
         return Some((
-            Entry { prefix, key: key.into(), sep: sep.into(), value: raw.clone(), raw, quote: Quote::None, trailing },
+            Entry {
+                prefix,
+                key: key.into(),
+                sep: sep.into(),
+                value: raw.clone(),
+                raw,
+                quote: Quote::None,
+                trailing,
+            },
             1,
         ));
     }
@@ -246,7 +266,10 @@ fn parse(text: &str) -> Document {
     let crlf = text.contains("\r\n");
     let final_newline = text.ends_with('\n');
     let nl = if crlf { "\r\n" } else { "\n" };
-    let body = text.strip_suffix(nl).or_else(|| text.strip_suffix('\n')).unwrap_or(text);
+    let body = text
+        .strip_suffix(nl)
+        .or_else(|| text.strip_suffix('\n'))
+        .unwrap_or(text);
     let raw_lines: Vec<&str> = if body.is_empty() && text.is_empty() {
         Vec::new()
     } else if crlf {
@@ -268,7 +291,12 @@ fn parse(text: &str) -> Document {
             }
         }
     }
-    Document { lines, crlf, final_newline, bom }
+    Document {
+        lines,
+        crlf,
+        final_newline,
+        bom,
+    }
 }
 
 fn serialize(doc: &Document) -> String {
@@ -307,7 +335,9 @@ impl Document {
     }
 
     fn vars(&self) -> Vec<(String, String)> {
-        self.entries().map(|e| (e.key.clone(), e.value.clone())).collect()
+        self.entries()
+            .map(|e| (e.key.clone(), e.value.clone()))
+            .collect()
     }
 
     /// Applique les modifications : `updates` liste les entrées voulues, dans l'ordre affiché ;
@@ -318,24 +348,32 @@ impl Document {
         for u in updates {
             let key = u.key.trim();
             if !valid_key(key) {
-                return Err(AppError::InvalidInput(format!("nom de variable invalide : « {key} »")));
+                return Err(AppError::InvalidInput(format!(
+                    "nom de variable invalide : « {key} »"
+                )));
             }
             if !seen.insert(key.to_string()) {
-                return Err(AppError::InvalidInput(format!("variable en double : {key}")));
+                return Err(AppError::InvalidInput(format!(
+                    "variable en double : {key}"
+                )));
             }
             if u.value.contains('\0') {
-                return Err(AppError::InvalidInput(format!("valeur invalide pour {key}")));
+                return Err(AppError::InvalidInput(format!(
+                    "valeur invalide pour {key}"
+                )));
             }
         }
         let count = self.entries().count();
         let mut by_index: Vec<Option<&EnvUpdate>> = vec![None; count];
         for u in updates {
             if let Some(i) = u.index {
-                let slot = by_index
-                    .get_mut(i)
-                    .ok_or_else(|| AppError::InvalidInput(format!("entrée {i} inconnue : rechargez le fichier")))?;
+                let slot = by_index.get_mut(i).ok_or_else(|| {
+                    AppError::InvalidInput(format!("entrée {i} inconnue : rechargez le fichier"))
+                })?;
                 if slot.is_some() {
-                    return Err(AppError::InvalidInput(format!("entrée {i} modifiée deux fois")));
+                    return Err(AppError::InvalidInput(format!(
+                        "entrée {i} modifiée deux fois"
+                    )));
                 }
                 *slot = Some(u);
             }
@@ -432,7 +470,10 @@ pub struct EnvUpdate {
 const EXAMPLE_SUFFIXES: &[&str] = &["example", "sample", "template", "dist"];
 
 fn is_example(name: &str) -> bool {
-    name.rsplit('.').next().is_some_and(|s| EXAMPLE_SUFFIXES.iter().any(|e| e.eq_ignore_ascii_case(s))) && name != ".env"
+    name.rsplit('.')
+        .next()
+        .is_some_and(|s| EXAMPLE_SUFFIXES.iter().any(|e| e.eq_ignore_ascii_case(s)))
+        && name != ".env"
 }
 
 /// Nom de fichier accepté : `.env` ou `.env.<suffixe>` (lettres, chiffres, `_`, `-`, `.`),
@@ -441,16 +482,25 @@ pub fn valid_name(name: &str) -> bool {
     if name == ".env" {
         return true;
     }
-    let Some(suffix) = name.strip_prefix(".env.") else { return false };
+    let Some(suffix) = name.strip_prefix(".env.") else {
+        return false;
+    };
     !suffix.is_empty()
         && name.len() <= 100
-        && suffix.split('.').all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'))
+        && suffix.split('.').all(|part| {
+            !part.is_empty()
+                && part
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        })
 }
 
 /// Chemin d'un fichier `.env*` du projet, confiné au dossier (pas de lien symbolique).
 fn resolve(dir: &Path, name: &str) -> AppResult<PathBuf> {
     if !valid_name(name) {
-        return Err(AppError::InvalidInput(format!("nom de fichier .env invalide : « {name} »")));
+        return Err(AppError::InvalidInput(format!(
+            "nom de fichier .env invalide : « {name} »"
+        )));
     }
     let path = dir.join(name);
     if path.parent() != Some(dir) {
@@ -458,7 +508,9 @@ fn resolve(dir: &Path, name: &str) -> AppResult<PathBuf> {
     }
     if let Ok(meta) = std::fs::symlink_metadata(&path) {
         if meta.file_type().is_symlink() || !meta.is_file() {
-            return Err(AppError::InvalidInput(format!("{name} n'est pas un fichier ordinaire")));
+            return Err(AppError::InvalidInput(format!(
+                "{name} n'est pas un fichier ordinaire"
+            )));
         }
     }
     Ok(path)
@@ -467,7 +519,9 @@ fn resolve(dir: &Path, name: &str) -> AppResult<PathBuf> {
 fn read_text(path: &Path) -> AppResult<String> {
     let meta = std::fs::metadata(path)?;
     if meta.len() > MAX_FILE_SIZE {
-        return Err(AppError::InvalidInput("fichier .env trop volumineux".into()));
+        return Err(AppError::InvalidInput(
+            "fichier .env trop volumineux".into(),
+        ));
     }
     let bytes = std::fs::read(path)?;
     String::from_utf8(bytes).map_err(|_| AppError::InvalidInput("fichier .env non UTF-8".into()))
@@ -482,8 +536,13 @@ fn revision(text: &str) -> String {
 /// Écrit via un fichier temporaire du même dossier puis le renomme : jamais de fichier à moitié écrit.
 fn write_atomic(path: &Path, text: &str) -> AppResult<()> {
     use std::io::Write;
-    let dir = path.parent().ok_or_else(|| AppError::InvalidInput("chemin invalide".into()))?;
-    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let dir = path
+        .parent()
+        .ok_or_else(|| AppError::InvalidInput("chemin invalide".into()))?;
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let tmp = dir.join(format!(".{name}.devcenter-{}.tmp", std::process::id()));
     let result = (|| -> std::io::Result<()> {
         let mut f = std::fs::File::create(&tmp)?;
@@ -524,10 +583,17 @@ pub fn overview(db: &Database, project_id: i64, dir: &Path) -> AppResult<EnvOver
                 .and_then(|p| read_text(&p))
                 .map(|t| parse(&t).entries().count())
                 .unwrap_or(0);
-            EnvFileInfo { is_example: is_example(&name), name, entries }
+            EnvFileInfo {
+                is_example: is_example(&name),
+                name,
+                entries,
+            }
         })
         .collect();
-    Ok(EnvOverview { files, active: active_name(db, project_id)? })
+    Ok(EnvOverview {
+        files,
+        active: active_name(db, project_id)?,
+    })
 }
 
 pub fn read(dir: &Path, name: &str) -> AppResult<EnvFile> {
@@ -537,13 +603,19 @@ pub fn read(dir: &Path, name: &str) -> AppResult<EnvFile> {
     let entries: Vec<EnvEntry> = doc
         .entries()
         .enumerate()
-        .map(|(index, e)| EnvEntry { index, key: e.key.clone(), value: e.value.clone() })
+        .map(|(index, e)| EnvEntry {
+            index,
+            key: e.key.clone(),
+            value: e.value.clone(),
+        })
         .collect();
     let example = example_of(dir).filter(|e| e != name);
     let missing = match &example {
         Some(ex) => {
             let keys: HashSet<&str> = entries.iter().map(|e| e.key.as_str()).collect();
-            let ex_text = resolve(dir, ex).and_then(|p| read_text(&p)).unwrap_or_default();
+            let ex_text = resolve(dir, ex)
+                .and_then(|p| read_text(&p))
+                .unwrap_or_default();
             let mut missing = Vec::new();
             for e in parse(&ex_text).entries() {
                 if !keys.contains(e.key.as_str()) && !missing.contains(&e.key) {
@@ -554,20 +626,35 @@ pub fn read(dir: &Path, name: &str) -> AppResult<EnvFile> {
         }
         None => Vec::new(),
     };
-    Ok(EnvFile { name: name.to_string(), entries, missing, example, revision: revision(&text) })
+    Ok(EnvFile {
+        name: name.to_string(),
+        entries,
+        missing,
+        example,
+        revision: revision(&text),
+    })
 }
 
-pub fn save(dir: &Path, name: &str, revision_seen: &str, updates: &[EnvUpdate]) -> AppResult<EnvFile> {
+pub fn save(
+    dir: &Path,
+    name: &str,
+    revision_seen: &str,
+    updates: &[EnvUpdate],
+) -> AppResult<EnvFile> {
     let path = resolve(dir, name)?;
     let text = read_text(&path)?;
     if revision(&text) != revision_seen {
-        return Err(AppError::InvalidInput(format!("{name} a été modifié sur le disque : rechargez-le avant d'enregistrer")));
+        return Err(AppError::InvalidInput(format!(
+            "{name} a été modifié sur le disque : rechargez-le avant d'enregistrer"
+        )));
     }
     let mut doc = parse(&text);
     doc.apply(updates)?;
     let out = serialize(&doc);
     if out.len() as u64 > MAX_FILE_SIZE {
-        return Err(AppError::InvalidInput("fichier .env trop volumineux".into()));
+        return Err(AppError::InvalidInput(
+            "fichier .env trop volumineux".into(),
+        ));
     }
     write_atomic(&path, &out)?;
     log::info!(target: "env", "{name} enregistré ({} variables)", doc.entries().count());
@@ -593,11 +680,20 @@ pub fn create(dir: &Path, name: &str, copy_from: Option<&str>) -> AppResult<EnvF
 
 fn active_name(db: &Database, project_id: i64) -> AppResult<Option<String>> {
     db.with(|conn| {
-        Ok(conn.query_row("SELECT env_file FROM projects WHERE id = ?1", params![project_id], |r| r.get::<_, Option<String>>(0))?)
+        Ok(conn.query_row(
+            "SELECT env_file FROM projects WHERE id = ?1",
+            params![project_id],
+            |r| r.get::<_, Option<String>>(0),
+        )?)
     })
 }
 
-pub fn set_active(db: &Database, project_id: i64, dir: &Path, name: Option<&str>) -> AppResult<EnvOverview> {
+pub fn set_active(
+    db: &Database,
+    project_id: i64,
+    dir: &Path,
+    name: Option<&str>,
+) -> AppResult<EnvOverview> {
     if let Some(n) = name {
         let path = resolve(dir, n)?;
         if !path.is_file() {
@@ -605,7 +701,10 @@ pub fn set_active(db: &Database, project_id: i64, dir: &Path, name: Option<&str>
         }
     }
     db.with(|conn| {
-        conn.execute("UPDATE projects SET env_file = ?1 WHERE id = ?2", params![name, project_id])?;
+        conn.execute(
+            "UPDATE projects SET env_file = ?1 WHERE id = ?2",
+            params![name, project_id],
+        )?;
         Ok(())
     })?;
     overview(db, project_id, dir)
@@ -613,8 +712,14 @@ pub fn set_active(db: &Database, project_id: i64, dir: &Path, name: Option<&str>
 
 /// Variables du profil actif, à injecter dans un script lancé depuis DevCenter.
 /// `Ok(None)` si aucun profil n'est choisi ; le nom du fichier accompagne les variables.
-pub fn script_env(db: &Database, project_id: i64, dir: &Path) -> AppResult<Option<(String, Vec<(String, String)>)>> {
-    let Some(name) = active_name(db, project_id)? else { return Ok(None) };
+pub fn script_env(
+    db: &Database,
+    project_id: i64,
+    dir: &Path,
+) -> AppResult<Option<(String, Vec<(String, String)>)>> {
+    let Some(name) = active_name(db, project_id)? else {
+        return Ok(None);
+    };
     let text = read_text(&resolve(dir, &name)?)?;
     Ok(Some((name, parse(&text).vars())))
 }
@@ -649,7 +754,11 @@ mod tests {
     fn decodes_values() {
         let doc = parse(SAMPLE);
         let vars = doc.vars();
-        let get = |k: &str| vars.iter().find(|(key, _)| key == k).map(|(_, v)| v.as_str());
+        let get = |k: &str| {
+            vars.iter()
+                .find(|(key, _)| key == k)
+                .map(|(_, v)| v.as_str())
+        };
         assert_eq!(get("API_URL"), Some("https://api.example.com"));
         assert_eq!(get("SECRET"), Some("a b \"c\"\n"));
         assert_eq!(get("SINGLE"), Some("x#y $z"));
@@ -663,13 +772,37 @@ mod tests {
     fn edits_preserve_comments_order_and_quotes() {
         let mut doc = parse(SAMPLE);
         let updates = vec![
-            EnvUpdate { index: Some(0), key: "API_URL".into(), value: "http://localhost:3000".into() },
-            EnvUpdate { index: Some(1), key: "TOKEN".into(), value: "a b \"c\"\n".into() }, // renommée
-            EnvUpdate { index: Some(2), key: "SINGLE".into(), value: "it's".into() },     // ' impossible en simple
+            EnvUpdate {
+                index: Some(0),
+                key: "API_URL".into(),
+                value: "http://localhost:3000".into(),
+            },
+            EnvUpdate {
+                index: Some(1),
+                key: "TOKEN".into(),
+                value: "a b \"c\"\n".into(),
+            }, // renommée
+            EnvUpdate {
+                index: Some(2),
+                key: "SINGLE".into(),
+                value: "it's".into(),
+            }, // ' impossible en simple
             // EMPTY (3) supprimée
-            EnvUpdate { index: Some(4), key: "MULTI".into(), value: "line1\nline2".into() },
-            EnvUpdate { index: Some(5), key: "PLAIN".into(), value: "has space".into() },
-            EnvUpdate { index: None, key: "NEW_KEY".into(), value: "new".into() },
+            EnvUpdate {
+                index: Some(4),
+                key: "MULTI".into(),
+                value: "line1\nline2".into(),
+            },
+            EnvUpdate {
+                index: Some(5),
+                key: "PLAIN".into(),
+                value: "has space".into(),
+            },
+            EnvUpdate {
+                index: None,
+                key: "NEW_KEY".into(),
+                value: "new".into(),
+            },
         ];
         doc.apply(&updates).unwrap();
         let out = serialize(&doc);
@@ -689,16 +822,33 @@ mod tests {
         // Relu à l'identique.
         let again = parse(&out);
         assert_eq!(serialize(&again), out);
-        assert_eq!(again.vars().iter().find(|(k, _)| k == "SINGLE").unwrap().1, "it's");
+        assert_eq!(
+            again.vars().iter().find(|(k, _)| k == "SINGLE").unwrap().1,
+            "it's"
+        );
     }
 
     #[test]
     fn encoded_values_round_trip() {
-        for value in ["", "simple", "with space", "q\"uote", "back\\slash", "new\nline", "#hash", "'single'", "tab\there"] {
+        for value in [
+            "",
+            "simple",
+            "with space",
+            "q\"uote",
+            "back\\slash",
+            "new\nline",
+            "#hash",
+            "'single'",
+            "tab\there",
+        ] {
             for quote in [Quote::None, Quote::Single, Quote::Double, Quote::Backtick] {
                 let (raw, _) = encode_value(value, quote);
                 let doc = parse(&format!("K={raw}\n"));
-                assert_eq!(doc.vars(), vec![("K".to_string(), value.to_string())], "{value:?} / {quote:?} → {raw}");
+                assert_eq!(
+                    doc.vars(),
+                    vec![("K".to_string(), value.to_string())],
+                    "{value:?} / {quote:?} → {raw}"
+                );
             }
         }
     }
@@ -707,20 +857,59 @@ mod tests {
     fn rejects_bad_updates() {
         let mut doc = parse("A=1\nB=2\n");
         let dup = vec![
-            EnvUpdate { index: Some(0), key: "A".into(), value: "1".into() },
-            EnvUpdate { index: None, key: "A".into(), value: "2".into() },
+            EnvUpdate {
+                index: Some(0),
+                key: "A".into(),
+                value: "1".into(),
+            },
+            EnvUpdate {
+                index: None,
+                key: "A".into(),
+                value: "2".into(),
+            },
         ];
         assert!(doc.apply(&dup).is_err());
-        assert!(doc.apply(&[EnvUpdate { index: None, key: "1BAD".into(), value: String::new() }]).is_err());
-        assert!(doc.apply(&[EnvUpdate { index: Some(9), key: "A".into(), value: String::new() }]).is_err());
+        assert!(
+            doc.apply(&[EnvUpdate {
+                index: None,
+                key: "1BAD".into(),
+                value: String::new()
+            }])
+            .is_err()
+        );
+        assert!(
+            doc.apply(&[EnvUpdate {
+                index: Some(9),
+                key: "A".into(),
+                value: String::new()
+            }])
+            .is_err()
+        );
     }
 
     #[test]
     fn validates_file_names() {
-        for ok in [".env", ".env.local", ".env.development.local", ".env.example", ".env.staging"] {
+        for ok in [
+            ".env",
+            ".env.local",
+            ".env.development.local",
+            ".env.example",
+            ".env.staging",
+        ] {
             assert!(valid_name(ok), "{ok}");
         }
-        for bad in ["env", ".envrc", ".env.", ".env..x", ".env/../x", "..\\.env", ".env.a/b", ".env.a\\b", "../.env", ".env. x"] {
+        for bad in [
+            "env",
+            ".envrc",
+            ".env.",
+            ".env..x",
+            ".env/../x",
+            "..\\.env",
+            ".env.a/b",
+            ".env.a\\b",
+            "../.env",
+            ".env. x",
+        ] {
             assert!(!valid_name(bad), "{bad}");
         }
         assert!(is_example(".env.example"));
@@ -733,7 +922,10 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(".env.example"), "A=\nB=\nC=\n").unwrap();
         std::fs::write(dir.join(".env"), "# c\nA=1\n").unwrap();
-        assert_eq!(list_names(&dir), vec![".env".to_string(), ".env.example".to_string()]);
+        assert_eq!(
+            list_names(&dir),
+            vec![".env".to_string(), ".env.example".to_string()]
+        );
 
         let file = read(&dir, ".env").unwrap();
         assert_eq!(file.missing, vec!["B".to_string(), "C".to_string()]);
@@ -742,13 +934,24 @@ mod tests {
             ".env",
             &file.revision,
             &[
-                EnvUpdate { index: Some(0), key: "A".into(), value: "2".into() },
-                EnvUpdate { index: None, key: "B".into(), value: "x y".into() },
+                EnvUpdate {
+                    index: Some(0),
+                    key: "A".into(),
+                    value: "2".into(),
+                },
+                EnvUpdate {
+                    index: None,
+                    key: "B".into(),
+                    value: "x y".into(),
+                },
             ],
         )
         .unwrap();
         assert_eq!(saved.missing, vec!["C".to_string()]);
-        assert_eq!(std::fs::read_to_string(dir.join(".env")).unwrap(), "# c\nA=2\nB=\"x y\"\n");
+        assert_eq!(
+            std::fs::read_to_string(dir.join(".env")).unwrap(),
+            "# c\nA=2\nB=\"x y\"\n"
+        );
         assert!(save(&dir, ".env", &file.revision, &[]).is_err()); // révision périmée
         assert!(read(&dir, "../.env").is_err());
         std::fs::remove_dir_all(&dir).ok();

@@ -55,7 +55,10 @@ pub struct Channels {
 
 impl Default for Channels {
     fn default() -> Self {
-        Self { desktop: true, mobile: true }
+        Self {
+            desktop: true,
+            mobile: true,
+        }
     }
 }
 
@@ -90,7 +93,10 @@ impl NotificationPrefs {
             Category::Script => self.script,
             Category::Workspace => self.workspace,
             Category::Step => self.step,
-            Category::Clone => Channels { desktop: false, mobile: true },
+            Category::Clone => Channels {
+                desktop: false,
+                mobile: true,
+            },
         }
     }
 }
@@ -104,7 +110,10 @@ pub enum Target {
     Run { project_id: i64, run_id: u64 },
     /// Exécution d'une automatisation (historique).
     #[serde(rename_all = "camelCase")]
-    Automation { automation_id: i64, run_id: Option<i64> },
+    Automation {
+        automation_id: i64,
+        run_id: Option<i64>,
+    },
     /// Workspace (résultats de la dernière session).
     #[serde(rename_all = "camelCase")]
     Workspace { workspace_id: i64 },
@@ -159,15 +168,24 @@ pub fn init(app: &AppHandle) {
                 Action::builder(ACTION_LOGS, "Voir les logs").build(),
             ])
             .build(),
-        ActionType::builder(ACTIONS_LOGS).actions(vec![Action::builder(ACTION_LOGS, "Voir les logs").build()]).build(),
+        ActionType::builder(ACTIONS_LOGS)
+            .actions(vec![Action::builder(ACTION_LOGS, "Voir les logs").build()])
+            .build(),
     ]);
     let handle = app.clone();
-    let _ = notification.on_action(move |performed: &ActionPerformed| on_action(&handle, performed));
+    let _ =
+        notification.on_action(move |performed: &ActionPerformed| on_action(&handle, performed));
 }
 
 fn on_action(app: &AppHandle, performed: &ActionPerformed) {
-    let Some(id) = performed.notification().map(|n| n.id()) else { return };
-    let event = registry().shown.lock().ok().and_then(|s| s.iter().find(|(i, _)| *i == id).map(|(_, e)| e.clone()));
+    let Some(id) = performed.notification().map(|n| n.id()) else {
+        return;
+    };
+    let event = registry()
+        .shown
+        .lock()
+        .ok()
+        .and_then(|s| s.iter().find(|(i, _)| *i == id).map(|(_, e)| e.clone()));
     let Some(event) = event else {
         crate::tray::show_main_window(app);
         return;
@@ -230,15 +248,26 @@ fn open_target(app: &AppHandle, target: Option<&Target>) {
 
 fn main_window_in_front(app: &AppHandle) -> bool {
     app.get_webview_window("main").is_some_and(|w| {
-        w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false) && w.is_focused().unwrap_or(false)
+        w.is_visible().unwrap_or(false)
+            && !w.is_minimized().unwrap_or(false)
+            && w.is_focused().unwrap_or(false)
     })
 }
 
 fn show_desktop(app: &AppHandle, event: &Event) {
     let id = next_id();
-    let mut builder = app.notification().builder().id(id).title(&event.title).body(&event.body);
+    let mut builder = app
+        .notification()
+        .builder()
+        .id(id)
+        .title(&event.title)
+        .body(&event.body);
     if event.target.is_some() {
-        builder = builder.action_type_id(if event.retry.is_some() { ACTIONS_RETRY } else { ACTIONS_LOGS });
+        builder = builder.action_type_id(if event.retry.is_some() {
+            ACTIONS_RETRY
+        } else {
+            ACTIONS_LOGS
+        });
     }
     if let Ok(mut shown) = registry().shown.lock() {
         shown.push_back((id, event.clone()));
@@ -263,7 +292,15 @@ pub fn dispatch(app: &AppHandle, event: Event) {
         show_desktop(app, &event);
     }
     if channels.mobile {
-        push::notify_all(app, push::Notification { title: event.title, body: event.body, tab: event.tab, tag: event.tag });
+        push::notify_all(
+            app,
+            push::Notification {
+                title: event.title,
+                body: event.body,
+                tab: event.tab,
+                tag: event.tag,
+            },
+        );
     }
 }
 
@@ -273,7 +310,8 @@ mod tests {
 
     #[test]
     fn prefs_fill_missing_fields() {
-        let p: NotificationPrefs = serde_json::from_str(r#"{"script":{"desktop":false,"mobile":true}}"#).unwrap();
+        let p: NotificationPrefs =
+            serde_json::from_str(r#"{"script":{"desktop":false,"mobile":true}}"#).unwrap();
         assert!(!p.script.desktop);
         assert!(p.automation.desktop && p.skip_when_focused);
         assert!(!p.channels(Category::Clone).desktop);

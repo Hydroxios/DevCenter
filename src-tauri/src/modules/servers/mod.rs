@@ -41,20 +41,28 @@ pub struct ServerInput {
 }
 
 fn empty_to_none(v: &Option<String>) -> Option<String> {
-    v.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+    v.as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
-fn validate(input: &ServerInput) -> AppResult<(String, String, u16, Option<String>, Option<String>)> {
+fn validate(
+    input: &ServerInput,
+) -> AppResult<(String, String, u16, Option<String>, Option<String>)> {
     let name = input.name.trim().to_string();
     if name.is_empty() || name.len() > 80 {
-        return Err(AppError::InvalidInput("le nom doit faire entre 1 et 80 caractères".into()));
+        return Err(AppError::InvalidInput(
+            "le nom doit faire entre 1 et 80 caractères".into(),
+        ));
     }
     let host = input.host.trim().to_string();
     // Nom d'hôte, alias ~/.ssh/config, IPv4 ou IPv6 : jamais d'option déguisée (« -oProxyCommand=… »).
     let host_ok = !host.is_empty()
         && host.len() <= 253
         && !host.starts_with('-')
-        && host.chars().all(|c| c.is_ascii_alphanumeric() || ".-_:[]".contains(c));
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || ".-_:[]".contains(c));
     if !host_ok {
         return Err(AppError::InvalidInput(format!("hôte invalide : {host}")));
     }
@@ -64,9 +72,14 @@ fn validate(input: &ServerInput) -> AppResult<(String, String, u16, Option<Strin
     }
     let user = empty_to_none(&input.user);
     if let Some(u) = &user {
-        let ok = u.len() <= 64 && !u.starts_with('-') && u.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c));
+        let ok = u.len() <= 64
+            && !u.starts_with('-')
+            && u.chars()
+                .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c));
         if !ok {
-            return Err(AppError::InvalidInput(format!("utilisateur invalide : {u}")));
+            return Err(AppError::InvalidInput(format!(
+                "utilisateur invalide : {u}"
+            )));
         }
     }
     let key_path = empty_to_none(&input.key_path);
@@ -81,7 +94,9 @@ fn validate(input: &ServerInput) -> AppResult<(String, String, u16, Option<Strin
             ));
         }
         if k.to_lowercase().ends_with(".pub") {
-            return Err(AppError::InvalidInput("choisissez la clé privée, pas le fichier .pub".into()));
+            return Err(AppError::InvalidInput(
+                "choisissez la clé privée, pas le fichier .pub".into(),
+            ));
         }
     }
     Ok((name, host, port, user, key_path))
@@ -89,7 +104,9 @@ fn validate(input: &ServerInput) -> AppResult<(String, String, u16, Option<Strin
 
 pub fn list(db: &Database) -> AppResult<Vec<Server>> {
     db.with(|conn| {
-        let mut stmt = conn.prepare("SELECT id, name, host, port, user, key_path FROM servers ORDER BY name COLLATE NOCASE")?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, host, port, user, key_path FROM servers ORDER BY name COLLATE NOCASE",
+        )?;
         let rows = stmt.query_map([], |r| {
             Ok(Server {
                 id: r.get(0)?,
@@ -105,7 +122,10 @@ pub fn list(db: &Database) -> AppResult<Vec<Server>> {
 }
 
 pub fn get(db: &Database, id: i64) -> AppResult<Server> {
-    list(db)?.into_iter().find(|s| s.id == id).ok_or_else(|| AppError::InvalidInput(format!("serveur {id} inconnu")))
+    list(db)?
+        .into_iter()
+        .find(|s| s.id == id)
+        .ok_or_else(|| AppError::InvalidInput(format!("serveur {id} inconnu")))
 }
 
 pub fn save(db: &Database, input: &ServerInput) -> AppResult<Vec<Server>> {
@@ -143,23 +163,31 @@ pub fn delete(db: &Database, id: i64) -> AppResult<Vec<Server>> {
 
 /// Clés privées trouvées dans `~/.ssh` (proposées dans le formulaire).
 pub fn find_keys() -> Vec<String> {
-    let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) else { return Vec::new() };
+    let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) else {
+        return Vec::new();
+    };
     let dir = Path::new(&home).join(".ssh");
-    let Ok(entries) = std::fs::read_dir(&dir) else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
     let mut keys: Vec<String> = entries
         .flatten()
         .filter(|e| e.path().is_file())
         .filter_map(|e| {
             let path = e.path();
             let name = path.file_name()?.to_string_lossy().to_lowercase();
-            let skip = name.ends_with(".pub") || name.ends_with(".ppk") || name.starts_with("known_hosts")
-                || name == "config" || name == "authorized_keys";
+            let skip = name.ends_with(".pub")
+                || name.ends_with(".ppk")
+                || name.starts_with("known_hosts")
+                || name == "config"
+                || name == "authorized_keys";
             if skip {
                 return None;
             }
             // Une clé privée OpenSSH commence par « -----BEGIN ».
             let head = std::fs::read(&path).ok()?;
-            head.starts_with(b"-----BEGIN").then(|| path.display().to_string())
+            head.starts_with(b"-----BEGIN")
+                .then(|| path.display().to_string())
         })
         .collect();
     keys.sort();
@@ -171,7 +199,14 @@ mod tests {
     use super::*;
 
     fn input(host: &str) -> ServerInput {
-        ServerInput { id: None, name: "vps".into(), host: host.into(), port: None, user: Some("deploy".into()), key_path: None }
+        ServerInput {
+            id: None,
+            name: "vps".into(),
+            host: host.into(),
+            port: None,
+            user: Some("deploy".into()),
+            key_path: None,
+        }
     }
 
     #[test]

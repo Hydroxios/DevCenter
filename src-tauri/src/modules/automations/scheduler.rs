@@ -20,7 +20,10 @@ fn daily_slot_today(time: &str, days: &[u8]) -> Option<i64> {
     if !days.is_empty() && !days.contains(&weekday) {
         return None;
     }
-    let slot = Local.with_ymd_and_hms(now.year(), now.month(), now.day(), h, m, 0).single()?.timestamp();
+    let slot = Local
+        .with_ymd_and_hms(now.year(), now.month(), now.day(), h, m, 0)
+        .single()?
+        .timestamp();
     (now.timestamp() >= slot).then_some(slot)
 }
 
@@ -30,7 +33,8 @@ fn is_due(a: &Automation, last: Option<i64>, now_ts: i64) -> bool {
         Trigger::Interval { minutes } => last.is_none_or(|l| now_ts - l >= *minutes as i64 * 60),
         Trigger::Daily { time, days } => {
             // Fenêtre de rattrapage de 10 min : DevCenter ouvert juste après l'heure prévue.
-            daily_slot_today(time, days).is_some_and(|slot| now_ts - slot < 600 && last.is_none_or(|l| l < slot))
+            daily_slot_today(time, days)
+                .is_some_and(|slot| now_ts - slot < 600 && last.is_none_or(|l| l < slot))
         }
         // Manuel, au démarrage ou sur événement : jamais par le planificateur.
         _ => false,
@@ -45,8 +49,14 @@ pub fn spawn_scheduler(app: AppHandle) {
         .spawn(move || {
             // Workflows « au démarrage » : une fois, après une courte pause (fenêtre et état prêts).
             std::thread::sleep(Duration::from_secs(3));
-            if let Ok(all) = list(&app.state::<AppState>().db, &app.state::<AppState>().automations) {
-                for a in all.iter().filter(|a| a.enabled && a.trigger == Trigger::AppStart) {
+            if let Ok(all) = list(
+                &app.state::<AppState>().db,
+                &app.state::<AppState>().automations,
+            ) {
+                for a in all
+                    .iter()
+                    .filter(|a| a.enabled && a.trigger == Trigger::AppStart)
+                {
                     let _ = trigger(&app, a.id, "startup");
                 }
             }
@@ -58,9 +68,9 @@ pub fn spawn_scheduler(app: AppHandle) {
                 if let Ok(all) = list(&state.db, &state.automations) {
                     let ts = now();
                     for a in all.iter().filter(|a| a.enabled && !a.running) {
-                        let known = *last
-                            .entry(a.id)
-                            .or_insert_with(|| last_scheduled_start(&state.db, a.id).ok().flatten());
+                        let known = *last.entry(a.id).or_insert_with(|| {
+                            last_scheduled_start(&state.db, a.id).ok().flatten()
+                        });
                         if is_due(a, known, ts) && trigger(&app, a.id, "schedule").is_ok() {
                             last.insert(a.id, Some(ts));
                         }
@@ -118,7 +128,10 @@ mod tests {
         assert!(!is_due(&a, Some(ts - 30), ts)); // déjà lancé après le créneau
         // Jour non sélectionné.
         let other_day = (now.weekday().num_days_from_monday() as u8 + 1) % 7;
-        let b = auto(Trigger::Daily { time: format!("{:02}:{:02}", t.hour(), t.minute()), days: vec![other_day] });
+        let b = auto(Trigger::Daily {
+            time: format!("{:02}:{:02}", t.hour(), t.minute()),
+            days: vec![other_day],
+        });
         assert!(!is_due(&b, None, ts));
     }
 }

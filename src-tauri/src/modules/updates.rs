@@ -57,8 +57,17 @@ pub async fn install(app: &AppHandle) -> AppResult<()> {
     let Some(update) = app.updater().map_err(err)?.check().await.map_err(err)? else {
         return Err(AppError::InvalidInput("DevCenter est déjà à jour".into()));
     };
-    log::info!("mise à jour vers {} (depuis {})", update.version, update.current_version);
-    events::Entry::info(events::Source::Update, format!("Installation de la version {}", update.version)).detail(format!("Version actuelle {}", update.current_version)).emit(app);
+    log::info!(
+        "mise à jour vers {} (depuis {})",
+        update.version,
+        update.current_version
+    );
+    events::Entry::info(
+        events::Source::Update,
+        format!("Installation de la version {}", update.version),
+    )
+    .detail(format!("Version actuelle {}", update.current_version))
+    .emit(app);
     let mut downloaded: u64 = 0;
     let handle = app.clone();
     update

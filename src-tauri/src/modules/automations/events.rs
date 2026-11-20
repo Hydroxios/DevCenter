@@ -35,21 +35,31 @@ pub fn valid_token(token: &str) -> bool {
 /// Jeton de webhook : 256 bits aléatoires en hexadécimal.
 pub fn new_token() -> AppResult<String> {
     let mut buf = [0u8; 32];
-    getrandom::fill(&mut buf).map_err(|e| AppError::InvalidInput(format!("générateur aléatoire indisponible : {e}")))?;
+    getrandom::fill(&mut buf)
+        .map_err(|e| AppError::InvalidInput(format!("générateur aléatoire indisponible : {e}")))?;
     Ok(hex::encode(buf))
 }
 
 /// Comparaison en temps constant (le jeton ne se devine pas caractère par caractère).
 fn constant_eq(a: &str, b: &str) -> bool {
-    a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    a.len() == b.len()
+        && a.bytes()
+            .zip(b.bytes())
+            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+            == 0
 }
 
 /// Réserve un créneau d'exécution sur événement : faux si le workflow a déjà été déclenché par
 /// un événement il y a moins de `MIN_EVENT_GAP`.
 fn claim(state: &AppState, id: i64) -> bool {
-    let Ok(mut last) = state.automations.last_event.lock() else { return false };
+    let Ok(mut last) = state.automations.last_event.lock() else {
+        return false;
+    };
     let now = Instant::now();
-    if last.get(&id).is_some_and(|t| now.duration_since(*t) < MIN_EVENT_GAP) {
+    if last
+        .get(&id)
+        .is_some_and(|t| now.duration_since(*t) < MIN_EVENT_GAP)
+    {
         return false;
     }
     last.insert(id, now);
@@ -59,10 +69,21 @@ fn claim(state: &AppState, id: i64) -> bool {
 /// Lance les workflows actifs dont le déclencheur correspond à l'événement.
 fn fire(app: &AppHandle, context: &str, event_vars: Vars, matches: impl Fn(&Trigger) -> bool) {
     let state = app.state::<AppState>();
-    let Ok(all) = list(&state.db, &state.automations) else { return };
-    for a in all.iter().filter(|a| a.enabled && !a.running && matches(&a.trigger)) {
+    let Ok(all) = list(&state.db, &state.automations) else {
+        return;
+    };
+    for a in all
+        .iter()
+        .filter(|a| a.enabled && !a.running && matches(&a.trigger))
+    {
         if claim(&state, a.id) {
-            if let Err(e) = trigger_with(app, a.id, "event", Some(context.to_string()), event_vars.clone()) {
+            if let Err(e) = trigger_with(
+                app,
+                a.id,
+                "event",
+                Some(context.to_string()),
+                event_vars.clone(),
+            ) {
                 log::warn!("automatisation « {} » non déclenchée : {e}", a.name);
             }
         }
@@ -72,7 +93,8 @@ fn fire(app: &AppHandle, context: &str, event_vars: Vars, matches: impl Fn(&Trig
 /// Vrai si au moins une automatisation active utilise un déclencheur de ce type.
 fn any_uses(app: &AppHandle, pred: impl Fn(&Trigger) -> bool) -> bool {
     let state = app.state::<AppState>();
-    list(&state.db, &state.automations).is_ok_and(|all| all.iter().any(|a| a.enabled && pred(&a.trigger)))
+    list(&state.db, &state.automations)
+        .is_ok_and(|all| all.iter().any(|a| a.enabled && pred(&a.trigger)))
 }
 
 fn project_name(app: &AppHandle, id: i64) -> String {
@@ -93,10 +115,16 @@ pub fn on_script_failed(app: &AppHandle, project_id: i64, script: &str, exit_cod
         if !any_uses(&app, matches) {
             return;
         }
-        let code = exit_code.map(|c| c.to_string()).unwrap_or_else(|| "?".into());
+        let code = exit_code
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "?".into());
         let project = project_name(&app, project_id);
         let context = format!("{project} › {script} (code {code})");
-        let event_vars = vars::of([("project", project), ("script", script.clone()), ("code", code)]);
+        let event_vars = vars::of([
+            ("project", project),
+            ("script", script.clone()),
+            ("code", code),
+        ]);
         fire(&app, &context, event_vars, matches);
     });
 }
@@ -136,9 +164,15 @@ impl GitHead {
         Some(match head.strip_prefix("ref:") {
             Some(r) => {
                 let r = r.trim();
-                Self { branch: Some(r.strip_prefix("refs/heads/").unwrap_or(r).to_string()), commit: resolve_ref(&git_dir, &common, r) }
+                Self {
+                    branch: Some(r.strip_prefix("refs/heads/").unwrap_or(r).to_string()),
+                    commit: resolve_ref(&git_dir, &common, r),
+                }
             }
-            None => Self { branch: None, commit: (!head.is_empty()).then(|| head.to_string()) },
+            None => Self {
+                branch: None,
+                commit: (!head.is_empty()).then(|| head.to_string()),
+            },
         })
     }
 }
@@ -160,7 +194,13 @@ fn resolve_ref(git_dir: &Path, common: &Path, r: &str) -> Option<String> {
 }
 
 /// Appelé par l'observateur Git quand la branche ou le commit courant d'un projet change.
-pub fn on_git_change(app: &AppHandle, project_id: i64, before: &GitHead, after: &GitHead, subject: Option<String>) {
+pub fn on_git_change(
+    app: &AppHandle,
+    project_id: i64,
+    before: &GitHead,
+    after: &GitHead,
+    subject: Option<String>,
+) {
     let branch_changed = before.branch != after.branch;
     let commit_changed = !branch_changed && before.commit != after.commit && after.commit.is_some();
     if !branch_changed && !commit_changed {
@@ -189,10 +229,21 @@ pub fn on_git_change(app: &AppHandle, project_id: i64, before: &GitHead, after: 
             ("message", message.clone()),
         ]);
         let context = if branch_changed {
-            format!("{project} : branche {} → {}", branch(&before.branch), branch(&after.branch))
+            format!(
+                "{project} : branche {} → {}",
+                branch(&before.branch),
+                branch(&after.branch)
+            )
         } else {
-            let subject = if message.is_empty() { String::new() } else { format!(" {}", message.chars().take(120).collect::<String>()) };
-            format!("{project} › {} : nouveau commit {short}{subject}", branch(&after.branch))
+            let subject = if message.is_empty() {
+                String::new()
+            } else {
+                format!(" {}", message.chars().take(120).collect::<String>())
+            };
+            format!(
+                "{project} › {} : nouveau commit {short}{subject}",
+                branch(&after.branch)
+            )
         };
         fire(&app, &context, event_vars, matches);
     });
@@ -207,7 +258,8 @@ pub fn webhook(app: &AppHandle, token: &str, peer: &str, body: &str) -> Result<i
         return Err(unknown());
     }
     let state = app.state::<AppState>();
-    let all = list(&state.db, &state.automations).map_err(|_| (500, "erreur interne".to_string()))?;
+    let all =
+        list(&state.db, &state.automations).map_err(|_| (500, "erreur interne".to_string()))?;
     let a = all
         .into_iter()
         .find(|a| matches!(&a.trigger, Trigger::Webhook { token: t } if constant_eq(t, token)))
@@ -219,10 +271,27 @@ pub fn webhook(app: &AppHandle, token: &str, peer: &str, body: &str) -> Result<i
         return Err((409, format!("« {} » est déjà en cours", a.name)));
     }
     if !claim(&state, a.id) {
-        return Err((429, format!("déclenchée il y a moins de {} s : réessayez plus tard", MIN_EVENT_GAP.as_secs())));
+        return Err((
+            429,
+            format!(
+                "déclenchée il y a moins de {} s : réessayez plus tard",
+                MIN_EVENT_GAP.as_secs()
+            ),
+        ));
     }
-    let snippet: String = body.split_whitespace().collect::<Vec<_>>().join(" ").chars().filter(|c| !c.is_control()).take(200).collect();
-    let context = if snippet.is_empty() { format!("appel depuis {peer}") } else { format!("appel depuis {peer} · {snippet}") };
+    let snippet: String = body
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(200)
+        .collect();
+    let context = if snippet.is_empty() {
+        format!("appel depuis {peer}")
+    } else {
+        format!("appel depuis {peer} · {snippet}")
+    };
     let full_body: String = body.chars().take(10_000).collect();
     let event_vars = vars::of([("caller", peer.to_string()), ("body", full_body)]);
     trigger_with(app, a.id, "webhook", Some(context), event_vars).map_err(|e| (409, e.to_string()))
@@ -252,20 +321,28 @@ pub fn spawn_monitor(app: AppHandle) {
         .expect("thread de surveillance des automatisations");
 }
 
-fn poll(app: &AppHandle, reachable: &mut HashMap<i64, bool>, containers: &mut HashMap<i64, HashMap<String, String>>) {
+fn poll(
+    app: &AppHandle,
+    reachable: &mut HashMap<i64, bool>,
+    containers: &mut HashMap<i64, HashMap<String, String>>,
+) {
     let state = app.state::<AppState>();
-    let Ok(all) = list(&state.db, &state.automations) else { return };
+    let Ok(all) = list(&state.db, &state.automations) else {
+        return;
+    };
     let mut ping_all = false;
     let mut ping: HashSet<i64> = HashSet::new();
     let mut docker: HashSet<i64> = HashSet::new();
     for a in all.iter().filter(|a| a.enabled) {
         match &a.trigger {
-            Trigger::ServerDown { server_id } | Trigger::ServerUp { server_id } => match server_id {
-                Some(id) => {
-                    ping.insert(*id);
+            Trigger::ServerDown { server_id } | Trigger::ServerUp { server_id } => {
+                match server_id {
+                    Some(id) => {
+                        ping.insert(*id);
+                    }
+                    None => ping_all = true,
                 }
-                None => ping_all = true,
-            },
+            }
             Trigger::ContainerStopped { server_id, .. } => {
                 docker.insert(*server_id);
             }
@@ -278,16 +355,29 @@ fn poll(app: &AppHandle, reachable: &mut HashMap<i64, bool>, containers: &mut Ha
     if !ping_all && ping.is_empty() && docker.is_empty() {
         return;
     }
-    let Ok(servers) = servers::list(&state.db) else { return };
+    let Ok(servers) = servers::list(&state.db) else {
+        return;
+    };
 
-    let targets: Vec<&Server> = servers.iter().filter(|s| ping_all || ping.contains(&s.id)).collect();
+    let targets: Vec<&Server> = servers
+        .iter()
+        .filter(|s| ping_all || ping.contains(&s.id))
+        .collect();
     // Pings en parallèle : un serveur muet (12 s de délai) ne retarde pas les autres.
     let results: Vec<(&Server, Result<u64, String>)> = std::thread::scope(|scope| {
         let handles: Vec<_> = targets
             .iter()
-            .map(|s| (*s, scope.spawn(move || servers::remote::ping(s).map_err(|e| e.to_string()))))
+            .map(|s| {
+                (
+                    *s,
+                    scope.spawn(move || servers::remote::ping(s).map_err(|e| e.to_string())),
+                )
+            })
             .collect();
-        handles.into_iter().map(|(s, h)| (s, h.join().unwrap_or_else(|_| Err("erreur interne".into())))).collect()
+        handles
+            .into_iter()
+            .map(|(s, h)| (s, h.join().unwrap_or_else(|_| Err("erreur interne".into()))))
+            .collect()
     });
     for (server, result) in results {
         let up = result.is_ok();
@@ -297,16 +387,25 @@ fn poll(app: &AppHandle, reachable: &mut HashMap<i64, bool>, containers: &mut Ha
         }
         let id = server.id;
         if up {
-            let latency = result.as_ref().map(|ms| format!(" ({ms} ms)")).unwrap_or_default();
+            let latency = result
+                .as_ref()
+                .map(|ms| format!(" ({ms} ms)"))
+                .unwrap_or_default();
             let event_vars = vars::of([
                 ("server", server.name.clone()),
                 ("state", "joignable".into()),
-                ("latency", result.as_ref().map(|ms| ms.to_string()).unwrap_or_default()),
+                (
+                    "latency",
+                    result.as_ref().map(|ms| ms.to_string()).unwrap_or_default(),
+                ),
                 ("error", String::new()),
             ]);
-            fire(app, &format!("{} joignable{latency}", server.name), event_vars, |t| {
-                matches!(t, Trigger::ServerUp { server_id } if server_id.is_none_or(|s| s == id))
-            });
+            fire(
+                app,
+                &format!("{} joignable{latency}", server.name),
+                event_vars,
+                |t| matches!(t, Trigger::ServerUp { server_id } if server_id.is_none_or(|s| s == id)),
+            );
         } else {
             let reason = result.err().unwrap_or_default();
             let event_vars = vars::of([
@@ -315,16 +414,23 @@ fn poll(app: &AppHandle, reachable: &mut HashMap<i64, bool>, containers: &mut Ha
                 ("latency", String::new()),
                 ("error", reason.clone()),
             ]);
-            fire(app, &format!("{} injoignable : {reason}", server.name), event_vars, |t| {
-                matches!(t, Trigger::ServerDown { server_id } if server_id.is_none_or(|s| s == id))
-            });
+            fire(
+                app,
+                &format!("{} injoignable : {reason}", server.name),
+                event_vars,
+                |t| matches!(t, Trigger::ServerDown { server_id } if server_id.is_none_or(|s| s == id)),
+            );
         }
     }
 
     for id in docker {
-        let Some(server) = servers.iter().find(|s| s.id == id) else { continue };
+        let Some(server) = servers.iter().find(|s| s.id == id) else {
+            continue;
+        };
         // Serveur injoignable : on garde l'état précédent (comparé au prochain relevé réussi).
-        let Ok(list) = servers::remote::containers(server) else { continue };
+        let Ok(list) = servers::remote::containers(server) else {
+            continue;
+        };
         let now: HashMap<String, String> = list.into_iter().map(|c| (c.name, c.state)).collect();
         if let Some(previous) = containers.get(&id) {
             for (name, st) in previous {
@@ -333,8 +439,11 @@ fn poll(app: &AppHandle, reachable: &mut HashMap<i64, bool>, containers: &mut Ha
                 }
                 let new_state = now.get(name).cloned().unwrap_or_else(|| "supprimé".into());
                 let context = format!("{} › {name} ({new_state})", server.name);
-                let event_vars =
-                    vars::of([("server", server.name.clone()), ("container", name.clone()), ("state", new_state.clone())]);
+                let event_vars = vars::of([
+                    ("server", server.name.clone()),
+                    ("container", name.clone()),
+                    ("state", new_state.clone()),
+                ]);
                 fire(app, &context, event_vars, |t| {
                     matches!(t, Trigger::ContainerStopped { server_id, container }
                         if *server_id == id && (container.trim().is_empty() || container.trim() == name))
@@ -364,13 +473,39 @@ mod tests {
         let git = dir.join(".git");
         std::fs::create_dir_all(git.join("refs").join("heads").join("feat")).unwrap();
         std::fs::write(git.join("HEAD"), "ref: refs/heads/feat/x\n").unwrap();
-        assert_eq!(GitHead::read(&dir), Some(GitHead { branch: Some("feat/x".into()), commit: None }));
-        std::fs::write(git.join("packed-refs"), "# pack-refs\nabc123 refs/heads/feat/x\n").unwrap();
-        assert_eq!(GitHead::read(&dir).unwrap().commit.as_deref(), Some("abc123"));
-        std::fs::write(git.join("refs").join("heads").join("feat").join("x"), "def456\n").unwrap();
-        assert_eq!(GitHead::read(&dir).unwrap().commit.as_deref(), Some("def456"));
+        assert_eq!(
+            GitHead::read(&dir),
+            Some(GitHead {
+                branch: Some("feat/x".into()),
+                commit: None
+            })
+        );
+        std::fs::write(
+            git.join("packed-refs"),
+            "# pack-refs\nabc123 refs/heads/feat/x\n",
+        )
+        .unwrap();
+        assert_eq!(
+            GitHead::read(&dir).unwrap().commit.as_deref(),
+            Some("abc123")
+        );
+        std::fs::write(
+            git.join("refs").join("heads").join("feat").join("x"),
+            "def456\n",
+        )
+        .unwrap();
+        assert_eq!(
+            GitHead::read(&dir).unwrap().commit.as_deref(),
+            Some("def456")
+        );
         std::fs::write(git.join("HEAD"), "0123abcd\n").unwrap();
-        assert_eq!(GitHead::read(&dir), Some(GitHead { branch: None, commit: Some("0123abcd".into()) }));
+        assert_eq!(
+            GitHead::read(&dir),
+            Some(GitHead {
+                branch: None,
+                commit: Some("0123abcd".into())
+            })
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 

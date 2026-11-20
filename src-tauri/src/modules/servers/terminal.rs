@@ -41,7 +41,12 @@ fn pty_err(e: impl std::fmt::Display) -> AppError {
 }
 
 fn size(cols: u16, rows: u16) -> PtySize {
-    PtySize { rows: rows.clamp(5, 500), cols: cols.clamp(10, 1000), pixel_width: 0, pixel_height: 0 }
+    PtySize {
+        rows: rows.clamp(5, 500),
+        cols: cols.clamp(10, 1000),
+        pixel_width: 0,
+        pixel_height: 0,
+    }
 }
 
 /// Découpe un flux d'octets en texte UTF-8 sans casser les caractères à cheval sur deux lectures.
@@ -81,7 +86,13 @@ impl Terminals {
 
     /// `ssh-add` interactif : l'utilisateur saisit la phrase de passe dans le terminal,
     /// elle va directement à l'agent SSH sans passer par DevCenter.
-    pub fn open_ssh_add(&self, app: &AppHandle, key_path: Option<&str>, cols: u16, rows: u16) -> AppResult<u64> {
+    pub fn open_ssh_add(
+        &self,
+        app: &AppHandle,
+        key_path: Option<&str>,
+        cols: u16,
+        rows: u16,
+    ) -> AppResult<u64> {
         let mut cmd = CommandBuilder::new("ssh-add");
         if let Some(k) = key_path {
             cmd.arg(k);
@@ -91,14 +102,31 @@ impl Terminals {
 
     /// Connexion GitHub interactive (`gh auth login` : code à usage unique + navigateur).
     pub fn open_gh_login(&self, app: &AppHandle, cols: u16, rows: u16) -> AppResult<u64> {
-        let exe = crate::modules::github::exe().ok_or_else(|| AppError::InvalidInput("GitHub CLI (gh) n'est pas installé".into()))?;
+        let exe = crate::modules::github::exe()
+            .ok_or_else(|| AppError::InvalidInput("GitHub CLI (gh) n'est pas installé".into()))?;
         let mut cmd = CommandBuilder::new(exe);
-        cmd.args(["auth", "login", "--hostname", "github.com", "--git-protocol", "https", "--web"]);
+        cmd.args([
+            "auth",
+            "login",
+            "--hostname",
+            "github.com",
+            "--git-protocol",
+            "https",
+            "--web",
+        ]);
         self.spawn(app, cmd, cols, rows)
     }
 
-    fn spawn(&self, app: &AppHandle, mut cmd: CommandBuilder, cols: u16, rows: u16) -> AppResult<u64> {
-        let pair = native_pty_system().openpty(size(cols, rows)).map_err(pty_err)?;
+    fn spawn(
+        &self,
+        app: &AppHandle,
+        mut cmd: CommandBuilder,
+        cols: u16,
+        rows: u16,
+    ) -> AppResult<u64> {
+        let pair = native_pty_system()
+            .openpty(size(cols, rows))
+            .map_err(pty_err)?;
         if let Some(home) = std::env::var_os("USERPROFILE") {
             cmd.cwd(home);
         }
@@ -108,7 +136,14 @@ impl Terminals {
         let mut reader = pair.master.try_clone_reader().map_err(pty_err)?;
         let writer = pair.master.take_writer().map_err(pty_err)?;
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
-        self.sessions.lock()?.insert(id, Session { master: pair.master, writer, child });
+        self.sessions.lock()?.insert(
+            id,
+            Session {
+                master: pair.master,
+                writer,
+                child,
+            },
+        );
 
         let sessions = Arc::clone(&self.sessions);
         let app = app.clone();
@@ -141,7 +176,9 @@ impl Terminals {
 
     pub fn write(&self, id: u64, data: &str) -> AppResult<()> {
         let mut sessions = self.sessions.lock()?;
-        let s = sessions.get_mut(&id).ok_or_else(|| AppError::InvalidInput("terminal fermé".into()))?;
+        let s = sessions
+            .get_mut(&id)
+            .ok_or_else(|| AppError::InvalidInput("terminal fermé".into()))?;
         s.writer.write_all(data.as_bytes())?;
         s.writer.flush()?;
         Ok(())

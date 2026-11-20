@@ -49,7 +49,9 @@ fn split_by_day(list: &[Interval]) -> BTreeMap<String, i64> {
     for &(start, end) in list {
         let mut cur = start;
         while cur < end {
-            let Some(dt) = Local.timestamp_opt(cur, 0).single() else { break };
+            let Some(dt) = Local.timestamp_opt(cur, 0).single() else {
+                break;
+            };
             let day = dt.date_naive();
             let next = day
                 .succ_opt()
@@ -141,21 +143,39 @@ pub struct Inputs<'a> {
 
 /// Calcul pur des statistiques sur `[from, to[`.
 pub fn build(input: Inputs, days: u32, from: i64, to: i64) -> TimeStats {
-    let known: HashMap<i64, &str> = input.projects.iter().map(|(id, n)| (*id, n.as_str())).collect();
+    let known: HashMap<i64, &str> = input
+        .projects
+        .iter()
+        .map(|(id, n)| (*id, n.as_str()))
+        .collect();
     let mut all: Vec<Interval> = Vec::new();
 
     // Par workspace : identifié par son id, ou par son nom s'il a été supprimé.
     let mut by_ws: HashMap<(Option<i64>, String), (String, Vec<Interval>, u32)> = HashMap::new();
     let mut by_project: HashMap<i64, (Vec<Interval>, u32, u32)> = HashMap::new();
     for s in input.sessions {
-        let Some(iv) = clip((s.start, s.end), from, to) else { continue };
+        let Some(iv) = clip((s.start, s.end), from, to) else {
+            continue;
+        };
         all.push(iv);
-        let key = (s.workspace_id, if s.workspace_id.is_some() { String::new() } else { s.name.clone() });
-        let entry = by_ws.entry(key).or_insert_with(|| (s.name.clone(), Vec::new(), 0));
+        let key = (
+            s.workspace_id,
+            if s.workspace_id.is_some() {
+                String::new()
+            } else {
+                s.name.clone()
+            },
+        );
+        let entry = by_ws
+            .entry(key)
+            .or_insert_with(|| (s.name.clone(), Vec::new(), 0));
         entry.0 = s.name.clone(); // nom le plus récent (sessions triées par début)
         entry.1.push(iv);
         entry.2 += 1;
-        if let Some(projects) = s.workspace_id.and_then(|id| input.workspace_projects.get(&id)) {
+        if let Some(projects) = s
+            .workspace_id
+            .and_then(|id| input.workspace_projects.get(&id))
+        {
             for p in projects.iter().filter(|p| known.contains_key(p)) {
                 let e = by_project.entry(*p).or_default();
                 e.0.push(iv);
@@ -164,7 +184,9 @@ pub fn build(input: Inputs, days: u32, from: i64, to: i64) -> TimeStats {
         }
     }
     for r in input.runs {
-        let Some(iv) = clip((r.start, r.end), from, to) else { continue };
+        let Some(iv) = clip((r.start, r.end), from, to) else {
+            continue;
+        };
         if !known.contains_key(&r.project_id) {
             continue;
         }
@@ -176,9 +198,18 @@ pub fn build(input: Inputs, days: u32, from: i64, to: i64) -> TimeStats {
 
     let mut workspaces: Vec<WorkspaceTime> = by_ws
         .into_iter()
-        .map(|((id, _), (name, list, sessions))| WorkspaceTime { id, name, seconds: total(&merge_intervals(list)), sessions })
+        .map(|((id, _), (name, list, sessions))| WorkspaceTime {
+            id,
+            name,
+            seconds: total(&merge_intervals(list)),
+            sessions,
+        })
         .collect();
-    workspaces.sort_by(|a, b| b.seconds.cmp(&a.seconds).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    workspaces.sort_by(|a, b| {
+        b.seconds
+            .cmp(&a.seconds)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
 
     let mut projects: Vec<ProjectTime> = input
         .projects
@@ -187,10 +218,22 @@ pub fn build(input: Inputs, days: u32, from: i64, to: i64) -> TimeStats {
             let (list, sessions, runs) = by_project.remove(id).unwrap_or_default();
             let commits = input.commits.get(id).copied().unwrap_or(0);
             let seconds = total(&merge_intervals(list));
-            (seconds > 0 || commits > 0).then(|| ProjectTime { id: *id, name: name.clone(), seconds, sessions, runs, commits })
+            (seconds > 0 || commits > 0).then(|| ProjectTime {
+                id: *id,
+                name: name.clone(),
+                seconds,
+                sessions,
+                runs,
+                commits,
+            })
         })
         .collect();
-    projects.sort_by(|a, b| b.seconds.cmp(&a.seconds).then(b.commits.cmp(&a.commits)).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    projects.sort_by(|a, b| {
+        b.seconds
+            .cmp(&a.seconds)
+            .then(b.commits.cmp(&a.commits))
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
 
     let merged = merge_intervals(all);
     TimeStats {
@@ -198,7 +241,10 @@ pub fn build(input: Inputs, days: u32, from: i64, to: i64) -> TimeStats {
         from,
         to,
         total_seconds: total(&merged),
-        daily: split_by_day(&merged).into_iter().map(|(date, seconds)| DayTime { date, seconds }).collect(),
+        daily: split_by_day(&merged)
+            .into_iter()
+            .map(|(date, seconds)| DayTime { date, seconds })
+            .collect(),
         workspaces,
         projects,
     }
@@ -241,17 +287,34 @@ pub fn time_stats(db: &Database, days: u32) -> AppResult<TimeStats> {
 
     let mut workspace_projects: HashMap<i64, HashSet<i64>> = HashMap::new();
     for (ws, json) in steps {
-        if let Ok(Step::Editor { project_id } | Step::Folder { project_id } | Step::Script { project_id, .. }) = serde_json::from_str::<Step>(&json) {
+        if let Ok(
+            Step::Editor { project_id }
+            | Step::Folder { project_id }
+            | Step::Script { project_id, .. },
+        ) = serde_json::from_str::<Step>(&json)
+        {
             workspace_projects.entry(ws).or_default().insert(project_id);
         }
     }
 
     let list = projects::list(db)?;
-    let commits = activity::commits_by_project(list.iter().filter(|p| p.exists).map(|p| (p.id, p.path.clone())).collect(), days);
+    let commits = activity::commits_by_project(
+        list.iter()
+            .filter(|p| p.exists)
+            .map(|p| (p.id, p.path.clone()))
+            .collect(),
+        days,
+    );
     let known: Vec<(i64, String)> = list.into_iter().map(|p| (p.id, p.name)).collect();
 
     Ok(build(
-        Inputs { sessions: &sessions, runs: &runs, workspace_projects: &workspace_projects, projects: &known, commits: &commits },
+        Inputs {
+            sessions: &sessions,
+            runs: &runs,
+            workspace_projects: &workspace_projects,
+            projects: &known,
+            commits: &commits,
+        },
         days,
         from,
         to,
@@ -265,11 +328,23 @@ mod tests {
     #[test]
     fn merges_overlapping_and_adjacent_intervals() {
         assert_eq!(merge_intervals(vec![]), vec![]);
-        assert_eq!(merge_intervals(vec![(5, 10), (1, 3), (2, 4)]), vec![(1, 4), (5, 10)]);
+        assert_eq!(
+            merge_intervals(vec![(5, 10), (1, 3), (2, 4)]),
+            vec![(1, 4), (5, 10)]
+        );
         // Contigus : fusionnés ; inclus : absorbés ; vides ou inversés : ignorés.
-        assert_eq!(merge_intervals(vec![(0, 10), (10, 20), (2, 5), (7, 7), (9, 3)]), vec![(0, 20)]);
-        assert_eq!(merge_intervals(vec![(30, 40), (0, 10), (35, 50)]), vec![(0, 10), (30, 50)]);
-        assert_eq!(total(&merge_intervals(vec![(0, 10), (5, 15), (20, 25)])), 20);
+        assert_eq!(
+            merge_intervals(vec![(0, 10), (10, 20), (2, 5), (7, 7), (9, 3)]),
+            vec![(0, 20)]
+        );
+        assert_eq!(
+            merge_intervals(vec![(30, 40), (0, 10), (35, 50)]),
+            vec![(0, 10), (30, 50)]
+        );
+        assert_eq!(
+            total(&merge_intervals(vec![(0, 10), (5, 15), (20, 25)])),
+            20
+        );
     }
 
     #[test]
@@ -281,7 +356,10 @@ mod tests {
 
     #[test]
     fn day_split_preserves_total() {
-        let list = merge_intervals(vec![(1_700_000_000, 1_700_000_000 + 3 * 86_400 + 1234), (1_700_500_000, 1_700_500_600)]);
+        let list = merge_intervals(vec![
+            (1_700_000_000, 1_700_000_000 + 3 * 86_400 + 1234),
+            (1_700_500_000, 1_700_500_600),
+        ]);
         let by_day = split_by_day(&list);
         assert!(by_day.len() >= 4);
         assert_eq!(by_day.values().sum::<i64>(), total(&list));
@@ -290,40 +368,111 @@ mod tests {
     #[test]
     fn project_time_does_not_double_count() {
         let sessions = vec![
-            SessionSpan { workspace_id: Some(1), name: "Front".into(), start: 100, end: 200 },
-            SessionSpan { workspace_id: Some(2), name: "Full".into(), start: 150, end: 300 },
-            SessionSpan { workspace_id: None, name: "Ancien".into(), start: 0, end: 50 },
+            SessionSpan {
+                workspace_id: Some(1),
+                name: "Front".into(),
+                start: 100,
+                end: 200,
+            },
+            SessionSpan {
+                workspace_id: Some(2),
+                name: "Full".into(),
+                start: 150,
+                end: 300,
+            },
+            SessionSpan {
+                workspace_id: None,
+                name: "Ancien".into(),
+                start: 0,
+                end: 50,
+            },
         ];
         // Script du projet 10 pendant les sessions, et un autre hors session.
         let runs = vec![
-            RunSpan { project_id: 10, start: 120, end: 180 },
-            RunSpan { project_id: 10, start: 400, end: 450 },
-            RunSpan { project_id: 99, start: 0, end: 1000 }, // projet inconnu : ignoré
+            RunSpan {
+                project_id: 10,
+                start: 120,
+                end: 180,
+            },
+            RunSpan {
+                project_id: 10,
+                start: 400,
+                end: 450,
+            },
+            RunSpan {
+                project_id: 99,
+                start: 0,
+                end: 1000,
+            }, // projet inconnu : ignoré
         ];
-        let wp: HashMap<i64, HashSet<i64>> = [(1, HashSet::from([10])), (2, HashSet::from([10, 11]))].into();
-        let projects = vec![(10, "app".to_string()), (11, "api".to_string()), (12, "lib".to_string())];
+        let wp: HashMap<i64, HashSet<i64>> =
+            [(1, HashSet::from([10])), (2, HashSet::from([10, 11]))].into();
+        let projects = vec![
+            (10, "app".to_string()),
+            (11, "api".to_string()),
+            (12, "lib".to_string()),
+        ];
         let commits: HashMap<i64, u32> = [(12, 3)].into();
         let stats = build(
-            Inputs { sessions: &sessions, runs: &runs, workspace_projects: &wp, projects: &projects, commits: &commits },
+            Inputs {
+                sessions: &sessions,
+                runs: &runs,
+                workspace_projects: &wp,
+                projects: &projects,
+                commits: &commits,
+            },
             7,
             0,
             1000,
         );
 
         // Projet 10 : [100,300[ ∪ [400,450[ = 250 s, malgré les chevauchements.
-        assert_eq!(stats.projects[0], ProjectTime { id: 10, name: "app".into(), seconds: 250, sessions: 2, runs: 2, commits: 0 });
-        assert_eq!(stats.projects[1], ProjectTime { id: 11, name: "api".into(), seconds: 150, sessions: 1, runs: 0, commits: 0 });
+        assert_eq!(
+            stats.projects[0],
+            ProjectTime {
+                id: 10,
+                name: "app".into(),
+                seconds: 250,
+                sessions: 2,
+                runs: 2,
+                commits: 0
+            }
+        );
+        assert_eq!(
+            stats.projects[1],
+            ProjectTime {
+                id: 11,
+                name: "api".into(),
+                seconds: 150,
+                sessions: 1,
+                runs: 0,
+                commits: 0
+            }
+        );
         assert_eq!(stats.projects[2].commits, 3);
         assert_eq!(stats.projects.len(), 3);
 
-        assert_eq!(stats.workspaces.iter().map(|w| (w.name.as_str(), w.seconds)).collect::<Vec<_>>(), vec![("Full", 150), ("Front", 100), ("Ancien", 50)]);
+        assert_eq!(
+            stats
+                .workspaces
+                .iter()
+                .map(|w| (w.name.as_str(), w.seconds))
+                .collect::<Vec<_>>(),
+            vec![("Full", 150), ("Front", 100), ("Ancien", 50)]
+        );
         // Total : [0,50[ ∪ [100,300[ ∪ [400,450[.
         assert_eq!(stats.total_seconds, 300);
         assert_eq!(stats.daily.iter().map(|d| d.seconds).sum::<i64>(), 300);
 
         // Période plus courte : tout est restreint.
         let short = build(
-            Inputs { sessions: &sessions, runs: &runs, workspace_projects: &wp, projects: &projects, commits: &commits },
+            Inputs {
+                sessions: &sessions,
+                runs: &runs,
+                workspace_projects: &wp,
+                projects: &projects,
+                commits: &commits,
+            },
             1,
             160,
             1000,

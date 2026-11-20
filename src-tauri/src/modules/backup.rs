@@ -138,7 +138,10 @@ impl ImportSummary {
 
 fn check_json_path(path: &str) -> AppResult<&Path> {
     let p = Path::new(path);
-    let ext_ok = p.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("json"));
+    let ext_ok = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("json"));
     if !p.is_absolute() || !ext_ok {
         return Err(AppError::InvalidInput("choisissez un fichier .json".into()));
     }
@@ -234,7 +237,8 @@ pub fn build(db: &Database) -> AppResult<Bundle> {
 pub fn export(db: &Database, path: &str) -> AppResult<()> {
     let p = check_json_path(path)?;
     let bundle = build(db)?;
-    let json = serde_json::to_string_pretty(&bundle).map_err(|e| AppError::InvalidInput(e.to_string()))?;
+    let json =
+        serde_json::to_string_pretty(&bundle).map_err(|e| AppError::InvalidInput(e.to_string()))?;
     std::fs::write(p, json)?;
     Ok(())
 }
@@ -278,7 +282,9 @@ pub fn import(db: &Database, path: &str) -> AppResult<ImportSummary> {
     let bundle: Bundle = serde_json::from_str(&std::fs::read_to_string(p)?)
         .map_err(|e| AppError::InvalidInput(format!("fichier invalide : {e}")))?;
     if bundle.format != FORMAT || bundle.version > VERSION {
-        return Err(AppError::InvalidInput("ce fichier n'est pas une sauvegarde DevCenter compatible".into()));
+        return Err(AppError::InvalidInput(
+            "ce fichier n'est pas une sauvegarde DevCenter compatible".into(),
+        ));
     }
 
     let mut summary = ImportSummary::default();
@@ -497,7 +503,8 @@ mod tests {
     use super::*;
 
     fn temp_db(tag: &str) -> (Database, std::path::PathBuf) {
-        let dir = std::env::temp_dir().join(format!("devcenter-backup-{tag}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("devcenter-backup-{tag}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         (Database::open(&dir.join(format!("{tag}.db"))).unwrap(), dir)
     }
@@ -538,23 +545,71 @@ mod tests {
         assert_eq!(summary.added.get("commandes"), Some(&2));
 
         let (pid, wid): (i64, i64) = dst
-            .with(|c| Ok((c.query_row("SELECT id FROM projects", [], |r| r.get(0))?, c.query_row("SELECT id FROM workspaces", [], |r| r.get(0))?)))
+            .with(|c| {
+                Ok((
+                    c.query_row("SELECT id FROM projects", [], |r| r.get(0))?,
+                    c.query_row("SELECT id FROM workspaces", [], |r| r.get(0))?,
+                ))
+            })
             .unwrap();
-        let step: String = dst.with(|c| Ok(c.query_row("SELECT action FROM workspace_steps WHERE position = 0", [], |r| r.get(0))?)).unwrap();
+        let step: String = dst
+            .with(|c| {
+                Ok(c.query_row(
+                    "SELECT action FROM workspace_steps WHERE position = 0",
+                    [],
+                    |r| r.get(0),
+                )?)
+            })
+            .unwrap();
         assert!(step.contains(&format!("\"projectId\":{pid}")));
         assert_eq!(summary.added.get("tunnels"), Some(&1));
-        let tid: i64 = dst.with(|c| Ok(c.query_row("SELECT id FROM ssh_tunnels", [], |r| r.get(0))?)).unwrap();
-        let tstep: String = dst.with(|c| Ok(c.query_row("SELECT action FROM workspace_steps WHERE position = 1", [], |r| r.get(0))?)).unwrap();
+        let tid: i64 = dst
+            .with(|c| Ok(c.query_row("SELECT id FROM ssh_tunnels", [], |r| r.get(0))?))
+            .unwrap();
+        let tstep: String = dst
+            .with(|c| {
+                Ok(c.query_row(
+                    "SELECT action FROM workspace_steps WHERE position = 1",
+                    [],
+                    |r| r.get(0),
+                )?)
+            })
+            .unwrap();
         assert!(tstep.contains(&format!("\"tunnelId\":{tid}")));
-        let (steps, enabled): (String, i64) = dst.with(|c| Ok(c.query_row("SELECT steps, enabled FROM automations", [], |r| Ok((r.get(0)?, r.get(1)?)))?)).unwrap();
+        let (steps, enabled): (String, i64) = dst
+            .with(|c| {
+                Ok(
+                    c.query_row("SELECT steps, enabled FROM automations", [], |r| {
+                        Ok((r.get(0)?, r.get(1)?))
+                    })?,
+                )
+            })
+            .unwrap();
         assert!(steps.contains(&format!("\"workspaceId\":{wid}")));
         let (sid, snid): (i64, i64) = dst
-            .with(|c| Ok((c.query_row("SELECT id FROM servers", [], |r| r.get(0))?, c.query_row("SELECT id FROM server_snippets WHERE name = 'Disque'", [], |r| r.get(0))?)))
+            .with(|c| {
+                Ok((
+                    c.query_row("SELECT id FROM servers", [], |r| r.get(0))?,
+                    c.query_row(
+                        "SELECT id FROM server_snippets WHERE name = 'Disque'",
+                        [],
+                        |r| r.get(0),
+                    )?,
+                ))
+            })
             .unwrap();
         assert!(steps.contains(&format!("\"snippetId\":{snid}")));
         assert!(steps.contains(&format!("\"serverId\":{sid}")));
         assert!(steps.contains("\"snippetId\":null"));
-        let global: Option<i64> = dst.with(|c| Ok(c.query_row("SELECT server_id FROM server_snippets WHERE name = 'Mémoire'", [], |r| r.get(0))?)).unwrap();
+        let global: Option<i64> = dst
+            .with(|c| {
+                Ok(c.query_row(
+                    "SELECT server_id FROM server_snippets WHERE name = 'Mémoire'",
+                    [],
+                    |r| r.get(0),
+                )?)
+            })
+            .unwrap();
         assert_eq!(global, None);
         assert_eq!(enabled, 0);
 
