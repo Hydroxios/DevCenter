@@ -67,7 +67,7 @@ const PROTECTED_NAMES: &[&str] = &[
     "msmpeng.exe",
 ];
 
-fn is_protected(pid: u32, name: &str) -> bool {
+pub(super) fn is_protected(pid: u32, name: &str) -> bool {
     pid <= 4 || pid == std::process::id() || PROTECTED_NAMES.contains(&name.to_ascii_lowercase().as_str())
 }
 

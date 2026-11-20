@@ -1,3 +1,4 @@
+mod ports;
 mod processes;
 
 use std::sync::Mutex;
@@ -8,7 +9,10 @@ use sysinfo::{Components, CpuRefreshKind, Disks, Gpus, MemoryRefreshKind, Refres
 
 use crate::error::{AppError, AppResult};
 
+pub use ports::ListeningPort;
 pub use processes::{KillOutcome, ProcessInfo, ProcessSort};
+
+use crate::modules::runner::RunInfo;
 
 fn opt<T>(r: Result<T, sysinfo::Error>) -> Option<T> {
     r.ok()
@@ -235,6 +239,12 @@ impl SystemService {
     pub fn kill_process(&self, pid: u32, start_time: u64) -> AppResult<KillOutcome> {
         let mut procs = self.procs.lock()?;
         processes::kill(&mut procs, pid, start_time)
+    }
+
+    /// Sockets TCP/UDP en écoute, rattachées à leur processus et au script DevCenter éventuel.
+    pub fn listening_ports(&self, runs: &[RunInfo]) -> AppResult<Vec<ListeningPort>> {
+        let mut procs = self.procs.lock()?;
+        ports::list(&mut procs, runs)
     }
 }
 

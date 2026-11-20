@@ -1,10 +1,10 @@
 // Catalogue des widgets du tableau de bord (séparé des composants pour le Fast Refresh de Vite).
 
-import { Activity, Bot, Clock, Cpu, GitCommitHorizontal, Gpu, HardDrive, Layers, ListOrdered, MemoryStick, Play } from "lucide-react";
+import { Activity, Bot, Clock, Cpu, GitCommitHorizontal, Gpu, HardDrive, Layers, ListOrdered, MemoryStick, Network, Play } from "lucide-react";
 
 import { hasHistory, windowOf } from "./config";
 import type { WidgetDef } from "./config";
-import { CcusageWidget, CommitsBody, CoresBody, CpuBody, HardwareBody, MemoryBody, ProcessesBody, RunsBody, StorageBody, SystemBody, WidgetLink, WorkspacesBody } from "./widgets";
+import { CcusageWidget, CommitsBody, CoresBody, CpuBody, HardwareBody, MemoryBody, PortsBody, ProcessesBody, RunsBody, StorageBody, SystemBody, WidgetLink, WorkspacesBody } from "./widgets";
 
 /* ------------------------------------------------------------------ */
 /* Catalogue                                                           */
@@ -93,6 +93,14 @@ export const WIDGETS = {
     aside: () => <WidgetLink to="/system" />,
     render: (_d, s) => <ProcessesBody count={s.count} sort={s.sort} />,
     options: ["count", "sort"],
+  },
+  ports: {
+    title: "Ports en écoute",
+    description: "Ports de développement ouverts (3000–9999 ou scripts DevCenter)",
+    icon: Network,
+    size: { w: 4, h: 5, minW: 2, minH: 2 },
+    aside: () => <WidgetLink to="/system" />,
+    render: () => <PortsBody />,
   },
   commits: {
     title: "Commits",

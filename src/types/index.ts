@@ -74,6 +74,21 @@ export interface ProcessInfo {
   protected: boolean;
 }
 
+/** Socket TCP/UDP en écoute (lue via `netstat -ano`). */
+export interface ListeningPort {
+  protocol: "tcp" | "udp";
+  port: number;
+  /** Adresses locales (IPv4 et IPv6 regroupées). */
+  addresses: string[];
+  pid: number;
+  processName: string | null;
+  /** Requis pour arrêter le processus sans risque (PID non réattribué). */
+  startTime: number | null;
+  protected: boolean;
+  /** Script DevCenter dont descend le processus. */
+  run: { runId: number; projectId: number; script: string } | null;
+}
+
 export interface KillOutcome {
   pid: number;
   name: string;
