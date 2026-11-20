@@ -2,13 +2,15 @@ import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 
 import { api, isTauri } from "@/services/tauri";
-import type { AppShortcut, Project, Workspace, WorkspaceInput } from "@/types";
+import type { AppShortcut, Project, Tunnel, Workspace, WorkspaceInput } from "@/types";
 
 interface WorkspacesState {
   workspaces: Workspace[] | null;
   /** Projets et applications, pour afficher les étapes par leur nom. */
   projects: Project[];
   apps: AppShortcut[];
+  /** Tunnels SSH (étapes « Ouvrir / Fermer un tunnel »). */
+  tunnels: Tunnel[];
   /** Workspace en cours de démarrage/arrêt (bouton occupé). */
   busy: number | null;
   error: string | null;
@@ -39,6 +41,7 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => {
     workspaces: null,
     projects: [],
     apps: [],
+    tunnels: [],
     busy: null,
     error: null,
 
@@ -53,8 +56,8 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => {
 
     refreshRefs: () =>
       guard(async () => {
-        const [projects, apps] = await Promise.all([api.projects.list(), api.apps.list()]);
-        set({ projects, apps });
+        const [projects, apps, tunnels] = await Promise.all([api.projects.list(), api.apps.list(), api.tunnels.list()]);
+        set({ projects, apps, tunnels });
       }),
 
     save: async (input) => {

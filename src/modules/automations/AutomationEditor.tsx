@@ -290,6 +290,9 @@ function StepFields({ step, onChange, refs }: { step: AutomationStep; onChange: 
       );
     case "launchApp":
       return <RefSelect label="Application" items={refs.apps} value={step.appId} onChange={(appId) => onChange({ ...step, appId })} empty="Aucune application (voir Système)" />;
+    case "openTunnel":
+    case "closeTunnel":
+      return <RefSelect label="Tunnel" items={refs.tunnels} value={step.tunnelId} onChange={(tunnelId) => onChange({ ...step, tunnelId })} empty="Aucun tunnel (voir Serveurs › Tunnels)" />;
     case "openUrl":
       return <Input aria-label="URL" className="min-w-0 flex-1" value={step.url} onChange={(e) => onChange({ ...step, url: e.target.value })} />;
     case "notify":

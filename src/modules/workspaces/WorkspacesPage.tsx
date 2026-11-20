@@ -169,7 +169,7 @@ function SessionHistory({ workspaceId, version }: { workspaceId: number; version
 }
 
 function WorkspaceView({ workspace, onEdit, historyVersion }: { workspace: Workspace; onEdit: () => void; historyVersion: string }) {
-  const { projects, apps, toggleFavorite } = useWorkspaces();
+  const { projects, apps, tunnels, toggleFavorite } = useWorkspaces();
   const [tab, setTabState] = useState<Tab>(() => lastTab.get(workspace.id) ?? "overview");
   const setTab = (t: Tab) => {
     lastTab.set(workspace.id, t);
@@ -232,7 +232,7 @@ function WorkspaceView({ workspace, onEdit, historyVersion }: { workspace: Works
                       <li key={i} className="flex min-w-0 items-center gap-3 px-3 py-2">
                         <span className="meta w-4 shrink-0 text-right">{i + 1}</span>
                         <Icon className="size-4 shrink-0 text-muted-foreground" />
-                        <span className="truncate">{stepLabel(step, projects, apps)}</span>
+                        <span className="truncate">{stepLabel(step, projects, apps, tunnels)}</span>
                       </li>
                     );
                   })}

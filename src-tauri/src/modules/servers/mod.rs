@@ -6,6 +6,7 @@ pub mod remote;
 pub mod snippets;
 pub mod ssh;
 pub mod terminal;
+pub mod tunnels;
 
 use std::path::Path;
 

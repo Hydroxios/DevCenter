@@ -25,6 +25,9 @@ import type {
   Snippet,
   SnippetInput,
   CommandResult,
+  Tunnel,
+  TunnelInput,
+  TunnelStatus,
   Automation,
   AutomationInput,
   AutomationRun,
@@ -174,6 +177,15 @@ export const api = {
     remove: (id: number) => invoke<Snippet[]>("delete_snippet", { id }),
     /** Exécute la commande enregistrée sur le serveur `serverId`. */
     run: (serverId: number, snippetId: number) => invoke<CommandResult>("server_run_snippet", { id: serverId, snippetId }),
+  },
+  tunnels: {
+    /** Sans `serverId` : tous les tunnels (étapes de workspace et d'automatisation). */
+    list: (serverId: number | null = null) => invoke<Tunnel[]>("list_tunnels", { serverId }),
+    save: (input: TunnelInput) => invoke<Tunnel[]>("save_tunnel", { input }),
+    remove: (id: number) => invoke<Tunnel[]>("delete_tunnel", { id }),
+    /** Le passage à « actif » ou l'erreur arrive ensuite par l'événement `tunnel://status`. */
+    start: (id: number) => invoke<TunnelStatus>("start_tunnel", { id }),
+    stop: (id: number) => invoke<void>("stop_tunnel", { id }),
   },
   automations: {
     list: () => invoke<Automation[]>("list_automations"),

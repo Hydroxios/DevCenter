@@ -63,6 +63,7 @@ pub fn run() {
                 workspaces: Default::default(),
                 terminals: Default::default(),
                 transfers: Default::default(),
+                tunnels: Default::default(),
                 automations: Default::default(),
                 remote: Default::default(),
                 clones: Default::default(),
@@ -89,6 +90,13 @@ pub fn run() {
             if settings.remote_enabled {
                 let _ = state.remote.start(app.handle(), settings.remote_port);
             }
+
+            // Tunnels SSH marqués « démarrage automatique » (en arrière-plan : ssh peut être lent).
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let state = handle.state::<AppState>();
+                state.tunnels.start_auto(&handle, &state.db);
+            });
 
             tray::create(app.handle())?;
             Ok(())
@@ -192,6 +200,11 @@ pub fn run() {
             commands::server_transfers,
             commands::server_transfer_cancel,
             commands::server_transfer_dismiss,
+            commands::list_tunnels,
+            commands::save_tunnel,
+            commands::delete_tunnel,
+            commands::start_tunnel,
+            commands::stop_tunnel,
             commands::list_automations,
             commands::save_automation,
             commands::delete_automation,
@@ -248,6 +261,7 @@ pub fn run() {
                     modules::workspaces::close_all(&state);
                     state.terminals.close_all();
                     state.transfers.cancel_all();
+                    state.tunnels.stop_all();
                     state.remote.stop();
                     state.runner.stop_all();
                     modules::runner::close_history(&state.db);

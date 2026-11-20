@@ -425,6 +425,9 @@ function stepSummary(s: AutomationStep, refs: Refs): string {
       return `${label} · ${name(refs.apps, s.appId)}`;
     case "openUrl":
       return `${label} · ${s.url}`;
+    case "openTunnel":
+    case "closeTunnel":
+      return `${label} · ${name(refs.tunnels, s.tunnelId)}`;
     case "httpRequest":
       return `${s.method} ${s.url}`;
     case "sshCommand":
@@ -449,7 +452,7 @@ export function AutomationsPage() {
 
 function AutomationsView() {
   const [list, setList] = useState<Automation[] | null>(null);
-  const [refs, setRefs] = useState<Refs>({ projects: [], apps: [], workspaces: [], servers: [], snippets: [] });
+  const [refs, setRefs] = useState<Refs>({ projects: [], apps: [], workspaces: [], servers: [], snippets: [], tunnels: [] });
   const [editor, setEditor] = useState<{ open: boolean; initial: AutomationInput | null }>({ open: false, initial: null });
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -468,8 +471,10 @@ function AutomationsView() {
 
   useEffect(() => {
     refresh();
-    Promise.all([api.projects.list(), api.apps.list(), api.workspaces.list(), api.servers.list(), api.snippets.list()])
-      .then(([projects, apps, workspaces, servers, snippets]) => setRefs({ projects, apps, workspaces, servers, snippets }))
+    Promise.all([api.projects.list(), api.apps.list(), api.workspaces.list(), api.servers.list(), api.snippets.list(), api.tunnels.list()])
+      .then(([projects, apps, workspaces, servers, snippets, tunnels]) =>
+        setRefs({ projects, apps, workspaces, servers, snippets, tunnels: tunnels.map((t) => ({ id: t.id, name: `${t.name} (${t.serverName})` })) }),
+      )
       .catch(() => {});
     const unlisten = listen("automation://changed", refresh);
     return () => {

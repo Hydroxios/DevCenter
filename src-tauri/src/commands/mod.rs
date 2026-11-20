@@ -22,6 +22,7 @@ use crate::modules::servers::remote::{self, Container, RemoteMetrics, RemoteServ
 use crate::modules::servers::agent::KeyStatus;
 use crate::modules::servers::snippets::{self, CommandResult, Snippet, SnippetInput};
 use crate::modules::servers::files::{self, RemoteListing, TransferInfo};
+use crate::modules::servers::tunnels::{self, Tunnel, TunnelInput};
 use crate::modules::servers::{self, Server, ServerInput};
 use crate::modules::workspaces::{self, ActiveInfo, SessionRecord, Workspace, WorkspaceInput};
 use crate::modules::settings::{Settings, SettingsService};
@@ -393,7 +394,8 @@ pub fn save_server(state: State<'_, AppState>, input: ServerInput) -> AppResult<
 }
 
 #[tauri::command]
-pub fn delete_server(state: State<'_, AppState>, id: i64) -> AppResult<Vec<Server>> {
+pub fn delete_server(app: AppHandle, state: State<'_, AppState>, id: i64) -> AppResult<Vec<Server>> {
+    tunnels::stop_for_server(&app, &state.db, &state.tunnels, id)?;
     servers::delete(&state.db, id)
 }
 
@@ -577,6 +579,50 @@ pub async fn terminal_open_ssh_add(app: AppHandle, server_id: i64, cols: u16, ro
         state.terminals.open_ssh_add(&app, server.key_path.as_deref(), cols, rows)
     })
     .await
+}
+
+// ---------------------------------------------------------------- Tunnels SSH
+
+/// Tunnels d'un serveur (`serverId`) ou de tous les serveurs.
+#[tauri::command]
+pub fn list_tunnels(state: State<'_, AppState>, server_id: Option<i64>) -> AppResult<Vec<Tunnel>> {
+    tunnels::list(&state.db, &state.tunnels, server_id)
+}
+
+#[tauri::command]
+pub async fn save_tunnel(app: AppHandle, input: TunnelInput) -> AppResult<Vec<Tunnel>> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        tunnels::save(&app, &state.db, &state.tunnels, &input)?;
+        tunnels::list(&state.db, &state.tunnels, Some(input.server_id))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn delete_tunnel(app: AppHandle, id: i64) -> AppResult<Vec<Tunnel>> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        let server_id = tunnels::get(&state.db, id)?.server_id;
+        tunnels::delete(&app, &state.db, &state.tunnels, id)?;
+        tunnels::list(&state.db, &state.tunnels, Some(server_id))
+    })
+    .await
+}
+
+/// Lance le tunnel ; le passage à « actif » (ou l'erreur) arrive par l'événement `tunnel://status`.
+#[tauri::command]
+pub async fn start_tunnel(app: AppHandle, id: i64) -> AppResult<tunnels::TunnelStatus> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        state.tunnels.start(&app, &state.db, id)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn stop_tunnel(app: AppHandle, id: i64) -> AppResult<()> {
+    blocking(move || app.state::<AppState>().tunnels.stop(&app, id)).await
 }
 
 // ---------------------------------------------------------------- Automatisations

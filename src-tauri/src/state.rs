@@ -7,6 +7,7 @@ use crate::modules::remote::RemoteAccess;
 use crate::modules::runner::Runner;
 use crate::modules::servers::files::Transfers;
 use crate::modules::servers::terminal::Terminals;
+use crate::modules::servers::tunnels::TunnelRuntime;
 use crate::modules::settings::SettingsService;
 use crate::modules::system::SystemService;
 use crate::modules::workspaces::WorkspaceRuntime;
@@ -21,6 +22,8 @@ pub struct AppState {
     pub terminals: Terminals,
     /// Transferts de fichiers SSH en cours ou récents.
     pub transfers: Transfers,
+    /// Tunnels SSH ouverts (processus `ssh -N` surveillés).
+    pub tunnels: TunnelRuntime,
     pub automations: AutomationRuntime,
     pub remote: RemoteAccess,
     pub clones: CloneJobs,

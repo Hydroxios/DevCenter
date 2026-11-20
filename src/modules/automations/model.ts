@@ -7,12 +7,14 @@ import {
   Globe,
   Hourglass,
   Layers,
+  Network,
   Play,
   PlugZap,
   Send,
   Square,
   SquareChevronRight,
   SquareStop,
+  Unplug,
   type LucideIcon,
 } from "lucide-react";
 
@@ -51,6 +53,8 @@ export const STEP_KINDS: { kind: AutomationStep["kind"]; label: string; icon: Lu
   { kind: "openUrl", label: "Ouvrir une URL", icon: Globe, group: "Ouvrir" },
   { kind: "httpRequest", label: "Requête HTTP", icon: Send, group: "Ouvrir" },
   { kind: "sshCommand", label: "Commande SSH", icon: SquareChevronRight, group: "Serveurs" },
+  { kind: "openTunnel", label: "Ouvrir un tunnel", icon: Network, group: "Serveurs" },
+  { kind: "closeTunnel", label: "Fermer un tunnel", icon: Unplug, group: "Serveurs" },
   { kind: "notify", label: "Notifier", icon: Bell, group: "Contrôle" },
   { kind: "wait", label: "Attendre", icon: Hourglass, group: "Contrôle" },
   { kind: "waitForPort", label: "Attendre un port", icon: PlugZap, group: "Contrôle" },
@@ -76,6 +80,8 @@ export interface Refs {
   servers: { id: number; name: string }[];
   /** Commandes serveur enregistrées (`serverId` null = tous les serveurs). */
   snippets: { id: number; name: string; serverId: number | null }[];
+  /** Tunnels SSH, nommés « tunnel (serveur) ». */
+  tunnels: { id: number; name: string }[];
 }
 
 /** Commandes enregistrées utilisables sur un serveur. */
@@ -118,6 +124,9 @@ export function defaultStep(kind: AutomationStep["kind"], refs: Refs): Automatio
       return { kind, appId: refs.apps[0]?.id ?? 0 };
     case "openUrl":
       return { kind, url: "http://localhost:3000" };
+    case "openTunnel":
+    case "closeTunnel":
+      return { kind, tunnelId: refs.tunnels[0]?.id ?? 0 };
     case "httpRequest":
       return { kind, method: "GET", url: "http://localhost:3000/health", headers: "", body: "", expectStatus: "", timeoutSecs: 30 };
     case "sshCommand": {

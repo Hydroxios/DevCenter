@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
-import { Box, Copy, FolderOpen, Gauge, Pencil, Plus, Server as ServerIcon, Settings2, SquareChevronRight, TerminalSquare, Trash2, Zap } from "lucide-react";
+import { Box, Copy, FolderOpen, Gauge, Network, Pencil, Plus, Server as ServerIcon, Settings2, SquareChevronRight, TerminalSquare, Trash2, Zap } from "lucide-react";
 
 import { EmptyState, ListItem, ListPane, Page, PageBar, PageBody, PageMain, PageNotice, PageTabs, TauriOnly } from "@/components/layout/Page";
 import { Button } from "@/components/ui/button";
@@ -22,11 +22,12 @@ import { KeyHelp } from "./KeyHelp";
 import { DockerPanel, OverviewPanel, ServicesPanel } from "./RemotePanels";
 import { ServerDialog } from "./ServerDialog";
 import { SnippetsPanel } from "./SnippetsPanel";
+import { TunnelsPanel } from "./TunnelsPanel";
 import { SshTerminal, sshKey } from "./SshTerminal";
 import { remoteCache } from "./remoteCache";
 import { terminals, useTerminalsVersion } from "./terminalManager";
 
-type Tab = "overview" | "terminal" | "commands" | "files" | "services" | "docker";
+type Tab = "overview" | "terminal" | "commands" | "files" | "services" | "docker" | "tunnels";
 
 /** Dernier onglet ouvert par serveur (conservé le temps de la session de l'app). */
 const lastTab = new Map<number, Tab>();
@@ -37,6 +38,7 @@ const TABS: { id: Tab; label: string; icon: typeof Gauge }[] = [
   { id: "files", label: "Fichiers", icon: FolderOpen },
   { id: "services", label: "Services", icon: Settings2 },
   { id: "docker", label: "Docker", icon: Box },
+  { id: "tunnels", label: "Tunnels", icon: Network },
 ];
 
 /** État de connexion : latence en ms, message d'erreur, ou test en cours. */
@@ -146,6 +148,7 @@ function ServerView({
         {tab === "files" && <FilesPanel server={server} />}
         {tab === "services" && <ServicesPanel server={server} />}
         {tab === "docker" && <DockerPanel server={server} />}
+        {tab === "tunnels" && <TunnelsPanel server={server} />}
         {/* La session SSH vit dans terminalManager : quitter l'onglet ou la page ne la coupe pas. */}
         {tab === "terminal" && (
           <SshTerminal server={server} autoConnect={autoConnect} className="h-[max(320px,calc(100vh-260px))]" />

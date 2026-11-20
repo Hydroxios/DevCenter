@@ -5,7 +5,7 @@
 //! clés elles-mêmes non ; les appareils appairés ne sont pas exportés.
 //!
 //! À l'import (fusion) : projets et applications sont dédoublonnés par chemin, serveurs par
-//! hôte/port/utilisateur, commandes serveur par nom et serveur, workspaces et automatisations par nom. Les identifiants internes
+//! hôte/port/utilisateur, commandes serveur par nom et serveur, tunnels SSH par serveur et nom, workspaces et automatisations par nom. Les identifiants internes
 //! référencés dans les étapes sont réécrits vers ceux de la machine cible.
 
 use std::collections::HashMap;
@@ -37,6 +37,7 @@ pub struct Bundle {
     pub servers: Vec<ServerRow>,
     #[serde(default)]
     pub snippets: Vec<SnippetRow>,
+    pub tunnels: Vec<TunnelRow>,
     #[serde(default)]
     pub workspaces: Vec<WorkspaceRow>,
     #[serde(default)]
@@ -80,6 +81,21 @@ pub struct SnippetRow {
     pub server_id: Option<i64>,
     pub confirm: bool,
     pub sudo: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TunnelRow {
+    pub id: i64,
+    pub server_id: i64,
+    pub name: String,
+    pub kind: String,
+    pub bind_address: String,
+    pub local_port: i64,
+    pub remote_host: Option<String>,
+    pub remote_port: Option<i64>,
+    pub auto_start: bool,
+    pub auto_restart: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -174,6 +190,23 @@ pub fn build(db: &Database) -> AppResult<Bundle> {
             .iter()
             .map(|r| SnippetRow { id: i(&r[0]), name: s(&r[1]), command: s(&r[2]), server_id: r[3].as_i64(), confirm: i(&r[4]) != 0, sudo: i(&r[5]) != 0 })
             .collect();
+        bundle.tunnels = collect(
+            "SELECT id, server_id, name, kind, bind_address, local_port, remote_host, remote_port, auto_start, auto_restart FROM ssh_tunnels",
+        )?
+        .iter()
+        .map(|r| TunnelRow {
+            id: i(&r[0]),
+            server_id: i(&r[1]),
+            name: s(&r[2]),
+            kind: s(&r[3]),
+            bind_address: s(&r[4]),
+            local_port: i(&r[5]),
+            remote_host: r[6].as_str().map(str::to_string),
+            remote_port: r[7].as_i64(),
+            auto_start: i(&r[8]) != 0,
+            auto_restart: i(&r[9]) != 0,
+        })
+        .collect();
         let steps_of = |ws_id: i64| -> rusqlite::Result<Vec<Value>> {
             let mut stmt = conn.prepare("SELECT action FROM workspace_steps WHERE workspace_id = ?1 ORDER BY position")?;
             let rows = stmt.query_map(params![ws_id], |r| r.get::<_, String>(0))?;
@@ -207,7 +240,7 @@ pub fn export(db: &Database, path: &str) -> AppResult<()> {
 }
 
 /// Réécrit récursivement les identifiants (`projectId`, `appId`, `workspaceId`, `serverId`,
-/// `snippetId`). Une référence `null` (facultative) est conservée telle quelle.
+/// `snippetId`, `tunnelId`). Une référence `null` (facultative) est conservée telle quelle.
 fn remap(value: &mut Value, maps: &HashMap<&str, HashMap<i64, i64>>) -> bool {
     let mut ok = true;
     match value {
@@ -352,11 +385,58 @@ pub fn import(db: &Database, path: &str) -> AppResult<ImportSummary> {
             snippets.insert(sn.id, id);
         }
 
+        // Tunnels : rattachés au serveur importé, dédoublonnés par serveur + nom. Les valeurs sont
+        // revalidées (le fichier a pu être modifié à la main) : ssh ne reçoit jamais d'option déguisée.
+        let mut tunnels = HashMap::new();
+        for t in &bundle.tunnels {
+            let Some(&server_id) = servers.get(&t.server_id) else {
+                summary.skip("tunnels");
+                continue;
+            };
+            let kind = match t.kind.as_str() {
+                k @ ("local" | "remote" | "dynamic") => k,
+                _ => {
+                    summary.skip("tunnels");
+                    continue;
+                }
+            };
+            let port_ok = |p: i64| (1..=65535).contains(&p);
+            let valid = !t.name.trim().is_empty()
+                && t.name.len() <= 80
+                && port_ok(t.local_port)
+                && crate::modules::servers::tunnels::validate_host(&t.bind_address, "adresse").is_ok()
+                && (kind == "dynamic"
+                    || (t.remote_port.is_some_and(port_ok)
+                        && t.remote_host.as_deref().is_some_and(|h| crate::modules::servers::tunnels::validate_host(h, "hôte").is_ok())));
+            if !valid {
+                summary.skip("tunnels");
+                continue;
+            }
+            let (remote_host, remote_port) = if kind == "dynamic" { (None, None) } else { (t.remote_host.clone(), t.remote_port) };
+            let id = match find("SELECT id FROM ssh_tunnels WHERE server_id = ?1 AND name = ?2", &[&server_id, &t.name])? {
+                Some(id) => {
+                    summary.skip("tunnels");
+                    id
+                }
+                None => {
+                    tx.execute(
+                        "INSERT INTO ssh_tunnels (server_id, name, kind, bind_address, local_port, remote_host, remote_port, auto_start, auto_restart)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                        params![server_id, t.name.trim(), kind, t.bind_address, t.local_port, remote_host, remote_port, t.auto_start as i64, t.auto_restart as i64],
+                    )?;
+                    summary.add("tunnels");
+                    tx.last_insert_rowid()
+                }
+            };
+            tunnels.insert(t.id, id);
+        }
+
         let mut maps: HashMap<&str, HashMap<i64, i64>> = HashMap::new();
         maps.insert("appId", apps);
         maps.insert("projectId", projects);
         maps.insert("serverId", servers);
         maps.insert("snippetId", snippets);
+        maps.insert("tunnelId", tunnels);
 
         let mut workspaces = HashMap::new();
         for w in &bundle.workspaces {
@@ -436,6 +516,9 @@ mod tests {
             c.execute("INSERT INTO server_snippets (id, name, command, server_id, confirm, sudo, created_at) VALUES (9, 'Disque', 'df -h', 5, 0, 0, 0)", [])?;
             c.execute("INSERT INTO server_snippets (id, name, command, server_id, confirm, sudo, created_at) VALUES (11, 'Mémoire', 'free -h', NULL, 1, 1, 0)", [])?;
             c.execute("INSERT INTO workspace_steps (workspace_id, position, action) VALUES (3, 0, '{\"kind\":\"editor\",\"projectId\":7}')", [])?;
+            c.execute("INSERT INTO servers (id, name, host, port) VALUES (4, 'vps', 'example.org', 22)", [])?;
+            c.execute("INSERT INTO ssh_tunnels (id, server_id, name, kind, local_port, remote_host, remote_port) VALUES (9, 4, 'db', 'local', 5433, 'localhost', 5432)", [])?;
+            c.execute("INSERT INTO workspace_steps (workspace_id, position, action) VALUES (3, 1, '{\"kind\":\"tunnelOpen\",\"tunnelId\":9}')", [])?;
             c.execute(
                 "INSERT INTO automations (name, description, enabled, trigger, steps, on_error, timeout_minutes, created_at)
                  VALUES ('Matin', '', 1, '{\"kind\":\"manual\"}', '[{\"kind\":\"startWorkspace\",\"workspaceId\":3},{\"kind\":\"sshCommand\",\"serverId\":5,\"snippetId\":9},{\"kind\":\"sshCommand\",\"serverId\":5,\"snippetId\":null,\"command\":\"uptime\"}]', '\"stop\"', 30, 0)",
@@ -457,8 +540,12 @@ mod tests {
         let (pid, wid): (i64, i64) = dst
             .with(|c| Ok((c.query_row("SELECT id FROM projects", [], |r| r.get(0))?, c.query_row("SELECT id FROM workspaces", [], |r| r.get(0))?)))
             .unwrap();
-        let step: String = dst.with(|c| Ok(c.query_row("SELECT action FROM workspace_steps", [], |r| r.get(0))?)).unwrap();
+        let step: String = dst.with(|c| Ok(c.query_row("SELECT action FROM workspace_steps WHERE position = 0", [], |r| r.get(0))?)).unwrap();
         assert!(step.contains(&format!("\"projectId\":{pid}")));
+        assert_eq!(summary.added.get("tunnels"), Some(&1));
+        let tid: i64 = dst.with(|c| Ok(c.query_row("SELECT id FROM ssh_tunnels", [], |r| r.get(0))?)).unwrap();
+        let tstep: String = dst.with(|c| Ok(c.query_row("SELECT action FROM workspace_steps WHERE position = 1", [], |r| r.get(0))?)).unwrap();
+        assert!(tstep.contains(&format!("\"tunnelId\":{tid}")));
         let (steps, enabled): (String, i64) = dst.with(|c| Ok(c.query_row("SELECT steps, enabled FROM automations", [], |r| Ok((r.get(0)?, r.get(1)?)))?)).unwrap();
         assert!(steps.contains(&format!("\"workspaceId\":{wid}")));
         let (sid, snid): (i64, i64) = dst
