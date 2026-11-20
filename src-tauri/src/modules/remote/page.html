@@ -279,6 +279,12 @@
       const days = !d.length || d.length === 7 ? "tous les jours" : d.length === 5 && [0,1,2,3,4].every((x) => d.includes(x)) ? "en semaine" : [...d].sort().map((x) => DAYS[x]).join(", ");
       return `${t.time}, ${days}`;
     }
+    if (t.kind === "scriptFailed") return "Quand un script plante";
+    if (t.kind === "serverDown") return "Quand un serveur devient injoignable";
+    if (t.kind === "serverUp") return "Quand un serveur redevient joignable";
+    if (t.kind === "containerStopped") return "Quand un conteneur s'arrête";
+    if (t.kind === "gitChange") return "Sur changement Git";
+    if (t.kind === "webhook") return "Webhook local";
     return "";
   }
   const STATUS = {
@@ -812,7 +818,7 @@
       h("div", { class: "row" },
         h("div", { class: "grow" },
           h("div", { class: "title", style: "font-size:14px" }, it.name),
-          h("div", { class: "sub" }, (it.kind === "workspace" ? "session" : ({ manual: "manuel", schedule: "planifié", startup: "démarrage" }[it.origin] || "")) + " · " + ago(it.startedAt)),
+          h("div", { class: "sub" }, (it.kind === "workspace" ? "session" : ({ manual: "manuel", schedule: "planifié", startup: "démarrage", event: "événement", webhook: "webhook" }[it.origin] || "")) + " · " + ago(it.startedAt)),
           it.failures.slice(0, 2).map((f) => h("div", { class: "err" }, f))),
         chip(it.status)))));
     return out;

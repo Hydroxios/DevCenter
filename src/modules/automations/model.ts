@@ -19,8 +19,41 @@ import type { AutomationCondition, AutomationInput, AutomationStep, AutomationTr
 
 export const DAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 
-export function triggerLabel(t: AutomationTrigger): string {
+const refName = (items: { id: number; name: string }[] | undefined, id: number | null) =>
+  id === null ? null : (items?.find((i) => i.id === id)?.name ?? `#${id}`);
+
+/** Jeton de webhook : 256 bits aléatoires en hexadécimal. */
+export function newWebhookToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Déclencheurs sur événement (pas d'horaire : réagissent à ce qui se passe). */
+export const EVENT_TRIGGERS: AutomationTrigger["kind"][] = ["scriptFailed", "serverDown", "serverUp", "containerStopped", "gitChange", "webhook"];
+
+export function triggerLabel(t: AutomationTrigger, refs?: Refs): string {
   switch (t.kind) {
+    case "scriptFailed": {
+      const p = refName(refs?.projects, t.projectId);
+      const target = [p, t.script.trim() || null].filter(Boolean).join(" › ");
+      return target ? `Quand ${target} plante` : "Quand un script plante";
+    }
+    case "serverDown":
+    case "serverUp": {
+      const s = refName(refs?.servers, t.serverId) ?? "un serveur";
+      return t.kind === "serverDown" ? `Quand ${s} devient injoignable` : `Quand ${s} redevient joignable`;
+    }
+    case "containerStopped": {
+      const s = refName(refs?.servers, t.serverId);
+      return `Quand ${t.container.trim() ? `le conteneur ${t.container.trim()}` : "un conteneur"} s'arrête${s ? ` (${s})` : ""}`;
+    }
+    case "gitChange": {
+      const what = t.onCommit && t.onBranch ? "Commit ou branche" : t.onCommit ? "Nouveau commit" : "Changement de branche";
+      const p = refName(refs?.projects, t.projectId);
+      return p ? `${what} · ${p}` : `${what} (tous les projets)`;
+    }
+    case "webhook":
+      return "Webhook local";
     case "manual":
       return "Manuel";
     case "interval":
@@ -209,6 +242,51 @@ export function templates(refs: Refs): { id: string; title: string; description:
           ...(refs.apps[0] ? [{ kind: "launchApp" as const, appId: refs.apps[0].id }] : []),
           { kind: "wait", seconds: 20 },
           { kind: "startWorkspace", workspaceId: ws },
+        ],
+      },
+    },
+    {
+      id: "script-crash",
+      title: "Relancer un script qui plante",
+      description: "Quand `dev` s'arrête avec une erreur : notification, puis relance 5 s plus tard.",
+      input: {
+        ...base,
+        name: "Relancer le serveur de dev",
+        description: "",
+        trigger: { kind: "scriptFailed", projectId: refs.projects[0] ? project : null, script: "dev" },
+        steps: [
+          { kind: "notify", title: "Script planté", body: "Le serveur de dev s'est arrêté, relance en cours." },
+          { kind: "wait", seconds: 5 },
+          { kind: "runScript", projectId: project, script: "dev", openBrowser: false },
+        ],
+      },
+    },
+    {
+      id: "server-down-event",
+      title: "Alerte serveur en panne",
+      description: "Notification dès qu'un serveur enregistré ne répond plus (vérifié chaque minute).",
+      input: {
+        ...base,
+        name: "Serveur en panne",
+        description: "",
+        trigger: { kind: "serverDown", serverId: null },
+        steps: [{ kind: "notify", title: "Serveur injoignable", body: "Un serveur ne répond plus en SSH : voir l'historique pour le détail." }],
+      },
+    },
+    {
+      id: "webhook-deploy",
+      title: "Webhook de déploiement",
+      description: "Une URL locale à appeler (CI, script, téléphone) : relance le workspace et prévient.",
+      input: {
+        ...base,
+        onError: "stop",
+        name: "Webhook de déploiement",
+        description: "",
+        trigger: { kind: "webhook", token: newWebhookToken() },
+        steps: [
+          { kind: "stopWorkspace", workspaceId: ws },
+          { kind: "startWorkspace", workspaceId: ws },
+          { kind: "notify", title: "Déploiement local", body: "Workspace relancé par le webhook." },
         ],
       },
     },

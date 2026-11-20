@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Copy, RefreshCw, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -13,8 +13,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import type { AutomationCondition, AutomationInput, AutomationStep, AutomationTrigger, HttpMethod } from "@/types";
-import { CONDITION_KINDS, DAYS, STEP_KINDS, defaultCondition, defaultStep, stepIcon, type Refs } from "./model";
+import { api } from "@/services/tauri";
+import type { AutomationCondition, AutomationInput, AutomationStep, AutomationTrigger, HttpMethod, RemoteStatus } from "@/types";
+import { CONDITION_KINDS, DAYS, EVENT_TRIGGERS, STEP_KINDS, defaultCondition, defaultStep, newWebhookToken, stepIcon, type Refs } from "./model";
 
 function Num({ value, onChange, min, max, className, label }: { value: number; onChange: (n: number) => void; min: number; max: number; className?: string; label: string }) {
   return (
@@ -41,28 +42,145 @@ function RefSelect({ items, value, onChange, empty, label }: { items: { id: numb
   );
 }
 
-function TriggerEditor({ trigger, onChange }: { trigger: AutomationTrigger; onChange: (t: AutomationTrigger) => void }) {
+function defaultTrigger(kind: AutomationTrigger["kind"], refs: Refs): AutomationTrigger {
+  switch (kind) {
+    case "manual":
+    case "appStart":
+      return { kind };
+    case "interval":
+      return { kind, minutes: 15 };
+    case "daily":
+      return { kind, time: "09:00", days: [0, 1, 2, 3, 4] };
+    case "scriptFailed":
+      return { kind, projectId: null, script: "" };
+    case "serverDown":
+    case "serverUp":
+      return { kind, serverId: null };
+    case "containerStopped":
+      return { kind, serverId: refs.servers[0]?.id ?? 0, container: "" };
+    case "gitChange":
+      return { kind, projectId: null, onCommit: true, onBranch: true };
+    case "webhook":
+      return { kind, token: newWebhookToken() };
+  }
+}
+
+/** Sélecteur avec une option « tous » (valeur `null`). */
+function OptionalRefSelect({ items, value, onChange, all, label }: { items: { id: number; name: string }[]; value: number | null; onChange: (id: number | null) => void; all: string; label: string }) {
+  return (
+    <Select value={value ?? ""} onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))} aria-label={label} className="min-w-0 flex-1">
+      <option value="">{all}</option>
+      {items.map((i) => (
+        <option key={i.id} value={i.id}>{i.name}</option>
+      ))}
+    </Select>
+  );
+}
+
+function WebhookFields({ token, onRegenerate }: { token: string; onRegenerate: () => void }) {
+  const [remote, setRemote] = useState<RemoteStatus | null>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    api.remote.status().then(setRemote).catch(() => setRemote(null));
+  }, []);
+  const base = remote?.urls[0] ?? `http://localhost:${remote?.port ?? 47820}`;
+  const url = `${base}/hook/${token}`;
+  return (
+    <div className="grid gap-2">
+      <div className="flex gap-2">
+        <Input readOnly aria-label="URL du webhook" className="min-w-0 flex-1 font-mono text-xs" value={url} onFocus={(e) => e.target.select()} />
+        <Button
+          variant="secondary"
+          size="icon"
+          aria-label="Copier l'URL"
+          title="Copier l'URL"
+          onClick={() =>
+            navigator.clipboard.writeText(url).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            })
+          }
+        >
+          {copied ? <Check /> : <Copy />}
+        </Button>
+        <Button variant="ghost" size="icon" aria-label="Nouveau jeton" title="Générer un nouveau jeton (l'ancienne URL ne fonctionnera plus)" onClick={onRegenerate}>
+          <RefreshCw />
+        </Button>
+      </div>
+      <p className="font-mono text-xs text-muted-foreground">curl -X POST {url}</p>
+      {remote && !remote.running ? (
+        <p className="text-xs text-warning">
+          L'accès à distance est désactivé : le webhook ne fonctionnera qu'une fois activé (Paramètres › Accès à distance).
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Servi par l'accès à distance (réseau local uniquement). Le corps de la requête (200 premiers caractères) est noté dans l'historique.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function TriggerEditor({ trigger, onChange, refs }: { trigger: AutomationTrigger; onChange: (t: AutomationTrigger) => void; refs: Refs }) {
   return (
     <div className="grid gap-2">
       <Select
         value={trigger.kind}
         aria-label="Déclencheur"
-        onChange={(e) => {
-          const kind = e.target.value as AutomationTrigger["kind"];
-          onChange(
-            kind === "interval"
-              ? { kind, minutes: 15 }
-              : kind === "daily"
-                ? { kind, time: "09:00", days: [0, 1, 2, 3, 4] }
-                : { kind },
-          );
-        }}
+        onChange={(e) => onChange(defaultTrigger(e.target.value as AutomationTrigger["kind"], refs))}
       >
-        <option value="manual">Manuel (bouton « Exécuter »)</option>
-        <option value="interval">Toutes les N minutes</option>
-        <option value="daily">Chaque jour à une heure fixe</option>
-        <option value="appStart">Au démarrage de DevCenter</option>
+        <optgroup label="Planification">
+          <option value="manual">Manuel (bouton « Exécuter »)</option>
+          <option value="interval">Toutes les N minutes</option>
+          <option value="daily">Chaque jour à une heure fixe</option>
+          <option value="appStart">Au démarrage de DevCenter</option>
+        </optgroup>
+        <optgroup label="Événements">
+          <option value="scriptFailed">Un script plante</option>
+          <option value="serverDown">Un serveur devient injoignable</option>
+          <option value="serverUp">Un serveur redevient joignable</option>
+          <option value="containerStopped">Un conteneur Docker s'arrête</option>
+          <option value="gitChange">Changement Git (commit, branche)</option>
+          <option value="webhook">Webhook local</option>
+        </optgroup>
       </Select>
+      {trigger.kind === "scriptFailed" && (
+        <div className="flex gap-2">
+          <OptionalRefSelect label="Projet" items={refs.projects} value={trigger.projectId} onChange={(projectId) => onChange({ ...trigger, projectId })} all="Tous les projets" />
+          <Input aria-label="Script" className="w-40 font-mono" value={trigger.script} maxLength={120} onChange={(e) => onChange({ ...trigger, script: e.target.value })} placeholder="tous les scripts" />
+        </div>
+      )}
+      {(trigger.kind === "serverDown" || trigger.kind === "serverUp") && (
+        <OptionalRefSelect label="Serveur" items={refs.servers} value={trigger.serverId} onChange={(serverId) => onChange({ ...trigger, serverId })} all="Tous les serveurs" />
+      )}
+      {trigger.kind === "containerStopped" && (
+        <div className="flex gap-2">
+          <RefSelect label="Serveur" items={refs.servers} value={trigger.serverId} onChange={(serverId) => onChange({ ...trigger, serverId })} empty="Aucun serveur" />
+          <Input aria-label="Conteneur" className="w-48 font-mono" value={trigger.container} maxLength={128} onChange={(e) => onChange({ ...trigger, container: e.target.value })} placeholder="tous les conteneurs" />
+        </div>
+      )}
+      {trigger.kind === "gitChange" && (
+        <div className="grid gap-2">
+          <OptionalRefSelect label="Projet" items={refs.projects} value={trigger.projectId} onChange={(projectId) => onChange({ ...trigger, projectId })} all="Tous les projets" />
+          <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" className="accent-[var(--primary)]" checked={trigger.onCommit} onChange={(e) => onChange({ ...trigger, onCommit: e.target.checked })} />
+              Nouveau commit
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" className="accent-[var(--primary)]" checked={trigger.onBranch} onChange={(e) => onChange({ ...trigger, onBranch: e.target.checked })} />
+              Changement de branche
+            </label>
+          </div>
+        </div>
+      )}
+      {trigger.kind === "webhook" && <WebhookFields token={trigger.token} onRegenerate={() => onChange({ ...trigger, token: newWebhookToken() })} />}
+      {(trigger.kind === "serverDown" || trigger.kind === "serverUp" || trigger.kind === "containerStopped") && (
+        <p className="text-xs text-muted-foreground">Vérifié chaque minute tant que l'automatisation est active ; seul un changement d'état la déclenche.</p>
+      )}
+      {EVENT_TRIGGERS.includes(trigger.kind) && (
+        <p className="text-xs text-muted-foreground">Au plus une exécution toutes les 30 s sur événement ; le contexte (projet, serveur…) est noté dans l'historique.</p>
+      )}
       {trigger.kind === "interval" && (
         <label className="flex items-center gap-2 text-sm">
           Toutes les <Num label="Minutes" value={trigger.minutes} min={1} max={1440} onChange={(minutes) => onChange({ ...trigger, minutes })} /> minutes
@@ -320,7 +438,7 @@ export function AutomationEditor({
 
           <section className="grid gap-2">
             <h4 className="text-sm font-medium">Déclencheur</h4>
-            <TriggerEditor trigger={form.trigger} onChange={(trigger) => set({ trigger })} />
+            <TriggerEditor trigger={form.trigger} onChange={(trigger) => set({ trigger })} refs={refs} />
           </section>
 
           <section className="grid gap-2">

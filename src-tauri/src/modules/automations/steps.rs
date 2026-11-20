@@ -102,7 +102,7 @@ fn exists(db: &Database, table: &str, id: i64) -> AppResult<bool> {
     db.with(|conn| Ok(conn.query_row(&format!("SELECT 1 FROM {table} WHERE id = ?1"), params![id], |_| Ok(())).optional()?.is_some()))
 }
 
-fn require(db: &Database, table: &str, id: i64, what: &str) -> AppResult<()> {
+pub(super) fn require(db: &Database, table: &str, id: i64, what: &str) -> AppResult<()> {
     if exists(db, table, id)? { Ok(()) } else { Err(AppError::InvalidInput(format!("{what} {id} inconnu(e)"))) }
 }
 
@@ -263,7 +263,7 @@ pub fn validate(db: &Database, step: &Step) -> AppResult<()> {
     }
 }
 
-fn name_of(db: &Database, table: &str, id: i64) -> String {
+pub(super) fn name_of(db: &Database, table: &str, id: i64) -> String {
     db.with(|conn| Ok(conn.query_row(&format!("SELECT name FROM {table} WHERE id = ?1"), params![id], |r| r.get::<_, String>(0)).optional()?))
         .ok()
         .flatten()

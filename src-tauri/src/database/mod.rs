@@ -104,6 +104,8 @@ const MIGRATIONS: &[&str] = &[
         auth       TEXT NOT NULL,
         created_at INTEGER NOT NULL
     );",
+    // 9 — contexte des exécutions déclenchées par un événement (projet, script, serveur…)
+    "ALTER TABLE automation_runs ADD COLUMN context TEXT;",
 ];
 
 pub struct Database {

@@ -18,6 +18,7 @@ import {
   PowerOff,
   Trash2,
   Workflow,
+  Zap,
 } from "lucide-react";
 
 import { EmptyState, ListItem, ListPane, Page, PageBar, PageBody, PageMain, PageNotice, PageTabs, TauriOnly } from "@/components/layout/Page";
@@ -48,7 +49,7 @@ const STATUS: Record<AutomationRunStatus, { label: string; variant: "success" | 
   timeout: { label: "Délai dépassé", variant: "warning" },
 };
 
-const ORIGIN: Record<AutomationRun["origin"], string> = { manual: "manuel", schedule: "planifié", startup: "démarrage" };
+const ORIGIN: Record<AutomationRun["origin"], string> = { manual: "manuel", schedule: "planifié", startup: "démarrage", event: "événement", webhook: "webhook" };
 
 function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
@@ -69,6 +70,12 @@ function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: 
 function RunLog({ run }: { run: AutomationRun }) {
   return (
     <ol className="grid gap-1 text-sm">
+      {run.context && (
+        <li className="mb-1 flex items-start gap-2 text-xs text-muted-foreground">
+          <Zap className="mt-0.5 size-3.5 shrink-0 text-primary" />
+          <span className="min-w-0 flex-1 break-words">{run.context}</span>
+        </li>
+      )}
       {run.log.map((s, i) => (
         <li key={i} className="flex items-start gap-2">
           {s.outcome === "ok" ? (
@@ -216,7 +223,7 @@ function RunHistory({ version, automationId }: { version: number; automationId: 
               <li key={r.id}>
                 <button type="button" onClick={() => setOpen(r)} className="flex w-full items-center gap-3 py-2 text-left hover:bg-accent/40">
                   <span className="min-w-0 flex-1 truncate">{automationId === null ? r.automationName : new Date(r.startedAt * 1000).toLocaleString("fr-FR")}</span>
-                  <span className="text-xs text-muted-foreground">{ORIGIN[r.origin]}</span>
+                  <span className="max-w-56 truncate text-xs text-muted-foreground" title={r.context ?? undefined}>{r.context ? `${ORIGIN[r.origin]} · ${r.context}` : ORIGIN[r.origin]}</span>
                   <Badge variant={STATUS[r.status].variant}>{STATUS[r.status].label}</Badge>
                   <span className="w-28 shrink-0 text-right text-xs text-muted-foreground">{formatRelative(r.startedAt)}</span>
                 </button>
@@ -285,7 +292,7 @@ function AutomationView({
         leading={<AutomationDot a={a} />}
         meta={
           <span className="inline-flex items-center gap-1.5">
-            <Clock className="size-3" /> {triggerLabel(a.trigger)}
+            <Clock className="size-3" /> {triggerLabel(a.trigger, refs)}
             {!a.enabled && " · désactivée"}
           </span>
         }
@@ -575,7 +582,7 @@ function AutomationsView() {
                 <AutomationDot a={a} />
                 <span className={cn("truncate text-sm", !a.enabled ? "text-muted-foreground" : active ? "text-foreground" : "text-foreground/85")}>{a.name}</span>
               </span>
-              <span className="meta truncate pl-4">{triggerLabel(a.trigger)}</span>
+              <span className="meta truncate pl-4">{triggerLabel(a.trigger, refs)}</span>
             </ListItem>
           );
         })}

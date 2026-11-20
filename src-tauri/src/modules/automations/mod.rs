@@ -3,10 +3,11 @@
 //! Exécution sur un thread dédié par workflow (un seul passage simultané par workflow),
 //! délai maximum global, gestion d'erreur configurable et historique en base.
 
+mod events;
 mod scheduler;
 mod steps;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -18,6 +19,7 @@ use crate::database::Database;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
+pub use events::{GitHead, on_git_change, on_script_failed, webhook};
 pub use scheduler::spawn_scheduler;
 pub use steps::Step;
 
@@ -34,6 +36,50 @@ pub enum Trigger {
     Daily { time: String, #[serde(default)] days: Vec<u8> },
     /// Au démarrage de DevCenter.
     AppStart,
+    /// Un script de projet se termine avec un code non nul (`None` / vide = tous).
+    ScriptFailed {
+        #[serde(default)]
+        project_id: Option<i64>,
+        #[serde(default)]
+        script: String,
+    },
+    /// Un serveur enregistré devient injoignable (`None` = n'importe lequel).
+    ServerDown {
+        #[serde(default)]
+        server_id: Option<i64>,
+    },
+    /// Un serveur enregistré redevient joignable.
+    ServerUp {
+        #[serde(default)]
+        server_id: Option<i64>,
+    },
+    /// Un conteneur Docker en marche s'arrête sur le serveur (`container` vide = n'importe lequel).
+    ContainerStopped {
+        server_id: i64,
+        #[serde(default)]
+        container: String,
+    },
+    /// Nouveau commit et/ou changement de branche dans un projet (`None` = tous).
+    GitChange {
+        #[serde(default)]
+        project_id: Option<i64>,
+        #[serde(default = "yes")]
+        on_commit: bool,
+        #[serde(default = "yes")]
+        on_branch: bool,
+    },
+    /// `POST /hook/<token>` sur le serveur d'accès à distance (réseau local uniquement).
+    Webhook { token: String },
+}
+
+impl Trigger {
+    /// Copie sans secret (jeton de webhook masqué), pour l'appli mobile.
+    pub fn redacted(&self) -> Self {
+        match self {
+            Self::Webhook { .. } => Self::Webhook { token: String::new() },
+            other => other.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -60,7 +106,7 @@ pub struct Automation {
     pub last_run: Option<RunSummary>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationInput {
     pub id: Option<i64>,
@@ -100,8 +146,10 @@ pub struct RunSummary {
     pub id: i64,
     pub automation_id: Option<i64>,
     pub automation_name: String,
-    /// manual | schedule | startup
+    /// manual | schedule | startup | event | webhook
     pub origin: String,
+    /// Contexte du déclenchement (projet, script, serveur…), pour les événements.
+    pub context: Option<String>,
     pub started_at: i64,
     pub ended_at: Option<i64>,
     /// running | success | failed | stopped (condition non remplie) | timeout
@@ -113,6 +161,8 @@ pub struct RunSummary {
 #[derive(Default)]
 pub struct AutomationRuntime {
     running: Mutex<HashSet<i64>>,
+    /// Dernier démarrage déclenché par un événement (anti-rafale).
+    last_event: Mutex<HashMap<i64, Instant>>,
 }
 
 pub fn now() -> i64 {
@@ -154,6 +204,38 @@ fn validate(db: &Database, input: &AutomationInput) -> AppResult<()> {
             }
             if days.iter().any(|d| *d > 6) {
                 return Err(AppError::InvalidInput("jour invalide".into()));
+            }
+        }
+        Trigger::ScriptFailed { project_id, script } => {
+            if let Some(id) = project_id {
+                steps::require(db, "projects", *id, "projet")?;
+            }
+            if script.len() > 120 {
+                return Err(AppError::InvalidInput("nom de script trop long".into()));
+            }
+        }
+        Trigger::ServerDown { server_id } | Trigger::ServerUp { server_id } => {
+            if let Some(id) = server_id {
+                steps::require(db, "servers", *id, "serveur")?;
+            }
+        }
+        Trigger::ContainerStopped { server_id, container } => {
+            steps::require(db, "servers", *server_id, "serveur")?;
+            if container.len() > 128 {
+                return Err(AppError::InvalidInput("nom de conteneur trop long".into()));
+            }
+        }
+        Trigger::GitChange { project_id, on_commit, on_branch } => {
+            if let Some(id) = project_id {
+                steps::require(db, "projects", *id, "projet")?;
+            }
+            if !on_commit && !on_branch {
+                return Err(AppError::InvalidInput("choisissez au moins « nouveau commit » ou « changement de branche »".into()));
+            }
+        }
+        Trigger::Webhook { token } => {
+            if !events::valid_token(token) {
+                return Err(AppError::InvalidInput("jeton de webhook invalide (32 à 128 caractères hexadécimaux)".into()));
             }
         }
         _ => {}
@@ -210,6 +292,14 @@ pub fn get(db: &Database, runtime: &AutomationRuntime, id: i64) -> AppResult<Aut
 }
 
 pub fn save(db: &Database, input: &AutomationInput) -> AppResult<i64> {
+    // Webhook sans jeton : on en génère un (256 bits aléatoires).
+    let mut input = input.clone();
+    if let Trigger::Webhook { token } = &mut input.trigger {
+        if token.trim().is_empty() {
+            *token = events::new_token()?;
+        }
+    }
+    let input = &input;
     validate(db, input)?;
     let trigger = to_json(&input.trigger);
     let steps = to_json(&input.steps);
@@ -261,7 +351,7 @@ pub fn set_enabled(db: &Database, id: i64, enabled: bool) -> AppResult<()> {
 /// antérieures à celle-ci), pour charger la suite au défilement.
 pub fn history(db: &Database, automation_id: Option<i64>, limit: u32, before_id: Option<i64>) -> AppResult<Vec<RunSummary>> {
     db.with(|conn| {
-        let sql = "SELECT id, automation_id, automation_name, origin, started_at, ended_at, status, log
+        let sql = "SELECT id, automation_id, automation_name, origin, started_at, ended_at, status, log, context
                    FROM automation_runs
                    WHERE (?1 IS NULL OR automation_id = ?1)
                      AND (?3 IS NULL OR (started_at, id) < (SELECT started_at, id FROM automation_runs WHERE id = ?3))
@@ -278,6 +368,7 @@ pub fn history(db: &Database, automation_id: Option<i64>, limit: u32, before_id:
                 ended_at: r.get(5)?,
                 status: r.get(6)?,
                 log: serde_json::from_str(&log).unwrap_or_default(),
+                context: r.get(8)?,
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
@@ -314,6 +405,11 @@ pub fn last_scheduled_start(db: &Database, automation_id: i64) -> AppResult<Opti
 
 /// Lance un workflow en arrière-plan. Retourne l'id de l'exécution.
 pub fn trigger(app: &AppHandle, id: i64, origin: &str) -> AppResult<i64> {
+    trigger_with(app, id, origin, None)
+}
+
+/// Comme `trigger`, avec le contexte du déclenchement (enregistré dans l'historique).
+pub fn trigger_with(app: &AppHandle, id: i64, origin: &str, context: Option<String>) -> AppResult<i64> {
     let state = app.state::<AppState>();
     let automation = get(&state.db, &state.automations, id)?;
     {
@@ -324,9 +420,9 @@ pub fn trigger(app: &AppHandle, id: i64, origin: &str) -> AppResult<i64> {
     }
     let run_id = state.db.with(|conn| {
         conn.execute(
-            "INSERT INTO automation_runs (automation_id, automation_name, origin, started_at, status, log)
-             VALUES (?1, ?2, ?3, ?4, 'running', '[]')",
-            params![id, automation.name, origin, now()],
+            "INSERT INTO automation_runs (automation_id, automation_name, origin, started_at, status, log, context)
+             VALUES (?1, ?2, ?3, ?4, 'running', '[]', ?5)",
+            params![id, automation.name, origin, now(), context],
         )?;
         Ok(conn.last_insert_rowid())
     });
