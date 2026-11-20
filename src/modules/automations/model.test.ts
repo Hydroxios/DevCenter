@@ -157,6 +157,13 @@ describe("templates", () => {
     const a = templates(REFS);
     const b = templates(REFS);
     expect(a[0].input).not.toBe(b[0].input);
-    expect(a).toEqual(b);
+    // Seul le jeton d'un webhook diffère : chaque modèle utilisé reçoit le sien.
+    const token = (t: ReturnType<typeof templates>[number]) => (t.input.trigger.kind === "webhook" ? t.input.trigger.token : null);
+    const strip = (list: ReturnType<typeof templates>) =>
+      list.map((t) => (t.input.trigger.kind === "webhook" ? { ...t, input: { ...t.input, trigger: { ...t.input.trigger, token: "" } } } : t));
+    expect(strip(a)).toEqual(strip(b));
+    const hooks = a.map(token).filter((x) => x !== null);
+    expect(hooks.length).toBeGreaterThan(0);
+    expect(hooks).not.toEqual(b.map(token).filter((x) => x !== null));
   });
 });
