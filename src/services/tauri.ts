@@ -25,6 +25,7 @@ import type {
   TailscaleStatus,
   GithubStatus,
   GithubRepo,
+  GithubInbox,
   CloneJob,
   CommitActivity,
   DayCommit,
@@ -151,6 +152,13 @@ export const api = {
     loginTerminal: (cols: number, rows: number) => invoke<number>("github_login_terminal", { cols, rows }),
     clone: (url: string, name?: string) => invoke<CloneJob>("clone_repo", { url, name: name ?? null }),
     cloneJobs: () => invoke<CloneJob[]>("list_clone_jobs"),
+    /** PR ouvertes (auteur / revue demandée) et issues assignées ; `login: null` sans compte. */
+    inbox: () => invoke<GithubInbox>("github_inbox"),
+  },
+  dashboard: {
+    /** Notes d'un widget (JSON libre), `null` s'il n'a encore rien enregistré. */
+    notes: <T>(widget: string) => invoke<T | null>("dashboard_notes_get", { widget }),
+    saveNotes: (widget: string, value: unknown) => invoke<void>("dashboard_notes_set", { widget, value }),
   },
   activity: {
     commits: (days = 371) => invoke<CommitActivity>("commit_activity", { days }),

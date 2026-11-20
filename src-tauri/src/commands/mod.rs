@@ -565,6 +565,24 @@ pub async fn github_login_terminal(app: AppHandle, cols: u16, rows: u16) -> AppR
     .await
 }
 
+/// PR (auteur, revue demandée) et issues assignées ouvertes, pour le widget GitHub.
+#[tauri::command]
+pub async fn github_inbox() -> AppResult<github::GithubInbox> {
+    blocking(github::inbox).await
+}
+
+// ---------------------------------------------------------------- Notes du tableau de bord
+
+#[tauri::command]
+pub fn dashboard_notes_get(state: State<'_, AppState>, widget: String) -> AppResult<Option<serde_json::Value>> {
+    crate::modules::dashboard::get_notes(&state.db, &widget)
+}
+
+#[tauri::command]
+pub fn dashboard_notes_set(state: State<'_, AppState>, widget: String, value: serde_json::Value) -> AppResult<()> {
+    crate::modules::dashboard::set_notes(&state.db, &widget, &value)
+}
+
 #[tauri::command]
 pub fn clone_repo(app: AppHandle, state: State<'_, AppState>, url: String, name: Option<String>) -> AppResult<CloneJob> {
     state.clones.start(&app, &url, name.as_deref())

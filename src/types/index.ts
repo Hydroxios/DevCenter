@@ -424,6 +424,25 @@ export interface GithubStatus {
   scopes: string | null;
 }
 
+/** PR ou issue issue de la recherche GitHub (widget du tableau de bord). */
+export interface GithubInboxItem {
+  number: number;
+  title: string;
+  /** « propriétaire/nom ». */
+  repo: string;
+  url: string;
+  updatedAt: string;
+  draft: boolean;
+}
+
+export interface GithubInbox {
+  installed: boolean;
+  login: string | null;
+  authored: GithubInboxItem[];
+  reviewRequested: GithubInboxItem[];
+  assigned: GithubInboxItem[];
+}
+
 export interface GithubRepo {
   fullName: string;
   name: string;

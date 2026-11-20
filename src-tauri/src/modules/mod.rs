@@ -3,6 +3,7 @@ pub mod activity;
 pub mod apps;
 pub mod automations;
 pub mod backup;
+pub mod dashboard;
 pub mod editor;
 pub mod github;
 pub mod projects;
