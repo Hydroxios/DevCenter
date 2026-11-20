@@ -14,6 +14,7 @@ import type { SystemInfo } from "@/types";
 import { ACCENTS, BACKGROUNDS, DEFAULT_BACKGROUND, HISTORY_MAX, REFRESH_MS } from "./config";
 import type { BackgroundSettings, DashboardData, WidgetSettings } from "./config";
 import { DashboardBackground } from "./background";
+import { COLS, ROWS, defaultLayout, findFreeSpot, normalizeLayout, parseBackground, parseLayout, withConstraints } from "./layout";
 import { WIDGETS, isWidgetType } from "./registry";
 import type { WidgetType } from "./registry";
 import { AutoFit } from "./widgets";
@@ -22,46 +23,15 @@ import { WidgetSettingsDialog } from "./WidgetSettingsDialog";
 const STORAGE_KEY = "devcenter.dashboard.layout.v1";
 const SETTINGS_KEY = "devcenter.dashboard.settings.v1";
 const BACKGROUND_KEY = "devcenter.dashboard.background.v1";
-const COLS = 12;
-/** Le tableau tient toujours dans la fenêtre : 16 lignes dont la hauteur suit celle de l'écran. */
-const ROWS = 16;
 /** Hauteur minimale d'une ligne (petite fenêtre : les widgets défilent à l'intérieur). */
 const MIN_ROW_HEIGHT = 16;
 const GAP = 16;
 /** Marge intérieure de la zone du tableau, en px. */
 const BOARD_PADDING = 24;
 
-/** Disposition d'origine (bouton « Réinitialiser »). */
-const DEFAULT_LAYOUT: { i: WidgetType; x: number; y: number }[] = [
-  { i: "cpu", x: 0, y: 0 },
-  { i: "memory", x: 6, y: 0 },
-  { i: "system", x: 9, y: 0 },
-  { i: "cores", x: 0, y: 5 },
-  { i: "storage", x: 8, y: 5 },
-  { i: "workspaces", x: 0, y: 12 },
-  { i: "runs", x: 6, y: 12 },
-];
-
-/** Complète une position avec la taille par défaut et les limites du widget. */
-function withConstraints(item: { i: WidgetType; x: number; y: number; w?: number; h?: number }): LayoutItem {
-  const { w, h, minW, minH } = WIDGETS[item.i].size;
-  // Ramené dans les limites du tableau (dispositions enregistrées avant ce plafond).
-  const cw = Math.min(Math.max(item.w ?? w, minW), COLS);
-  const ch = Math.min(Math.max(item.h ?? h, minH), ROWS);
-  const x = Math.max(0, Math.min(item.x, COLS - cw));
-  const y = Math.max(0, Math.min(item.y, ROWS - ch));
-  return { i: item.i, x, y, w: cw, h: ch, minW, minH };
-}
-
-const defaultLayout = () => DEFAULT_LAYOUT.map(withConstraints);
-
 function loadLayout(): LayoutItem[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultLayout();
-    const saved = JSON.parse(raw) as { i: string; x: number; y: number; w: number; h: number }[];
-    // Les widgets disparus d'une version à l'autre sont ignorés ; les chevauchements enregistrés sont réparés.
-    return resolveOverlaps(saved.filter((it) => isWidgetType(it.i)).map((it) => withConstraints(it as Parameters<typeof withConstraints>[0])));
+    return parseLayout(localStorage.getItem(STORAGE_KEY));
   } catch {
     return defaultLayout();
   }
@@ -95,13 +65,7 @@ function saveSettings(settings: SettingsMap) {
 
 function loadBackground(): BackgroundSettings {
   try {
-    const saved = JSON.parse(localStorage.getItem(BACKGROUND_KEY) ?? "{}") as Partial<BackgroundSettings>;
-    const bg = { ...DEFAULT_BACKGROUND, ...saved };
-    // Valeurs inconnues (version précédente, fichier modifié) : retour au défaut.
-    if (!BACKGROUNDS.some((b) => b.id === bg.kind)) bg.kind = DEFAULT_BACKGROUND.kind;
-    if (!ACCENTS.includes(bg.accent)) bg.accent = DEFAULT_BACKGROUND.accent;
-    bg.frameless = bg.frameless === true;
-    return bg;
+    return parseBackground(localStorage.getItem(BACKGROUND_KEY));
   } catch {
     return DEFAULT_BACKGROUND;
   }
@@ -196,45 +160,6 @@ function BackgroundPicker({ value, onChange }: { value: BackgroundSettings; onCh
 const NO_SETTINGS: WidgetSettings = {};
 
 const push = (prev: number[], v: number) => [...prev, v].slice(-HISTORY_MAX);
-
-/** Première place libre (de haut en bas, de gauche à droite) à la taille par défaut, sinon à la taille minimale. */
-function findFreeSpot(layout: LayoutItem[], type: WidgetType) {
-  const { w, h, minW, minH } = WIDGETS[type].size;
-  return findSpot(layout, w, h) ?? findSpot(layout, minW, minH);
-}
-
-const collide = (a: LayoutItem, b: LayoutItem) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-
-/**
- * Aucun widget ne doit en recouvrir un autre. Quand la grille pousse un widget vers le bas,
- * `withConstraints` le ramène dans le tableau… parfois sous un autre widget, qui le cache.
- * Chaque widget en conflit est donc déplacé vers la première place libre (à sa taille, sinon
- * à sa taille minimale). Faute de place, il garde sa position plutôt que de disparaître.
- */
-function resolveOverlaps(items: LayoutItem[]): LayoutItem[] {
-  const placed: LayoutItem[] = [];
-  const pending: LayoutItem[] = [];
-  // Les plus grands gardent leur place : c'est le petit widget recouvert qui est déplacé.
-  const bySize = [...items].sort((a, b) => b.w * b.h - a.w * a.h);
-  for (const it of bySize) (placed.some((p) => collide(p, it)) ? pending : placed).push(it);
-  for (const it of pending) {
-    const spot = findSpot(placed, it.w, it.h) ?? findSpot(placed, it.minW ?? 1, it.minH ?? 1);
-    placed.push(spot ? { ...it, ...spot } : it);
-  }
-  // Ordre d'origine conservé (la grille s'en sert pour les clés).
-  return items.map((it) => placed.find((p) => p.i === it.i)!);
-}
-
-function findSpot(layout: LayoutItem[], w: number, h: number) {
-  const overlaps = (x: number, y: number) =>
-    layout.some((it) => x < it.x + it.w && x + w > it.x && y < it.y + it.h && y + h > it.y);
-  for (let y = 0; y + h <= ROWS; y++) {
-    for (let x = 0; x + w <= COLS; x++) {
-      if (!overlaps(x, y)) return { x, y, w, h };
-    }
-  }
-  return null;
-}
 
 /** Habillage commun : en-tête (poignée de déplacement en mode édition), contenu qui remplit la case. */
 const WidgetFrame = memo(function WidgetFrame({
@@ -483,9 +408,7 @@ export function DashboardPage() {
 
   const applyLayout = useCallback((next: Layout) => {
     // La bibliothèque renvoie les éléments sans leurs limites : on les réapplique.
-    const items = resolveOverlaps(
-      next.filter((it) => isWidgetType(it.i)).map((it) => withConstraints(it as Parameters<typeof withConstraints>[0])),
-    );
+    const items = normalizeLayout(next);
     setLayout(items);
     saveLayout(items);
   }, []);

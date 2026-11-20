@@ -24,6 +24,7 @@ jobs:
           workspaces: src-tauri -> target
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - run: pnpm test
       - name: Tests Rust
         working-directory: src-tauri
         run: cargo test --lib

@@ -114,4 +114,5 @@ export const WIDGETS = {
 } satisfies Record<string, WidgetDef>;
 
 export type WidgetType = keyof typeof WIDGETS;
-export const isWidgetType = (v: string): v is WidgetType => v in WIDGETS;
+// `Object.hasOwn` et non `in` : « toString », « constructor »… ne sont pas des widgets.
+export const isWidgetType = (v: string): v is WidgetType => Object.hasOwn(WIDGETS, v);
