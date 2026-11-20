@@ -1,10 +1,14 @@
 // Catalogue des widgets du tableau de bord (séparé des composants pour le Fast Refresh de Vite).
 
-import { Activity, Bot, Clock, Cpu, GitCommitHorizontal, Gpu, HardDrive, Layers, ListOrdered, MemoryStick, Play } from "lucide-react";
+import { Activity, Bot, Clock, Cpu, GitCommitHorizontal, GitPullRequest, Gpu, HardDrive, Layers, ListOrdered, MemoryStick, NotebookPen, Play, Server, Workflow } from "lucide-react";
 
 import { hasHistory, windowOf } from "./config";
 import type { WidgetDef } from "./config";
 import { CcusageWidget, CommitsBody, CoresBody, CpuBody, HardwareBody, MemoryBody, ProcessesBody, RunsBody, StorageBody, SystemBody, WidgetLink, WorkspacesBody } from "./widgets";
+import { AutomationsBody } from "./widgets/automations";
+import { GithubBody } from "./widgets/github";
+import { NotesBody } from "./widgets/notes";
+import { ServersBody } from "./widgets/servers";
 
 /* ------------------------------------------------------------------ */
 /* Catalogue                                                           */
@@ -109,6 +113,40 @@ export const WIDGETS = {
     icon: Bot,
     size: { w: 4, h: 4, minW: 2, minH: 2 },
     render: () => <CcusageWidget />,
+    fit: "fill",
+  },
+  servers: {
+    title: "Serveurs",
+    description: "Serveurs SSH en ligne et latence",
+    icon: Server,
+    size: { w: 4, h: 4, minW: 2, minH: 2 },
+    aside: () => <WidgetLink to="/servers" />,
+    render: () => <ServersBody />,
+    fit: "fill",
+  },
+  github: {
+    title: "GitHub",
+    description: "Pull requests et issues qui vous attendent",
+    icon: GitPullRequest,
+    size: { w: 5, h: 6, minW: 3, minH: 3 },
+    render: () => <GithubBody />,
+    fit: "fill",
+  },
+  automations: {
+    title: "Automatisations",
+    description: "Dernières exécutions, relance des favorites",
+    icon: Workflow,
+    size: { w: 5, h: 5, minW: 3, minH: 3 },
+    aside: () => <WidgetLink to="/automations" />,
+    render: () => <AutomationsBody />,
+    fit: "fill",
+  },
+  notes: {
+    title: "Notes",
+    description: "Notes rapides et liste de tâches",
+    icon: NotebookPen,
+    size: { w: 4, h: 5, minW: 2, minH: 3 },
+    render: () => <NotesBody widgetId="notes" />,
     fit: "fill",
   },
 } satisfies Record<string, WidgetDef>;

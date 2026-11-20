@@ -180,6 +180,76 @@ impl GithubCache {
     }
 }
 
+/// Pull request ou issue renvoyée par l'API de recherche GitHub.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InboxItem {
+    pub number: u64,
+    pub title: String,
+    /// « propriétaire/nom ».
+    pub repo: String,
+    pub url: String,
+    pub updated_at: String,
+    #[serde(default)]
+    pub draft: bool,
+}
+
+/// Ce qui attend l'utilisateur sur GitHub (widget du tableau de bord).
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubInbox {
+    pub installed: bool,
+    pub login: Option<String>,
+    /// PR ouvertes dont l'utilisateur est l'auteur.
+    pub authored: Vec<InboxItem>,
+    /// PR ouvertes où une revue de l'utilisateur est demandée.
+    pub review_requested: Vec<InboxItem>,
+    /// Issues ouvertes assignées à l'utilisateur.
+    pub assigned: Vec<InboxItem>,
+}
+
+fn search(query: &str) -> AppResult<Vec<InboxItem>> {
+    let q = format!("q={query} archived:false");
+    let text = gh(&[
+        "api",
+        "-X",
+        "GET",
+        "search/issues",
+        "-f",
+        &q,
+        "-f",
+        "sort=updated",
+        "-f",
+        "per_page=30",
+        "--jq",
+        r#".items[] | {number, title, url: .html_url, updatedAt: .updated_at, draft: (.draft // false), repo: (.repository_url | sub("^.*/repos/"; ""))}"#,
+    ])?;
+    Ok(text.lines().filter_map(|l| serde_json::from_str::<InboxItem>(l).ok()).collect())
+}
+
+/// PR et issues ouvertes qui concernent l'utilisateur connecté (trois recherches en parallèle).
+/// Sans compte connecté, renvoie simplement `login: None` (pas d'erreur).
+pub fn inbox() -> AppResult<GithubInbox> {
+    let st = status();
+    let mut inbox = GithubInbox { installed: st.installed, login: st.login, ..Default::default() };
+    if inbox.login.is_none() {
+        return Ok(inbox);
+    }
+    let (a, r, i) = std::thread::scope(|s| {
+        let a = s.spawn(|| search("is:open is:pr author:@me"));
+        let r = s.spawn(|| search("is:open is:pr review-requested:@me"));
+        let i = s.spawn(|| search("is:open is:issue assignee:@me"));
+        let join = |h: std::thread::ScopedJoinHandle<'_, AppResult<Vec<InboxItem>>>| {
+            h.join().unwrap_or_else(|_| Err(AppError::InvalidInput("recherche GitHub interrompue".into())))
+        };
+        (join(a), join(r), join(i))
+    });
+    inbox.authored = a?;
+    inbox.review_requested = r?;
+    inbox.assigned = i?;
+    Ok(inbox)
+}
+
 /// Options git pour cloner un dépôt GitHub avec le compte `gh`, sans modifier la configuration
 /// globale de git (équivalent ponctuel de `gh auth setup-git`).
 pub fn credential_args(url: &str) -> Vec<String> {
