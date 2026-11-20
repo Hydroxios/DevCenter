@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -21,5 +22,12 @@ export default defineConfig(() => ({
     host: host || false,
     hmr: host ? { protocol: "ws", host, port: 1421 } : undefined,
     watch: { ignored: ["**/src-tauri/**"] },
+  },
+
+  // Tests unitaires (logique pure, environnement Node, API Tauri simulées)
+  test: {
+    include: ["src/**/*.test.ts"],
+    environment: "node",
+    setupFiles: ["./src/test/setup.ts"],
   },
 }));
