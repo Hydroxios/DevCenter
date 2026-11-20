@@ -11,6 +11,8 @@ export interface Settings {
   remotePort: number;
   /** Dossier où cloner les projets importés depuis le téléphone (null = déduit). */
   projectsRoot: string | null;
+  /** Assistant de premier lancement terminé ou ignoré. */
+  onboardingDone: boolean;
 }
 
 export interface SystemInfo {
