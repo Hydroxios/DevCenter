@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useLinkedId } from "@/hooks/useLinkedId";
 import { cn } from "@/lib/utils";
 import { api, isTauri } from "@/services/tauri";
 import type { Server } from "@/types";
@@ -195,6 +196,7 @@ function ServersView() {
     viewCache.selectedId = id;
     setSelectedIdState(id);
   };
+  useLinkedId("server", setSelectedId);
   const setStatus = useCallback((id: number, st: Status) => {
     viewCache.status = { ...viewCache.status, [id]: st };
     setStatusState(viewCache.status);

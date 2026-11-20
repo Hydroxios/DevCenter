@@ -288,6 +288,22 @@ export interface RunInfo {
   startedAt: number;
 }
 
+/** Journal unifié (bus d'événements en mémoire côté Rust). */
+export type EventSource = "app" | "runner" | "workspace" | "automation" | "server" | "update";
+export type EventLevel = "info" | "warn" | "error";
+
+export interface AppEvent {
+  id: number;
+  /** Horodatage Unix en millisecondes. */
+  timestamp: number;
+  source: EventSource;
+  level: EventLevel;
+  title: string;
+  detail: string | null;
+  /** Route de l'interface vers le détail (« /automations?automation=3 »). */
+  link: string | null;
+}
+
 export type WorkspaceStep =
   | { kind: "editor"; projectId: number }
   | { kind: "folder"; projectId: number }

@@ -17,6 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useLinkedId } from "@/hooks/useLinkedId";
 import { cn, formatDuration, formatRelative } from "@/lib/utils";
 import { api, isTauri } from "@/services/tauri";
 import { useRuns } from "@/stores/runs";
@@ -274,6 +275,7 @@ export function WorkspacesPage() {
       return p;
     }, { replace: true });
   }, [params, setParams]);
+  useLinkedId("workspace", setSelectedId);
 
   useEffect(() => {
     init();

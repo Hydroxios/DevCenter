@@ -17,6 +17,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::database::Database;
 use crate::error::{AppError, AppResult};
+use crate::modules::events::{self, Source};
 use crate::modules::shell;
 use crate::state::AppState;
 
@@ -277,6 +278,7 @@ impl Runner {
         }
         let _ = app.emit(EVENT_STATUS, &info);
         let history_id = app.try_state::<AppState>().and_then(|s| record_start(&s.db, &info));
+        events::Entry::info(Source::Runner, format!("{} · {script} lancé", events::project_name(app, project_id))).detail(&info.command).link(format!("/projects?project={project_id}")).emit(app);
 
         if let Some(out) = child.stdout.take() {
             self.spawn_reader(Arc::clone(&batch), id, out);
@@ -321,6 +323,7 @@ impl Runner {
                 crate::modules::automations::on_script_failed(&app, info.project_id, &info.script, info.exit_code);
             }
             let _ = app.emit(EVENT_STATUS, &info);
+            events::run_finished(&app, &info);
         });
 
         Ok(info)

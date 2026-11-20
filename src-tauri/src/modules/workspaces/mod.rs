@@ -14,7 +14,7 @@ use crate::database::Database;
 use crate::error::{AppError, AppResult};
 use crate::modules::settings::SettingsService;
 use crate::modules::servers::tunnels;
-use crate::modules::{apps, editor, projects, runner};
+use crate::modules::{apps, editor, events, projects, runner};
 use crate::state::AppState;
 
 pub const EVENT_CHANGED: &str = "workspace://changed";
@@ -458,6 +458,7 @@ pub fn start(app: &AppHandle, state: &AppState, id: i64) -> AppResult<ActiveInfo
     let info = ActiveInfo { session_id, started_at, run_ids, results };
     state.workspaces.active.lock()?.insert(id, ActiveSession { info: info.clone(), app_pids, tunnel_ids });
     let _ = app.emit(EVENT_CHANGED, id);
+    events::workspace_started(app, id, &name, &info.results);
     Ok(info)
 }
 
@@ -487,6 +488,7 @@ pub fn stop(app: &AppHandle, state: &AppState, id: i64) -> AppResult<()> {
         Ok(())
     })?;
     let _ = app.emit(EVENT_CHANGED, id);
+    events::workspace_stopped(app, id);
     Ok(())
 }
 

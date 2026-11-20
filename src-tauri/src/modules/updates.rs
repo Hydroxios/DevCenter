@@ -8,6 +8,7 @@ use tauri::{AppHandle, Emitter};
 use tauri_plugin_updater::UpdaterExt;
 
 use crate::error::{AppError, AppResult};
+use crate::modules::events;
 
 pub const EVENT_PROGRESS: &str = "updater://progress";
 
@@ -41,6 +42,7 @@ fn err(e: tauri_plugin_updater::Error) -> AppError {
 /// Cherche une version plus récente que celle installée.
 pub async fn check(app: &AppHandle) -> AppResult<Option<UpdateInfo>> {
     let update = app.updater().map_err(err)?.check().await.map_err(err)?;
+    events::update_checked(app, update.as_ref().map(|u| u.version.as_str()));
     Ok(update.map(|u| UpdateInfo {
         version: u.version.clone(),
         current_version: u.current_version.clone(),
@@ -56,6 +58,7 @@ pub async fn install(app: &AppHandle) -> AppResult<()> {
         return Err(AppError::InvalidInput("DevCenter est déjà à jour".into()));
     };
     log::info!("mise à jour vers {} (depuis {})", update.version, update.current_version);
+    events::Entry::info(events::Source::Update, format!("Installation de la version {}", update.version)).detail(format!("Version actuelle {}", update.current_version)).emit(app);
     let mut downloaded: u64 = 0;
     let handle = app.clone();
     update

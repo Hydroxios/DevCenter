@@ -73,6 +73,7 @@ pub fn run() {
             modules::automations::spawn_scheduler(app.handle().clone());
             // Fetch Git périodique (compteurs ↑/↓ à jour), selon le réglage `gitFetchInterval`.
             modules::projects::sync::spawn_fetch_scheduler(app.handle().clone());
+            modules::events::Entry::info(modules::events::Source::App, format!("DevCenter {} démarré", app.package_info().version)).emit(app.handle());
 
             // Statut Git en direct ; la liste suivie est réalignée à chaque changement de projets
             // (ajout, retrait, clonage, import depuis le téléphone).
@@ -122,6 +123,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
             commands::client_log,
+            commands::events_backlog,
+            commands::events_clear,
             commands::update_check,
             commands::update_install,
             commands::app_version,

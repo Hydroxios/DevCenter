@@ -18,6 +18,8 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::database::Database;
 use crate::error::{AppError, AppResult};
+// Journal global (page « Journal ») ; `events` désigne ici les déclencheurs sur événement.
+use crate::modules::events as journal;
 use crate::state::AppState;
 
 pub use events::{GitHead, on_git_change, on_script_failed, webhook};
@@ -436,6 +438,7 @@ pub fn trigger_with(app: &AppHandle, id: i64, origin: &str, context: Option<Stri
         }
     };
     let _ = app.emit(EVENT_CHANGED, id);
+    journal::Entry::info(journal::Source::Automation, format!("{} · démarrée ({origin})", automation.name)).link(format!("/automations?automation={id}")).emit(app);
 
     let mut run_vars = vars::base(&automation.name, origin, context.as_deref());
     run_vars.extend(event_vars);
@@ -472,6 +475,7 @@ pub fn trigger_with(app: &AppHandle, id: i64, origin: &str, context: Option<Stri
                 running.remove(&id);
             }
             let _ = app.emit(EVENT_CHANGED, id);
+            journal::automation_finished(&app, &automation.name, id, status, &log);
         })?;
     Ok(run_id)
 }

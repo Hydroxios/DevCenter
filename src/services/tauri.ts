@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type {
+  AppEvent,
   AppShortcut,
   HardwareSnapshot,
   KillOutcome,
@@ -125,6 +126,11 @@ export const api = {
     summaries: () => invoke<DependencySummary[]>("dependency_summaries"),
     /** Lance outdated + audit en arrière-plan ; plusieurs secondes à quelques minutes. */
     check: (id: number) => invoke<DependencyReport>("check_dependencies", { id }),
+  },
+  events: {
+    /** Événements gardés en mémoire (2000 max.), du plus ancien au plus récent. */
+    backlog: () => invoke<AppEvent[]>("events_backlog"),
+    clear: () => invoke<void>("events_clear"),
   },
   runner: {
     list: () => invoke<RunInfo[]>("list_runs"),
