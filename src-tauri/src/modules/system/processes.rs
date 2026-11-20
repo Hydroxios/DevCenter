@@ -41,7 +41,7 @@ pub enum ProcessSort {
 pub fn sort(list: &mut [ProcessInfo], by: ProcessSort) {
     match by {
         ProcessSort::Cpu => list.sort_unstable_by(|a, b| b.cpu_usage.total_cmp(&a.cpu_usage)),
-        ProcessSort::Memory => list.sort_unstable_by(|a, b| b.memory.cmp(&a.memory)),
+        ProcessSort::Memory => list.sort_unstable_by_key(|p| std::cmp::Reverse(p.memory)),
     }
 }
 

@@ -90,14 +90,14 @@ pub fn status() -> GithubStatus {
     else {
         return st;
     };
-    if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&out.stdout) {
-        if let Some(acc) = json["hosts"]["github.com"].as_array().and_then(|a| {
+    if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&out.stdout)
+        && let Some(acc) = json["hosts"]["github.com"].as_array().and_then(|a| {
             a.iter()
                 .find(|h| h["active"].as_bool() == Some(true) && h["state"] == "success")
-        }) {
-            st.login = acc["login"].as_str().map(str::to_string);
-            st.scopes = acc["scopes"].as_str().map(str::to_string);
-        }
+        })
+    {
+        st.login = acc["login"].as_str().map(str::to_string);
+        st.scopes = acc["scopes"].as_str().map(str::to_string);
     }
     st
 }

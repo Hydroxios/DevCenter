@@ -137,7 +137,7 @@ pub fn log(dir: &Path, limit: usize) -> AppResult<GitLog> {
             "--format=%H%x1f%P%x1f%an%x1f%at%x1f%D%x1f%s%x1e",
         ],
     )?;
-    let mut raw: Vec<(String, Vec<String>, String, i64, Vec<String>, String)> = text
+    let mut raw: Vec<RawCommit> = text
         .split('\u{1e}')
         .filter_map(|rec| {
             let f: Vec<&str> = rec.trim_start_matches('\n').split('\u{1f}').collect();
@@ -158,11 +158,11 @@ pub fn log(dir: &Path, limit: usize) -> AppResult<GitLog> {
     Ok(layout(raw, truncated))
 }
 
+/// Commit brut lu depuis `git log` : (hash, parents, auteur, horodatage, refs, sujet).
+type RawCommit = (String, Vec<String>, String, i64, Vec<String>, String);
+
 /// Placement des commits en colonnes (algorithme classique des « voies » de `git log --graph`).
-fn layout(
-    raw: Vec<(String, Vec<String>, String, i64, Vec<String>, String)>,
-    truncated: bool,
-) -> GitLog {
+fn layout(raw: Vec<RawCommit>, truncated: bool) -> GitLog {
     // Voie = hash attendu dans cette colonne + couleur.
     let mut lanes: Vec<Option<(String, usize)>> = Vec::new();
     let mut next_color = 0usize;
@@ -247,17 +247,16 @@ fn layout(
             if i == col || converging.contains(&i) {
                 continue;
             }
-            if let Some((h, c)) = lane {
-                if let Some(j) = next
+            if let Some((h, c)) = lane
+                && let Some(j) = next
                     .iter()
                     .position(|l| l.as_ref().is_some_and(|(nh, _)| nh == h))
-                {
-                    edges.push(GraphEdge {
-                        from: i,
-                        to: j,
-                        color: *c,
-                    });
-                }
+            {
+                edges.push(GraphEdge {
+                    from: i,
+                    to: j,
+                    color: *c,
+                });
             }
         }
         for &(to, c) in &parent_cols {

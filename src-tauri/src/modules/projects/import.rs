@@ -165,10 +165,10 @@ impl CloneJobs {
     }
 
     fn update(&self, id: u64, f: impl FnOnce(&mut CloneJob)) {
-        if let Ok(mut jobs) = self.jobs.lock() {
-            if let Some(j) = jobs.iter_mut().find(|j| j.id == id) {
-                f(j);
-            }
+        if let Ok(mut jobs) = self.jobs.lock()
+            && let Some(j) = jobs.iter_mut().find(|j| j.id == id)
+        {
+            f(j);
         }
     }
 
@@ -326,8 +326,7 @@ fn run_clone(url: &str, dest: &Path) -> AppResult<()> {
                 "dépôt introuvable".to_string()
             } else {
                 err.lines()
-                    .filter(|l| !l.trim().is_empty())
-                    .last()
+                    .rfind(|l| !l.trim().is_empty())
                     .unwrap_or("échec du clonage")
                     .trim()
                     .chars()

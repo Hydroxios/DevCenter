@@ -109,16 +109,15 @@ fn refs_fingerprint(gd: &Path) -> u128 {
 
 /// Statut Git en cache. `force` relit le dépôt (bouton « Actualiser »).
 pub fn status(dir: &Path, force: bool) -> Option<GitStatus> {
-    let Some(gd) = git_dir(dir) else { return None };
+    let gd = git_dir(dir)?;
     let fingerprint = refs_fingerprint(&gd) ^ mtime(&gd.join("index")).rotate_left(64);
-    if !force {
-        if let Ok(c) = caches().lock() {
-            if let Some(e) = c.status.get(dir) {
-                if e.fingerprint == fingerprint && e.at.elapsed() < STATUS_TTL {
-                    return e.status.clone();
-                }
-            }
-        }
+    if !force
+        && let Ok(c) = caches().lock()
+        && let Some(e) = c.status.get(dir)
+        && e.fingerprint == fingerprint
+        && e.at.elapsed() < STATUS_TTL
+    {
+        return e.status.clone();
     }
     let fresh = git::status(dir);
     if let Ok(mut c) = caches().lock() {
@@ -137,12 +136,11 @@ pub fn status(dir: &Path, force: bool) -> Option<GitStatus> {
 /// Graphe de l'historique, relu seulement quand les refs changent.
 pub fn log(dir: &Path, limit: usize) -> AppResult<Arc<GitLog>> {
     let fingerprint = git_dir(dir).map_or(0, |gd| refs_fingerprint(&gd));
-    if fingerprint != 0 {
-        if let Some(e) = caches().lock()?.logs.get(&(dir.to_path_buf(), limit)) {
-            if e.fingerprint == fingerprint {
-                return Ok(Arc::clone(&e.log));
-            }
-        }
+    if fingerprint != 0
+        && let Some(e) = caches().lock()?.logs.get(&(dir.to_path_buf(), limit))
+        && e.fingerprint == fingerprint
+    {
+        return Ok(Arc::clone(&e.log));
     }
     let log = Arc::new(history::log(dir, limit)?);
     if fingerprint != 0 {

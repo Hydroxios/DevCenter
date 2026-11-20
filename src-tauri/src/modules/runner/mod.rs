@@ -56,6 +56,9 @@ struct LogEvent {
     lines: Vec<String>,
 }
 
+/// Récepteur des lots de logs d'une exécution suivie en direct.
+pub type LogReceiver = mpsc::Receiver<Vec<String>>;
+
 /// Lignes lues mais pas encore envoyées à l'interface, partagées par les lecteurs stdout/stderr.
 struct LogBatch {
     lines: Mutex<Vec<String>>,
@@ -178,7 +181,7 @@ impl Runner {
         &self,
         run_id: u64,
         tail: usize,
-    ) -> AppResult<(Vec<String>, Option<mpsc::Receiver<Vec<String>>>)> {
+    ) -> AppResult<(Vec<String>, Option<LogReceiver>)> {
         let runs = self.runs.lock()?;
         let run = runs
             .get(&run_id)
@@ -203,6 +206,7 @@ impl Runner {
         Ok((snapshot, rx))
     }
 
+    #[allow(clippy::too_many_arguments)] // paramètres distincts d'un lancement : une struct dédiée n'apporterait rien
     pub fn start(
         &self,
         app: &AppHandle,
@@ -379,15 +383,15 @@ impl Runner {
                 {
                     let Ok(mut runs) = runs.lock() else { break };
                     let Some(run) = runs.get_mut(&id) else { break };
-                    if run.info.url.is_none() {
-                        if let Some(url) = detect_url(&line) {
-                            if run.open_browser {
-                                let _ = tauri_plugin_opener::open_url(&url, None::<&str>);
-                            }
-                            run.info.url = Some(url);
-                            // Le statut (avec l'URL) part avec le prochain lot de logs.
-                            run.url_pending = true;
+                    if run.info.url.is_none()
+                        && let Some(url) = detect_url(&line)
+                    {
+                        if run.open_browser {
+                            let _ = tauri_plugin_opener::open_url(&url, None::<&str>);
                         }
+                        run.info.url = Some(url);
+                        // Le statut (avec l'URL) part avec le prochain lot de logs.
+                        run.url_pending = true;
                     }
                     if run.logs.len() >= MAX_LOG_LINES {
                         run.logs.pop_front();

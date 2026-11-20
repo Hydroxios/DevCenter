@@ -184,9 +184,10 @@ fn validate(db: &Database, input: &AutomationInput) -> AppResult<()> {
     Ok(())
 }
 
-fn row_to_automation(
-    r: &rusqlite::Row<'_>,
-) -> rusqlite::Result<(i64, String, String, bool, String, String, String, u32)> {
+/// Ligne brute de la table des automatisations, dans l'ordre des colonnes.
+type AutomationRow = (i64, String, String, bool, String, String, String, u32);
+
+fn row_to_automation(r: &rusqlite::Row<'_>) -> rusqlite::Result<AutomationRow> {
     Ok((
         r.get(0)?,
         r.get(1)?,

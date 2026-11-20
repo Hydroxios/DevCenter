@@ -163,10 +163,10 @@ fn validate(db: &Database, input: &WorkspaceInput) -> AppResult<()> {
                         "projet {project_id} inconnu"
                     )));
                 }
-                if let Step::Script { script, .. } = step {
-                    if script.trim().is_empty() {
-                        return Err(AppError::InvalidInput("script manquant".into()));
-                    }
+                if let Step::Script { script, .. } = step
+                    && script.trim().is_empty()
+                {
+                    return Err(AppError::InvalidInput("script manquant".into()));
                 }
             }
             Step::App { app_id, .. } => {
@@ -352,12 +352,11 @@ fn project_label(db: &Database, project_id: i64) -> String {
     .unwrap_or_else(|| format!("projet {project_id}"))
 }
 
+/// Résultat d'une étape : (run_id éventuel, pid à fermer éventuel).
+type StepOutput = (Option<u64>, Option<u32>);
+
 /// Exécute une étape. Retourne (libellé, résultat, run_id éventuel, pid à fermer éventuel).
-fn run_step(
-    app: &AppHandle,
-    state: &AppState,
-    step: &Step,
-) -> (String, AppResult<(Option<u64>, Option<u32>)>) {
+fn run_step(app: &AppHandle, state: &AppState, step: &Step) -> (String, AppResult<StepOutput>) {
     let db = &state.db;
     match step {
         Step::Editor { project_id } => (
