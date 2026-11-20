@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager};
 
+use super::vars::{self, Vars};
 use super::{Trigger, list, trigger_with};
 use crate::error::{AppError, AppResult};
 use crate::modules::servers::{self, Server};
@@ -56,12 +57,12 @@ fn claim(state: &AppState, id: i64) -> bool {
 }
 
 /// Lance les workflows actifs dont le déclencheur correspond à l'événement.
-fn fire(app: &AppHandle, context: &str, matches: impl Fn(&Trigger) -> bool) {
+fn fire(app: &AppHandle, context: &str, event_vars: Vars, matches: impl Fn(&Trigger) -> bool) {
     let state = app.state::<AppState>();
     let Ok(all) = list(&state.db, &state.automations) else { return };
     for a in all.iter().filter(|a| a.enabled && !a.running && matches(&a.trigger)) {
         if claim(&state, a.id) {
-            if let Err(e) = trigger_with(app, a.id, "event", Some(context.to_string())) {
+            if let Err(e) = trigger_with(app, a.id, "event", Some(context.to_string()), event_vars.clone()) {
                 log::warn!("automatisation « {} » non déclenchée : {e}", a.name);
             }
         }
@@ -93,8 +94,10 @@ pub fn on_script_failed(app: &AppHandle, project_id: i64, script: &str, exit_cod
             return;
         }
         let code = exit_code.map(|c| c.to_string()).unwrap_or_else(|| "?".into());
-        let context = format!("{} › {script} (code {code})", project_name(&app, project_id));
-        fire(&app, &context, matches);
+        let project = project_name(&app, project_id);
+        let context = format!("{project} › {script} (code {code})");
+        let event_vars = vars::of([("project", project), ("script", script.clone()), ("code", code)]);
+        fire(&app, &context, event_vars, matches);
     });
 }
 
@@ -174,14 +177,24 @@ pub fn on_git_change(app: &AppHandle, project_id: i64, before: &GitHead, after: 
         }
         let project = project_name(&app, project_id);
         let branch = |b: &Option<String>| b.clone().unwrap_or_else(|| "HEAD détachée".into());
+        let full = after.commit.clone().unwrap_or_default();
+        let short: String = full.chars().take(7).collect();
+        let message = subject.unwrap_or_default();
+        let event_vars = vars::of([
+            ("project", project.clone()),
+            ("branch", branch(&after.branch)),
+            ("previous_branch", branch(&before.branch)),
+            ("commit", short.clone()),
+            ("commit_full", full),
+            ("message", message.clone()),
+        ]);
         let context = if branch_changed {
             format!("{project} : branche {} → {}", branch(&before.branch), branch(&after.branch))
         } else {
-            let short: String = after.commit.as_deref().unwrap_or_default().chars().take(7).collect();
-            let subject = subject.map(|s| format!(" {}", s.chars().take(120).collect::<String>())).unwrap_or_default();
+            let subject = if message.is_empty() { String::new() } else { format!(" {}", message.chars().take(120).collect::<String>()) };
             format!("{project} › {} : nouveau commit {short}{subject}", branch(&after.branch))
         };
-        fire(&app, &context, matches);
+        fire(&app, &context, event_vars, matches);
     });
 }
 
@@ -210,7 +223,9 @@ pub fn webhook(app: &AppHandle, token: &str, peer: &str, body: &str) -> Result<i
     }
     let snippet: String = body.split_whitespace().collect::<Vec<_>>().join(" ").chars().filter(|c| !c.is_control()).take(200).collect();
     let context = if snippet.is_empty() { format!("appel depuis {peer}") } else { format!("appel depuis {peer} · {snippet}") };
-    trigger_with(app, a.id, "webhook", Some(context)).map_err(|e| (409, e.to_string()))
+    let full_body: String = body.chars().take(10_000).collect();
+    let event_vars = vars::of([("caller", peer.to_string()), ("body", full_body)]);
+    trigger_with(app, a.id, "webhook", Some(context), event_vars).map_err(|e| (409, e.to_string()))
 }
 
 // ------------------------------------------------------------------ Serveurs et conteneurs
@@ -283,12 +298,24 @@ fn poll(app: &AppHandle, reachable: &mut HashMap<i64, bool>, containers: &mut Ha
         let id = server.id;
         if up {
             let latency = result.as_ref().map(|ms| format!(" ({ms} ms)")).unwrap_or_default();
-            fire(app, &format!("{} joignable{latency}", server.name), |t| {
+            let event_vars = vars::of([
+                ("server", server.name.clone()),
+                ("state", "joignable".into()),
+                ("latency", result.as_ref().map(|ms| ms.to_string()).unwrap_or_default()),
+                ("error", String::new()),
+            ]);
+            fire(app, &format!("{} joignable{latency}", server.name), event_vars, |t| {
                 matches!(t, Trigger::ServerUp { server_id } if server_id.is_none_or(|s| s == id))
             });
         } else {
             let reason = result.err().unwrap_or_default();
-            fire(app, &format!("{} injoignable : {reason}", server.name), |t| {
+            let event_vars = vars::of([
+                ("server", server.name.clone()),
+                ("state", "injoignable".into()),
+                ("latency", String::new()),
+                ("error", reason.clone()),
+            ]);
+            fire(app, &format!("{} injoignable : {reason}", server.name), event_vars, |t| {
                 matches!(t, Trigger::ServerDown { server_id } if server_id.is_none_or(|s| s == id))
             });
         }
@@ -306,7 +333,9 @@ fn poll(app: &AppHandle, reachable: &mut HashMap<i64, bool>, containers: &mut Ha
                 }
                 let new_state = now.get(name).cloned().unwrap_or_else(|| "supprimé".into());
                 let context = format!("{} › {name} ({new_state})", server.name);
-                fire(app, &context, |t| {
+                let event_vars =
+                    vars::of([("server", server.name.clone()), ("container", name.clone()), ("state", new_state.clone())]);
+                fire(app, &context, event_vars, |t| {
                     matches!(t, Trigger::ContainerStopped { server_id, container }
                         if *server_id == id && (container.trim().is_empty() || container.trim() == name))
                 });

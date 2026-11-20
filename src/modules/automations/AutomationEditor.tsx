@@ -15,7 +15,39 @@ import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/tauri";
 import type { AutomationCondition, AutomationInput, AutomationStep, AutomationTrigger, HttpMethod, RemoteStatus } from "@/types";
-import { CONDITION_KINDS, DAYS, EVENT_TRIGGERS, STEP_KINDS, defaultCondition, defaultStep, newWebhookToken, stepIcon, type Refs } from "./model";
+import { CONDITION_KINDS, DAYS, EVENT_TRIGGERS, STEP_KINDS, defaultCondition, defaultStep, newWebhookToken, stepIcon, stepVars, type Refs, type StepVar } from "./model";
+
+/** Variables `{{nom}}` disponibles : un clic copie la variable dans le presse-papiers. */
+function VarsHint({ vars }: { vars: StepVar[] }) {
+  const [copied, setCopied] = useState<string | null>(null);
+  const copy = (name: string) => {
+    void navigator.clipboard.writeText(`{{${name}}}`).then(() => {
+      setCopied(name);
+      setTimeout(() => setCopied((c) => (c === name ? null : c)), 1200);
+    });
+  };
+  return (
+    <div className="grid gap-1.5">
+      <p className="text-xs text-muted-foreground">Variables (clic pour copier) — échappées automatiquement en JSON et dans l'URL :</p>
+      <div className="flex flex-wrap gap-1">
+        {vars.map((v) => (
+          <button
+            key={v.name}
+            type="button"
+            title={v.description}
+            onClick={() => copy(v.name)}
+            className={cn(
+              "rounded-md border px-1.5 py-0.5 font-mono text-[11px] transition hover:border-primary/60 hover:text-primary",
+              copied === v.name ? "border-primary text-primary" : "text-muted-foreground",
+            )}
+          >
+            {copied === v.name ? "copié" : `{{${v.name}}}`}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function Num({ value, onChange, min, max, className, label }: { value: number; onChange: (n: number) => void; min: number; max: number; className?: string; label: string }) {
   return (
@@ -269,7 +301,7 @@ function ConditionEditor({ condition, onChange, refs }: { condition: AutomationC
 
 const HTTP_METHODS: HttpMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"];
 
-function HttpFields({ step, onChange }: { step: Extract<AutomationStep, { kind: "httpRequest" }>; onChange: (s: AutomationStep) => void }) {
+function HttpFields({ step, onChange, vars }: { step: Extract<AutomationStep, { kind: "httpRequest" }>; onChange: (s: AutomationStep) => void; vars: StepVar[] }) {
   const withBody = step.method !== "GET" && step.method !== "HEAD";
   const [advanced, setAdvanced] = useState(step.headers !== "" || step.body !== "" || step.expectStatus !== "");
   const area =
@@ -300,10 +332,11 @@ function HttpFields({ step, onChange }: { step: Extract<AutomationStep, { kind: 
               className={cn(area, "min-h-20")}
               value={step.body}
               onChange={(e) => onChange({ ...step, body: e.target.value })}
-              placeholder={'Corps de la requête\n{"text": "Déploiement terminé"}'}
+              placeholder={'Corps de la requête\n{"content": "{{project}} · {{commit}} — {{message}}"}'}
               spellCheck={false}
             />
           )}
+          <VarsHint vars={vars} />
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span className="text-muted-foreground">Codes attendus</span>
             <Input aria-label="Codes attendus" className="w-32 font-mono" value={step.expectStatus} onChange={(e) => onChange({ ...step, expectStatus: e.target.value })} placeholder="2xx" />
@@ -321,7 +354,7 @@ function HttpFields({ step, onChange }: { step: Extract<AutomationStep, { kind: 
   );
 }
 
-function StepFields({ step, onChange, refs }: { step: AutomationStep; onChange: (s: AutomationStep) => void; refs: Refs }) {
+function StepFields({ step, onChange, refs, vars }: { step: AutomationStep; onChange: (s: AutomationStep) => void; refs: Refs; vars: StepVar[] }) {
   switch (step.kind) {
     case "startWorkspace":
     case "stopWorkspace":
@@ -354,6 +387,7 @@ function StepFields({ step, onChange, refs }: { step: AutomationStep; onChange: 
         <div className="grid min-w-0 flex-1 gap-2">
           <Input aria-label="Titre" value={step.title} maxLength={120} onChange={(e) => onChange({ ...step, title: e.target.value })} placeholder="Titre" />
           <Input aria-label="Message" value={step.body} maxLength={500} onChange={(e) => onChange({ ...step, body: e.target.value })} placeholder="Message (optionnel)" />
+          <VarsHint vars={vars} />
         </div>
       );
     case "wait":
@@ -372,7 +406,7 @@ function StepFields({ step, onChange, refs }: { step: AutomationStep; onChange: 
         </div>
       );
     case "httpRequest":
-      return <HttpFields step={step} onChange={onChange} />;
+      return <HttpFields step={step} onChange={onChange} vars={vars} />;
     case "condition":
       return <ConditionEditor condition={step.condition} onChange={(condition) => onChange({ ...step, condition })} refs={refs} />;
   }
@@ -461,7 +495,7 @@ export function AutomationEditor({
                       <Button variant="ghost" size="icon" className="size-7 hover:text-destructive" onClick={() => set({ steps: form.steps.filter((_, j) => j !== i) })} aria-label="Supprimer l'étape"><Trash2 /></Button>
                     </div>
                     <div className="flex gap-2 pl-6">
-                      <StepFields step={step} onChange={(s) => setStep(i, s)} refs={refs} />
+                      <StepFields step={step} onChange={(s) => setStep(i, s)} refs={refs} vars={stepVars(form.trigger.kind)} />
                     </div>
                   </li>
                 );

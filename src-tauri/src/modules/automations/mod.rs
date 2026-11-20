@@ -6,6 +6,7 @@
 mod events;
 mod scheduler;
 mod steps;
+pub mod vars;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
@@ -405,11 +406,12 @@ pub fn last_scheduled_start(db: &Database, automation_id: i64) -> AppResult<Opti
 
 /// Lance un workflow en arrière-plan. Retourne l'id de l'exécution.
 pub fn trigger(app: &AppHandle, id: i64, origin: &str) -> AppResult<i64> {
-    trigger_with(app, id, origin, None)
+    trigger_with(app, id, origin, None, vars::Vars::new())
 }
 
-/// Comme `trigger`, avec le contexte du déclenchement (enregistré dans l'historique).
-pub fn trigger_with(app: &AppHandle, id: i64, origin: &str, context: Option<String>) -> AppResult<i64> {
+/// Comme `trigger`, avec le contexte du déclenchement (enregistré dans l'historique) et les
+/// variables de l'événement, utilisables dans les étapes sous la forme `{{nom}}`.
+pub fn trigger_with(app: &AppHandle, id: i64, origin: &str, context: Option<String>, event_vars: vars::Vars) -> AppResult<i64> {
     let state = app.state::<AppState>();
     let automation = get(&state.db, &state.automations, id)?;
     {
@@ -435,12 +437,14 @@ pub fn trigger_with(app: &AppHandle, id: i64, origin: &str, context: Option<Stri
     };
     let _ = app.emit(EVENT_CHANGED, id);
 
+    let mut run_vars = vars::base(&automation.name, origin, context.as_deref());
+    run_vars.extend(event_vars);
     let app = app.clone();
     std::thread::Builder::new()
         .name(format!("automation-{id}"))
         .spawn(move || {
             let state = app.state::<AppState>();
-            let (status, log) = execute(&app, &automation);
+            let (status, log) = execute(&app, &automation, &run_vars);
             if status == "failed" || status == "timeout" {
                 let reason = log
                     .iter()
@@ -472,7 +476,7 @@ pub fn trigger_with(app: &AppHandle, id: i64, origin: &str, context: Option<Stri
     Ok(run_id)
 }
 
-fn execute(app: &AppHandle, automation: &Automation) -> (&'static str, Vec<StepLog>) {
+fn execute(app: &AppHandle, automation: &Automation, run_vars: &vars::Vars) -> (&'static str, Vec<StepLog>) {
     let deadline = Instant::now() + Duration::from_secs(automation.timeout_minutes as u64 * 60);
     let mut log = Vec::new();
     let mut failed = false;
@@ -483,7 +487,7 @@ fn execute(app: &AppHandle, automation: &Automation) -> (&'static str, Vec<StepL
         }
         let started = Instant::now();
         let label = steps::label(app, step);
-        let result = steps::run(app, step, deadline);
+        let result = steps::run(app, step, deadline, run_vars);
         let duration_ms = started.elapsed().as_millis() as u64;
         match result {
             Ok(steps::Flow::Continue) => log.push(StepLog { label, outcome: "ok".into(), message: None, duration_ms }),
