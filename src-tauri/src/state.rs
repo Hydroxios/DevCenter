@@ -5,6 +5,7 @@ use crate::modules::projects::watcher::GitWatcher;
 use crate::modules::automations::AutomationRuntime;
 use crate::modules::remote::RemoteAccess;
 use crate::modules::runner::Runner;
+use crate::modules::servers::files::Transfers;
 use crate::modules::servers::terminal::Terminals;
 use crate::modules::settings::SettingsService;
 use crate::modules::system::SystemService;
@@ -18,6 +19,8 @@ pub struct AppState {
     pub runner: Runner,
     pub workspaces: WorkspaceRuntime,
     pub terminals: Terminals,
+    /// Transferts de fichiers SSH en cours ou récents.
+    pub transfers: Transfers,
     pub automations: AutomationRuntime,
     pub remote: RemoteAccess,
     pub clones: CloneJobs,

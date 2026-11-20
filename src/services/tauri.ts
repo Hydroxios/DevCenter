@@ -19,6 +19,8 @@ import type {
   RemoteService,
   Container,
   RemoteAction,
+  RemoteListing,
+  FileTransfer,
   KeyStatus,
   Snippet,
   SnippetInput,
@@ -153,6 +155,18 @@ export const api = {
     containerAction: (id: number, container: string, action: RemoteAction) =>
       invoke<void>("server_container_action", { id, container, action }),
     containerLogs: (id: number, container: string, lines = 300) => invoke<string>("server_container_logs", { id, container, lines }),
+    /** `path` absent = dossier personnel de l'utilisateur SSH. */
+    listDir: (id: number, path: string | null) => invoke<RemoteListing>("server_list_dir", { id, path }),
+    makeDir: (id: number, dir: string, name: string) => invoke<void>("server_make_dir", { id, dir, name }),
+    renamePath: (id: number, path: string, newName: string) => invoke<void>("server_rename_path", { id, path, newName }),
+    deletePath: (id: number, path: string, recursive: boolean) => invoke<void>("server_delete_path", { id, path, recursive }),
+    download: (id: number, remotePath: string, size: number, destDir: string) =>
+      invoke<FileTransfer>("server_download", { id, remotePath, size, destDir }),
+    upload: (id: number, localPaths: string[], remoteDir: string) => invoke<FileTransfer[]>("server_upload", { id, localPaths, remoteDir }),
+    transfers: () => invoke<FileTransfer[]>("server_transfers"),
+    cancelTransfer: (id: number) => invoke<void>("server_transfer_cancel", { id }),
+    /** `id` absent = retire tous les transferts terminés. */
+    dismissTransfer: (id: number | null) => invoke<void>("server_transfer_dismiss", { id }),
   },
   snippets: {
     list: () => invoke<Snippet[]>("list_snippets"),

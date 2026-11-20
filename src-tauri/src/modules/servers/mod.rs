@@ -1,6 +1,7 @@
 //! Server Manager : serveurs SSH enregistrés, monitoring, services, Docker et terminal.
 
 pub mod agent;
+pub mod files;
 pub mod remote;
 pub mod snippets;
 pub mod ssh;

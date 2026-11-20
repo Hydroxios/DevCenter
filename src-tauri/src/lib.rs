@@ -62,6 +62,7 @@ pub fn run() {
                 runner: Default::default(),
                 workspaces: Default::default(),
                 terminals: Default::default(),
+                transfers: Default::default(),
                 automations: Default::default(),
                 remote: Default::default(),
                 clones: Default::default(),
@@ -182,6 +183,15 @@ pub fn run() {
             commands::terminal_close,
             commands::server_key_status,
             commands::terminal_open_ssh_add,
+            commands::server_list_dir,
+            commands::server_make_dir,
+            commands::server_rename_path,
+            commands::server_delete_path,
+            commands::server_download,
+            commands::server_upload,
+            commands::server_transfers,
+            commands::server_transfer_cancel,
+            commands::server_transfer_dismiss,
             commands::list_automations,
             commands::save_automation,
             commands::delete_automation,
@@ -237,6 +247,7 @@ pub fn run() {
                 if let Some(state) = app.try_state::<AppState>() {
                     modules::workspaces::close_all(&state);
                     state.terminals.close_all();
+                    state.transfers.cancel_all();
                     state.remote.stop();
                     state.runner.stop_all();
                     modules::runner::close_history(&state.db);
