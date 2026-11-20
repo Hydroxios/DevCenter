@@ -31,6 +31,8 @@ import type {
   GithubInbox,
   CloneJob,
   CommitActivity,
+  DependencyReport,
+  DependencySummary,
   DayCommit,
   CcusageReport,
   CcusageDayDetail,
@@ -107,6 +109,13 @@ export const api = {
       invoke<EnvFile>("env_create", { projectId, name, copyFrom }),
     /** Profil injecté dans les scripts lancés depuis DevCenter (`null` : aucun). */
     setActive: (projectId: number, name: string | null) => invoke<EnvOverview>("env_set_active", { projectId, name }),
+  },
+  dependencies: {
+    /** Dernier rapport enregistré (aucune commande lancée). */
+    report: (id: number) => invoke<DependencyReport | null>("dependency_report", { id }),
+    summaries: () => invoke<DependencySummary[]>("dependency_summaries"),
+    /** Lance outdated + audit en arrière-plan ; plusieurs secondes à quelques minutes. */
+    check: (id: number) => invoke<DependencyReport>("check_dependencies", { id }),
   },
   runner: {
     list: () => invoke<RunInfo[]>("list_runs"),

@@ -220,6 +220,53 @@ export interface EnvUpdate {
   value: string;
 }
 
+export type VulnSeverity = "critical" | "high" | "moderate" | "low" | "info" | "unknown";
+
+export interface OutdatedPackage {
+  /** `npm` (tous les gestionnaires Node) ou `cargo`. */
+  ecosystem: string;
+  name: string;
+  current: string | null;
+  wanted: string | null;
+  latest: string | null;
+  /** Changement de version majeure (ou de mineure en 0.x). */
+  major: boolean;
+  kind: string | null;
+}
+
+export interface Vulnerability {
+  ecosystem: string;
+  name: string;
+  severity: VulnSeverity;
+  title: string;
+  url: string | null;
+  range: string | null;
+  fix: string | null;
+}
+
+export type VulnCounts = Record<VulnSeverity, number>;
+
+export interface DependencyReport {
+  projectId: number;
+  /** Horodatage Unix (secondes). */
+  checkedAt: number;
+  outdated: OutdatedPackage[];
+  vulnerabilities: Vulnerability[];
+  vulnCounts: VulnCounts;
+  /** Commandes exécutées avec succès. */
+  tools: string[];
+  /** Vérifications ignorées ou en échec. */
+  notes: string[];
+}
+
+export interface DependencySummary {
+  projectId: number;
+  checkedAt: number;
+  outdated: number;
+  major: number;
+  vulnCounts: VulnCounts;
+}
+
 export interface ScanCandidate {
   path: string;
   name: string;
