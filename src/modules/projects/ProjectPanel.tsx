@@ -40,6 +40,7 @@ import { LinkifiedLine } from "@/components/LinkifiedText";
 import type { GitStatus, Project, ProjectDetails, PullMode, RunInfo } from "@/types";
 import { BranchDialog } from "./BranchDialog";
 import { CommitDialog } from "./CommitDialog";
+import { EnvPanel } from "./EnvPanel";
 import { GitHistory } from "./GitHistory";
 import { StashDialog } from "./StashDialog";
 
@@ -286,7 +287,7 @@ const SECONDARY_GROUPS = ["Help", "Build Setup", "Other"];
 /** Projets dont la lecture des tâches Gradle a échoué : pas de nouvel essai automatique. */
 const gradleFailed = new Set<number>();
 
-type PanelTab = "overview" | "history";
+type PanelTab = "overview" | "history" | "env";
 /** Dernier onglet ouvert par projet (le temps de la session de l'app). */
 const lastTab = new Map<number, PanelTab>();
 
@@ -383,7 +384,8 @@ export function ProjectPanel({
     lastTab.set(project.id, t);
     setTabState(t);
   };
-  const activeTab: PanelTab = tab === "history" && !hasGit ? "overview" : tab;
+  const activeTab: PanelTab =
+    (tab === "history" && !hasGit) || (tab === "env" && !project.exists) ? "overview" : tab;
   /** Commit à mettre en avant à l'ouverture de l'historique (clic sur le dernier commit). */
   const [focusCommit, setFocusCommit] = useState<string | null>(null);
   const runningCount = runs.filter((r) => r.status === "running").length;
@@ -491,6 +493,7 @@ export function ProjectPanel({
         {([
           ["overview", "Aperçu", runningCount > 0 ? runningCount : null],
           ...(hasGit ? ([["history", "Historique", null]] as const) : []),
+          ...(project.exists ? ([["env", "Environnement", null]] as const) : []),
         ] as const).map(([id, label, count]) => (
           <button
             key={id}
@@ -510,7 +513,9 @@ export function ProjectPanel({
         ))}
       </nav>
 
-      {activeTab === "history" ? (
+      {activeTab === "env" ? (
+        <EnvPanel key={project.id} projectId={project.id} />
+      ) : activeTab === "history" ? (
         // Rechargé quand HEAD change (changement ou création de branche).
         <GitHistory
           key={`${details?.git?.branch}:${details?.git?.lastCommit?.hash}`}

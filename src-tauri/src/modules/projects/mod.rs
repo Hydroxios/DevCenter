@@ -3,6 +3,7 @@
 pub mod branches;
 pub mod commit;
 pub mod detect;
+pub mod env;
 pub mod git;
 pub mod gitcache;
 pub mod gradle;

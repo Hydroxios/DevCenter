@@ -8,6 +8,9 @@ import type {
   ProcessInfo,
   Project,
   ProjectDetails,
+  EnvOverview,
+  EnvFile,
+  EnvUpdate,
   RunInfo,
   ScanCandidate,
   Server,
@@ -93,6 +96,17 @@ export const api = {
     /** Lit les vraies tâches Gradle (`gradlew tasks --all`) ; plusieurs secondes la première fois. */
     gradleTasks: (id: number) => invoke<ProjectDetails>("gradle_tasks", { id }),
     detectEditor: () => invoke<string | null>("detect_editor"),
+  },
+  env: {
+    overview: (projectId: number) => invoke<EnvOverview>("env_overview", { projectId }),
+    read: (projectId: number, name: string) => invoke<EnvFile>("env_read", { projectId, name }),
+    /** Refusé si le fichier a changé sur le disque depuis la lecture (`revision`). */
+    save: (projectId: number, name: string, revision: string, entries: EnvUpdate[]) =>
+      invoke<EnvFile>("env_save", { projectId, name, revision, entries }),
+    create: (projectId: number, name: string, copyFrom: string | null) =>
+      invoke<EnvFile>("env_create", { projectId, name, copyFrom }),
+    /** Profil injecté dans les scripts lancés depuis DevCenter (`null` : aucun). */
+    setActive: (projectId: number, name: string | null) => invoke<EnvOverview>("env_set_active", { projectId, name }),
   },
   runner: {
     list: () => invoke<RunInfo[]>("list_runs"),

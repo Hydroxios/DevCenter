@@ -224,6 +224,56 @@ pub async fn open_project_terminal(app: AppHandle, id: i64) -> AppResult<()> {
     .await
 }
 
+// ---------------------------------------------------------------- Fichiers .env
+
+/// Fichiers `.env*` du projet et profil actif. Les valeurs ne sont jamais journalisées.
+#[tauri::command]
+pub async fn env_overview(app: AppHandle, project_id: i64) -> AppResult<projects::env::EnvOverview> {
+    blocking(move || {
+        let db = &app.state::<AppState>().db;
+        projects::env::overview(db, project_id, &projects::path_of(db, project_id)?)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn env_read(app: AppHandle, project_id: i64, name: String) -> AppResult<projects::env::EnvFile> {
+    blocking(move || projects::env::read(&projects::path_of(&app.state::<AppState>().db, project_id)?, &name)).await
+}
+
+#[tauri::command]
+pub async fn env_save(
+    app: AppHandle,
+    project_id: i64,
+    name: String,
+    revision: String,
+    entries: Vec<projects::env::EnvUpdate>,
+) -> AppResult<projects::env::EnvFile> {
+    blocking(move || {
+        let dir = projects::path_of(&app.state::<AppState>().db, project_id)?;
+        projects::env::save(&dir, &name, &revision, &entries)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn env_create(app: AppHandle, project_id: i64, name: String, copy_from: Option<String>) -> AppResult<projects::env::EnvFile> {
+    blocking(move || {
+        let dir = projects::path_of(&app.state::<AppState>().db, project_id)?;
+        projects::env::create(&dir, &name, copy_from.as_deref())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn env_set_active(app: AppHandle, project_id: i64, name: Option<String>) -> AppResult<projects::env::EnvOverview> {
+    blocking(move || {
+        let db = &app.state::<AppState>().db;
+        projects::env::set_active(db, project_id, &projects::path_of(db, project_id)?, name.as_deref())
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn detect_editor() -> Option<String> {
     blocking(|| Ok(editor::detect().map(|p| p.display().to_string()))).await.ok().flatten()

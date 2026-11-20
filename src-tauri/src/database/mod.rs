@@ -104,6 +104,8 @@ const MIGRATIONS: &[&str] = &[
         auth       TEXT NOT NULL,
         created_at INTEGER NOT NULL
     );",
+    // 9 — profil .env actif par projet (injecté dans les scripts lancés depuis DevCenter)
+    "ALTER TABLE projects ADD COLUMN env_file TEXT;",
 ];
 
 pub struct Database {
