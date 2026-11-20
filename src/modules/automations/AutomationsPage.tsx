@@ -34,6 +34,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useLinkedId } from "@/hooks/useLinkedId";
 import { cn, formatRelative } from "@/lib/utils";
 import { api, isTauri } from "@/services/tauri";
 import type { Automation, AutomationInput, AutomationRun, AutomationRunStatus, AutomationStep } from "@/types";
@@ -458,6 +459,7 @@ function AutomationsView() {
     lastSelected = id;
     setSelectedIdState(id);
   };
+  useLinkedId("automation", setSelectedId);
 
   const refresh = useCallback(() => {
     api.automations.list().then(setList).catch((e) => setError(String(e)));

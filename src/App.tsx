@@ -7,6 +7,7 @@ import { ContextMenuHost } from "@/components/ui/context-menu";
 import { useApplyTheme } from "@/hooks/useTheme";
 import { DashboardPage } from "@/modules/dashboard/DashboardPage";
 import { AutomationsPage } from "@/modules/automations/AutomationsPage";
+import { JournalPage } from "@/modules/journal/JournalPage";
 // Chargé à la demande : xterm.js alourdit le bundle principal.
 const ServersPage = lazy(() => import("@/modules/servers/ServersPage").then((m) => ({ default: m.ServersPage })));
 import { WorkspacesPage } from "@/modules/workspaces/WorkspacesPage";
@@ -52,6 +53,7 @@ export default function App() {
             }
           />
           <Route path="automations" element={<AutomationsPage />} />
+          <Route path="journal" element={<JournalPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

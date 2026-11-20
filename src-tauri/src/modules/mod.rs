@@ -4,6 +4,7 @@ pub mod apps;
 pub mod automations;
 pub mod backup;
 pub mod editor;
+pub mod events;
 pub mod github;
 pub mod projects;
 pub mod push;

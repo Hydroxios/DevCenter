@@ -16,6 +16,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::database::Database;
 use crate::error::{AppError, AppResult};
+use crate::modules::events;
 use crate::state::AppState;
 
 pub use scheduler::spawn_scheduler;
@@ -338,6 +339,7 @@ pub fn trigger(app: &AppHandle, id: i64, origin: &str) -> AppResult<i64> {
         }
     };
     let _ = app.emit(EVENT_CHANGED, id);
+    events::Entry::info(events::Source::Automation, format!("{} · démarrée ({origin})", automation.name)).link(format!("/automations?automation={id}")).emit(app);
 
     let app = app.clone();
     std::thread::Builder::new()
@@ -372,6 +374,7 @@ pub fn trigger(app: &AppHandle, id: i64, origin: &str) -> AppResult<i64> {
                 running.remove(&id);
             }
             let _ = app.emit(EVENT_CHANGED, id);
+            events::automation_finished(&app, &automation.name, id, status, &log);
         })?;
     Ok(run_id)
 }

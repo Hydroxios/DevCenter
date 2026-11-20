@@ -4,6 +4,7 @@ import {
   FolderGit2,
   LayoutDashboard,
   Layers,
+  ScrollText,
   Server,
   Settings as SettingsIcon,
   Workflow,
@@ -25,6 +26,7 @@ export const mainNav: NavItem[] = [
   { path: "/workspaces", label: "Workspaces", icon: Layers, phase: 4 },
   { path: "/servers", label: "Serveurs", icon: Server, phase: 5 },
   { path: "/automations", label: "Automatisations", icon: Workflow, phase: 6 },
+  { path: "/journal", label: "Journal", icon: ScrollText, phase: 7 },
 ];
 
 export const footerNav: NavItem[] = [{ path: "/settings", label: "Paramètres", icon: SettingsIcon, phase: 1 }];

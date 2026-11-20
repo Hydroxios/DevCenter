@@ -1,9 +1,10 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   ArrowDown,
   ArrowUp,
   ChevronDown,
+  ChevronUp,
   Code2,
   ExternalLink,
   FolderOpen,
@@ -12,6 +13,7 @@ import {
   Loader2,
   Play,
   RefreshCw,
+  Search,
   Square,
   SquareTerminal,
   Trash2,
@@ -34,6 +36,7 @@ import { cn, formatRelative } from "@/lib/utils";
 import { api } from "@/services/tauri";
 import { runsForProject, useRuns } from "@/stores/runs";
 import { LinkifiedLine } from "@/components/LinkifiedText";
+import { findMatches, Highlight } from "@/components/Highlight";
 import type { GitStatus, Project, ProjectDetails, RunInfo } from "@/types";
 import { BranchDialog } from "./BranchDialog";
 import { CommitDialog } from "./CommitDialog";
@@ -148,45 +151,164 @@ function GitCard({
   );
 }
 
+type LogLevelFilter = "all" | "warn" | "error";
+
+const LOG_LEVELS: { id: LogLevelFilter; label: string }[] = [
+  { id: "all", label: "Tout" },
+  { id: "warn", label: "Avert. + erreurs" },
+  { id: "error", label: "Erreurs" },
+];
+
+const ERROR_RE = /\b(error|errors|erreur|err!|failed|failure|fatal|exception|panic(?:ked)?)\b|✖|✘/i;
+const WARN_RE = /\b(warn|warning|warnings|avertissement|deprecated)\b|⚠/i;
+
+/** Niveau d'une ligne de log devinée d'après son contenu. */
+function lineTone(line: string): "error" | "warn" | null {
+  if (ERROR_RE.test(line)) return "error";
+  if (WARN_RE.test(line)) return "warn";
+  return null;
+}
+
+function matchesLevel(line: string, level: LogLevelFilter): boolean {
+  const tone = lineTone(line);
+  return level === "error" ? tone === "error" : tone !== null;
+}
+
 function LogViewer({ run }: { run: RunInfo }) {
   const lines = useRuns((s) => s.logs[run.id]);
   const base = useRuns((s) => s.logBase[run.id] ?? 0);
   const loadLogs = useRuns((s) => s.loadLogs);
   const ref = useRef<HTMLPreElement>(null);
   const stick = useRef(true);
+  const [query, setQuery] = useState("");
+  const [level, setLevel] = useState<LogLevelFilter>("all");
+  const [current, setCurrent] = useState(0);
 
   useEffect(() => {
     loadLogs(run.id);
   }, [run.id, loadLogs]);
 
-  // Défilement automatique, sauf si l'utilisateur est remonté dans les logs.
+  const needle = query.trim().toLowerCase();
+  // Lignes visibles (filtre de niveau) avec leur indice d'origine, et occurrences de la recherche.
+  const { visible, matches } = useMemo(() => {
+    const all = lines ?? [];
+    const visible: number[] = [];
+    const matches: { line: number; nth: number }[] = [];
+    for (let i = 0; i < all.length; i++) {
+      if (level !== "all" && !matchesLevel(all[i], level)) continue;
+      visible.push(i);
+      if (needle) findMatches(all[i], needle).forEach((_, nth) => matches.push({ line: i, nth }));
+    }
+    return { visible, matches };
+  }, [lines, level, needle]);
+
+  // Nouvelle recherche : on part de la dernière occurrence (la plus récente).
+  useEffect(() => {
+    setCurrent(Math.max(0, matches.length - 1));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needle, level, run.id]);
+
+  const active = matches.length ? matches[Math.min(current, matches.length - 1)] : null;
+
+  // Défilement automatique, sauf si l'utilisateur est remonté dans les logs ou parcourt les résultats.
   useEffect(() => {
     const el = ref.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [lines]);
+    if (el && stick.current && !needle) el.scrollTop = el.scrollHeight;
+  }, [lines, level, needle]);
+
+  // Occurrence courante amenée dans la zone visible.
+  useEffect(() => {
+    if (!active) return;
+    // Défilement interne au bloc (scrollIntoView ferait aussi défiler la page).
+    const el = ref.current;
+    const mark = el?.querySelector<HTMLElement>("[data-active-match]");
+    if (el && mark) el.scrollTop = mark.offsetTop - el.clientHeight / 2;
+  }, [active?.line, active?.nth]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const step = (delta: number) => {
+    if (!matches.length) return;
+    stick.current = false;
+    setCurrent((c) => (Math.min(c, matches.length - 1) + delta + matches.length) % matches.length);
+  };
 
   return (
-    <pre
-      ref={ref}
-      onScroll={(e) => {
-        const el = e.currentTarget;
-        stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-      }}
-      className="h-72 overflow-auto rounded-lg border bg-black p-3 font-mono text-xs leading-relaxed text-[#d4d4d8] select-text"
-    >
-      {lines && lines.length > 0 ? (
-        // Une ligne par élément, avec une clé stable (`base + i`) même quand les plus anciennes sont
-        // retirées : seules les nouvelles lignes sont calculées (adresses cliquables).
-        lines.map((line, i) => (
-          <Fragment key={base + i}>
-            {i > 0 && "\n"}
-            <LinkifiedLine text={line} />
-          </Fragment>
-        ))
-      ) : (
-        <span className="opacity-60">En attente de sortie…</span>
-      )}
-    </pre>
+    <div className="grid gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-48 flex-1">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                step(e.shiftKey ? -1 : 1);
+              } else if (e.key === "Escape") setQuery("");
+            }}
+            placeholder="Rechercher dans les logs…"
+            className="h-8 pr-20 pl-8"
+            aria-label="Rechercher dans les logs"
+          />
+          {needle && (
+            <span className="absolute top-1/2 right-2 -translate-y-1/2 font-mono text-[11px] text-muted-foreground tabular-nums">
+              {matches.length ? `${Math.min(current, matches.length - 1) + 1}/${matches.length}` : "0/0"}
+            </span>
+          )}
+        </div>
+        <Button variant="ghost" size="icon" className="size-8" disabled={!matches.length} onClick={() => step(-1)} aria-label="Occurrence précédente" title="Précédente (Maj+Entrée)">
+          <ChevronUp />
+        </Button>
+        <Button variant="ghost" size="icon" className="size-8" disabled={!matches.length} onClick={() => step(1)} aria-label="Occurrence suivante" title="Suivante (Entrée)">
+          <ChevronDown />
+        </Button>
+        <div className="flex overflow-hidden rounded-lg border text-xs" role="group" aria-label="Filtrer par niveau">
+          {LOG_LEVELS.map((l) => (
+            <button
+              key={l.id}
+              type="button"
+              aria-pressed={level === l.id}
+              onClick={() => setLevel(l.id)}
+              className={cn(
+                "h-8 px-2.5 transition-colors",
+                level === l.id ? "bg-primary/12 text-primary" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {l.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <pre
+        ref={ref}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+        }}
+        className="relative h-72 overflow-auto rounded-lg border bg-black p-3 font-mono text-xs leading-relaxed text-[#d4d4d8] select-text"
+      >
+        {visible.length > 0 ? (
+          // Une ligne par élément, avec une clé stable (`base + i`) même quand les plus anciennes sont
+          // retirées : seules les nouvelles lignes sont calculées (adresses cliquables).
+          visible.map((i, k) => {
+            const line = lines![i];
+            const tone = level === "all" ? lineTone(line) : null;
+            const hit = needle && line.toLowerCase().includes(needle);
+            return (
+              <Fragment key={base + i}>
+                {k > 0 && "\n"}
+                <span className={cn(tone === "error" && "text-red-400", tone === "warn" && "text-amber-300")}>
+                  {hit ? <Highlight text={line} query={needle} active={active?.line === i ? active.nth : -1} /> : <LinkifiedLine text={line} />}
+                </span>
+              </Fragment>
+            );
+          })
+        ) : lines && lines.length > 0 ? (
+          <span className="opacity-60">Aucune ligne pour ce niveau.</span>
+        ) : (
+          <span className="opacity-60">En attente de sortie…</span>
+        )}
+      </pre>
+    </div>
   );
 }
 

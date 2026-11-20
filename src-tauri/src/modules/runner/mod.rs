@@ -15,6 +15,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::error::{AppError, AppResult};
+use crate::modules::events::{self, Source};
 use crate::modules::shell;
 
 const MAX_LOG_LINES: usize = 2000;
@@ -254,6 +255,7 @@ impl Runner {
             );
         }
         let _ = app.emit(EVENT_STATUS, &info);
+        events::Entry::info(Source::Runner, format!("{} · {script} lancé", events::project_name(app, project_id))).detail(&info.command).link(format!("/projects?project={project_id}")).emit(app);
 
         if let Some(out) = child.stdout.take() {
             self.spawn_reader(Arc::clone(&batch), id, out);
@@ -293,6 +295,7 @@ impl Runner {
                 );
             }
             let _ = app.emit(EVENT_STATUS, &info);
+            events::run_finished(&app, &info);
         });
 
         Ok(info)

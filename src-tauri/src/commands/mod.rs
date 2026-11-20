@@ -7,6 +7,7 @@ use crate::error::{AppError, AppResult};
 use crate::modules::automations::{self, Automation, AutomationInput, RunSummary};
 use crate::modules::backup::{self, ImportSummary};
 use crate::modules::editor;
+use crate::modules::events::{self, Source};
 use crate::modules::github::{self, GithubStatus, Repo};
 use crate::modules::projects::branches::{self, Branch};
 use crate::modules::projects::history::{CommitDetails, GitLog};
@@ -39,6 +40,17 @@ pub fn client_log(level: String, message: String) {
     }
 }
 
+/// Journal unifié : événements en mémoire, du plus ancien au plus récent.
+#[tauri::command]
+pub fn events_backlog() -> Vec<events::Entry> {
+    events::backlog()
+}
+
+#[tauri::command]
+pub fn events_clear(app: AppHandle) {
+    events::clear(&app);
+}
+
 // ---------------------------------------------------------------- Mises à jour
 
 #[tauri::command]
@@ -53,7 +65,9 @@ pub async fn update_check(app: AppHandle) -> AppResult<Option<crate::modules::up
 
 #[tauri::command]
 pub async fn update_install(app: AppHandle) -> AppResult<()> {
-    crate::modules::updates::install(&app).await
+    crate::modules::updates::install(&app)
+        .await
+        .inspect_err(|e| events::Entry::error(Source::Update, "Échec de la mise à jour").detail(e.to_string()).link("/settings").emit(&app))
 }
 
 /// Ouvre le dossier des journaux (pour joindre `devcenter.log` à un rapport de bug).
@@ -234,7 +248,11 @@ pub fn run_logs(state: State<'_, AppState>, run_id: u64) -> AppResult<Vec<String
 /// commande arbitraire ne peut être exécutée depuis le frontend.
 #[tauri::command]
 pub async fn run_script(app: AppHandle, project_id: i64, script: String) -> AppResult<RunInfo> {
-    blocking(move || projects::run_script(&app, project_id, &script)).await
+    blocking(move || {
+        projects::run_script(&app, project_id, &script)
+            .inspect_err(|e| events::Entry::error(Source::Runner, format!("{} · {script} n'a pas pu démarrer", events::project_name(&app, project_id))).detail(e.to_string()).link(format!("/projects?project={project_id}")).emit(&app))
+    })
+    .await
 }
 
 #[tauri::command]
@@ -279,7 +297,11 @@ pub fn set_workspace_favorite(state: State<'_, AppState>, id: i64, favorite: boo
 /// Lance applications, éditeur et scripts : hors du thread principal.
 #[tauri::command]
 pub async fn start_workspace(app: AppHandle, id: i64) -> AppResult<ActiveInfo> {
-    blocking(move || workspaces::start(&app, &app.state::<AppState>(), id)).await
+    blocking(move || {
+        workspaces::start(&app, &app.state::<AppState>(), id)
+            .inspect_err(|e| events::Entry::error(Source::Workspace, "Échec du démarrage du workspace").detail(e.to_string()).link(format!("/workspaces?workspace={id}")).emit(&app))
+    })
+    .await
 }
 
 #[tauri::command]
@@ -321,7 +343,13 @@ fn server_of(app: &AppHandle, id: i64) -> AppResult<Server> {
 
 #[tauri::command]
 pub async fn ping_server(app: AppHandle, id: i64) -> AppResult<u64> {
-    blocking(move || remote::ping(&server_of(&app, id)?)).await
+    blocking(move || {
+        let server = server_of(&app, id)?;
+        let result = remote::ping(&server);
+        events::server_status(&app, id, &server.name, result.as_ref().err().map(|e| e.to_string()));
+        result
+    })
+    .await
 }
 
 #[tauri::command]

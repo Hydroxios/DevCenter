@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type {
+  AppEvent,
   AppShortcut,
   HardwareSnapshot,
   KillOutcome,
@@ -87,6 +88,11 @@ export const api = {
     /** Lit les vraies tâches Gradle (`gradlew tasks --all`) ; plusieurs secondes la première fois. */
     gradleTasks: (id: number) => invoke<ProjectDetails>("gradle_tasks", { id }),
     detectEditor: () => invoke<string | null>("detect_editor"),
+  },
+  events: {
+    /** Événements gardés en mémoire (2000 max.), du plus ancien au plus récent. */
+    backlog: () => invoke<AppEvent[]>("events_backlog"),
+    clear: () => invoke<void>("events_clear"),
   },
   runner: {
     list: () => invoke<RunInfo[]>("list_runs"),
