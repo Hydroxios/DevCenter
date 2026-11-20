@@ -19,6 +19,7 @@ use crate::modules::projects::{self, Project, ProjectDetails, ScanCandidate};
 use crate::modules::runner::RunInfo;
 use crate::modules::servers::remote::{self, Container, RemoteMetrics, RemoteService};
 use crate::modules::servers::agent::KeyStatus;
+use crate::modules::servers::snippets::{self, CommandResult, Snippet, SnippetInput};
 use crate::modules::servers::{self, Server, ServerInput};
 use crate::modules::workspaces::{self, ActiveInfo, SessionRecord, Workspace, WorkspaceInput};
 use crate::modules::settings::{Settings, SettingsService};
@@ -357,6 +358,30 @@ pub async fn server_container_action(app: AppHandle, id: i64, container: String,
 #[tauri::command]
 pub async fn server_container_logs(app: AppHandle, id: i64, container: String, lines: Option<u32>) -> AppResult<String> {
     blocking(move || remote::container_logs(&server_of(&app, id)?, &container, lines.unwrap_or(300))).await
+}
+
+#[tauri::command]
+pub fn list_snippets(state: State<'_, AppState>) -> AppResult<Vec<Snippet>> {
+    snippets::list(&state.db)
+}
+
+#[tauri::command]
+pub fn save_snippet(state: State<'_, AppState>, input: SnippetInput) -> AppResult<Vec<Snippet>> {
+    snippets::save(&state.db, &input)
+}
+
+#[tauri::command]
+pub fn delete_snippet(state: State<'_, AppState>, id: i64) -> AppResult<Vec<Snippet>> {
+    snippets::delete(&state.db, id)
+}
+
+#[tauri::command]
+pub async fn server_run_snippet(app: AppHandle, id: i64, snippet_id: i64) -> AppResult<CommandResult> {
+    blocking(move || {
+        let server = server_of(&app, id)?;
+        snippets::run(&app.state::<AppState>().db, &server, snippet_id, snippets::DEFAULT_TIMEOUT)
+    })
+    .await
 }
 
 #[tauri::command]

@@ -5,7 +5,7 @@
 //! clés elles-mêmes non ; les appareils appairés ne sont pas exportés.
 //!
 //! À l'import (fusion) : projets et applications sont dédoublonnés par chemin, serveurs par
-//! hôte/port/utilisateur, workspaces et automatisations par nom. Les identifiants internes
+//! hôte/port/utilisateur, commandes serveur par nom et serveur, workspaces et automatisations par nom. Les identifiants internes
 //! référencés dans les étapes sont réécrits vers ceux de la machine cible.
 
 use std::collections::HashMap;
@@ -35,6 +35,8 @@ pub struct Bundle {
     pub projects: Vec<ProjectRow>,
     #[serde(default)]
     pub servers: Vec<ServerRow>,
+    #[serde(default)]
+    pub snippets: Vec<SnippetRow>,
     #[serde(default)]
     pub workspaces: Vec<WorkspaceRow>,
     #[serde(default)]
@@ -66,6 +68,18 @@ pub struct ServerRow {
     pub port: i64,
     pub user: Option<String>,
     pub key_path: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnippetRow {
+    pub id: i64,
+    pub name: String,
+    pub command: String,
+    /// `None` = commande globale.
+    pub server_id: Option<i64>,
+    pub confirm: bool,
+    pub sudo: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -156,6 +170,10 @@ pub fn build(db: &Database) -> AppResult<Bundle> {
             .iter()
             .map(|r| ServerRow { id: i(&r[0]), name: s(&r[1]), host: s(&r[2]), port: i(&r[3]), user: r[4].as_str().map(str::to_string), key_path: r[5].as_str().map(str::to_string) })
             .collect();
+        bundle.snippets = collect("SELECT id, name, command, server_id, confirm, sudo FROM server_snippets")?
+            .iter()
+            .map(|r| SnippetRow { id: i(&r[0]), name: s(&r[1]), command: s(&r[2]), server_id: r[3].as_i64(), confirm: i(&r[4]) != 0, sudo: i(&r[5]) != 0 })
+            .collect();
         let steps_of = |ws_id: i64| -> rusqlite::Result<Vec<Value>> {
             let mut stmt = conn.prepare("SELECT action FROM workspace_steps WHERE workspace_id = ?1 ORDER BY position")?;
             let rows = stmt.query_map(params![ws_id], |r| r.get::<_, String>(0))?;
@@ -188,13 +206,17 @@ pub fn export(db: &Database, path: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// Réécrit récursivement les identifiants (`projectId`, `appId`, `workspaceId`, `serverId`).
+/// Réécrit récursivement les identifiants (`projectId`, `appId`, `workspaceId`, `serverId`,
+/// `snippetId`). Une référence `null` (facultative) est conservée telle quelle.
 fn remap(value: &mut Value, maps: &HashMap<&str, HashMap<i64, i64>>) -> bool {
     let mut ok = true;
     match value {
         Value::Object(obj) => {
             for (key, v) in obj.iter_mut() {
                 if let Some(map) = maps.get(key.as_str()) {
+                    if v.is_null() {
+                        continue;
+                    }
                     match v.as_i64().and_then(|old| map.get(&old)) {
                         Some(new) => *v = Value::from(*new),
                         None => ok = false, // référence vers un élément absent du fichier
@@ -297,10 +319,44 @@ pub fn import(db: &Database, path: &str) -> AppResult<ImportSummary> {
             servers.insert(s.id, id);
         }
 
+        let mut snippets = HashMap::new();
+        for sn in &bundle.snippets {
+            let server_id = match sn.server_id {
+                Some(old) => match servers.get(&old) {
+                    Some(new) => Some(*new),
+                    None => {
+                        summary.skip("commandes");
+                        continue;
+                    }
+                },
+                None => None,
+            };
+            let existing = find(
+                "SELECT id FROM server_snippets WHERE name = ?1 AND COALESCE(server_id, -1) = COALESCE(?2, -1)",
+                &[&sn.name, &server_id],
+            )?;
+            let id = match existing {
+                Some(id) => {
+                    summary.skip("commandes");
+                    id
+                }
+                None => {
+                    tx.execute(
+                        "INSERT INTO server_snippets (name, command, server_id, confirm, sudo, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                        params![sn.name, sn.command, server_id, sn.confirm as i64, sn.sudo as i64, crate::modules::automations::now()],
+                    )?;
+                    summary.add("commandes");
+                    tx.last_insert_rowid()
+                }
+            };
+            snippets.insert(sn.id, id);
+        }
+
         let mut maps: HashMap<&str, HashMap<i64, i64>> = HashMap::new();
         maps.insert("appId", apps);
         maps.insert("projectId", projects);
         maps.insert("serverId", servers);
+        maps.insert("snippetId", snippets);
 
         let mut workspaces = HashMap::new();
         for w in &bundle.workspaces {
@@ -376,10 +432,13 @@ mod tests {
             // Décale les identifiants pour vérifier la réécriture.
             c.execute("INSERT INTO projects (id, name, path, added_at) VALUES (7, 'proj', ?1, 0)", params![p])?;
             c.execute("INSERT INTO workspaces (id, name, description, favorite, created_at) VALUES (3, 'Front', '', 1, 0)", [])?;
+            c.execute("INSERT INTO servers (id, name, host, port) VALUES (5, 'vps', 'example.org', 22)", [])?;
+            c.execute("INSERT INTO server_snippets (id, name, command, server_id, confirm, sudo, created_at) VALUES (9, 'Disque', 'df -h', 5, 0, 0, 0)", [])?;
+            c.execute("INSERT INTO server_snippets (id, name, command, server_id, confirm, sudo, created_at) VALUES (11, 'Mémoire', 'free -h', NULL, 1, 1, 0)", [])?;
             c.execute("INSERT INTO workspace_steps (workspace_id, position, action) VALUES (3, 0, '{\"kind\":\"editor\",\"projectId\":7}')", [])?;
             c.execute(
                 "INSERT INTO automations (name, description, enabled, trigger, steps, on_error, timeout_minutes, created_at)
-                 VALUES ('Matin', '', 1, '{\"kind\":\"manual\"}', '[{\"kind\":\"startWorkspace\",\"workspaceId\":3}]', '\"stop\"', 30, 0)",
+                 VALUES ('Matin', '', 1, '{\"kind\":\"manual\"}', '[{\"kind\":\"startWorkspace\",\"workspaceId\":3},{\"kind\":\"sshCommand\",\"serverId\":5,\"snippetId\":9},{\"kind\":\"sshCommand\",\"serverId\":5,\"snippetId\":null,\"command\":\"uptime\"}]', '\"stop\"', 30, 0)",
                 [],
             )?;
             Ok(())
@@ -393,6 +452,7 @@ mod tests {
         assert_eq!(summary.added.get("projets"), Some(&1));
         assert_eq!(summary.added.get("workspaces"), Some(&1));
         assert_eq!(summary.added.get("automatisations"), Some(&1));
+        assert_eq!(summary.added.get("commandes"), Some(&2));
 
         let (pid, wid): (i64, i64) = dst
             .with(|c| Ok((c.query_row("SELECT id FROM projects", [], |r| r.get(0))?, c.query_row("SELECT id FROM workspaces", [], |r| r.get(0))?)))
@@ -401,6 +461,14 @@ mod tests {
         assert!(step.contains(&format!("\"projectId\":{pid}")));
         let (steps, enabled): (String, i64) = dst.with(|c| Ok(c.query_row("SELECT steps, enabled FROM automations", [], |r| Ok((r.get(0)?, r.get(1)?)))?)).unwrap();
         assert!(steps.contains(&format!("\"workspaceId\":{wid}")));
+        let (sid, snid): (i64, i64) = dst
+            .with(|c| Ok((c.query_row("SELECT id FROM servers", [], |r| r.get(0))?, c.query_row("SELECT id FROM server_snippets WHERE name = 'Disque'", [], |r| r.get(0))?)))
+            .unwrap();
+        assert!(steps.contains(&format!("\"snippetId\":{snid}")));
+        assert!(steps.contains(&format!("\"serverId\":{sid}")));
+        assert!(steps.contains("\"snippetId\":null"));
+        let global: Option<i64> = dst.with(|c| Ok(c.query_row("SELECT server_id FROM server_snippets WHERE name = 'Mémoire'", [], |r| r.get(0))?)).unwrap();
+        assert_eq!(global, None);
         assert_eq!(enabled, 0);
 
         // Second import : tout est déjà présent.

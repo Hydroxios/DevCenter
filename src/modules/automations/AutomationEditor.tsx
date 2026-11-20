@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { AutomationCondition, AutomationInput, AutomationStep, AutomationTrigger, HttpMethod } from "@/types";
-import { CONDITION_KINDS, DAYS, STEP_KINDS, defaultCondition, defaultStep, stepIcon, type Refs } from "./model";
+import { CONDITION_KINDS, DAYS, STEP_KINDS, defaultCondition, defaultStep, snippetsFor, stepIcon, type Refs } from "./model";
 
 function Num({ value, onChange, min, max, className, label }: { value: number; onChange: (n: number) => void; min: number; max: number; className?: string; label: string }) {
   return (
@@ -203,6 +203,67 @@ function HttpFields({ step, onChange }: { step: Extract<AutomationStep, { kind: 
   );
 }
 
+function SshFields({ step, onChange, refs }: { step: Extract<AutomationStep, { kind: "sshCommand" }>; onChange: (s: AutomationStep) => void; refs: Refs }) {
+  const available = snippetsFor(refs, step.serverId);
+  // Commande enregistrée supprimée ou non disponible sur ce serveur : on l'affiche quand même.
+  const missing = step.snippetId !== null && !available.some((s) => s.id === step.snippetId);
+  return (
+    <div className="grid min-w-0 flex-1 gap-2">
+      <div className="flex gap-2">
+        <RefSelect
+          label="Serveur"
+          items={refs.servers}
+          value={step.serverId}
+          onChange={(serverId) => {
+            const keep = step.snippetId !== null && snippetsFor(refs, serverId).some((s) => s.id === step.snippetId);
+            onChange({ ...step, serverId, snippetId: keep ? step.snippetId : null });
+          }}
+          empty="Aucun serveur"
+        />
+        <Select
+          aria-label="Commande"
+          className="min-w-0 flex-1"
+          value={step.snippetId ?? "free"}
+          onChange={(e) => onChange({ ...step, snippetId: e.target.value === "free" ? null : Number(e.target.value) })}
+        >
+          <option value="free">Commande libre…</option>
+          {missing && <option value={step.snippetId!}>Commande #{step.snippetId} (indisponible)</option>}
+          {available.map((s) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </Select>
+      </div>
+      {step.snippetId === null && (
+        <>
+          <textarea
+            aria-label="Commande"
+            className="min-h-14 w-full resize-y rounded-lg border border-input bg-card px-3 py-2 font-mono text-xs text-foreground outline-none transition placeholder:text-muted-foreground/70 hover:border-foreground/20 focus:border-primary focus:ring-2 focus:ring-primary/15"
+            value={step.command}
+            maxLength={4000}
+            onChange={(e) => onChange({ ...step, command: e.target.value })}
+            placeholder="systemctl is-active nginx"
+            spellCheck={false}
+          />
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <input type="checkbox" className="accent-[var(--primary)]" checked={step.sudo} onChange={(e) => onChange({ ...step, sudo: e.target.checked })} />
+            Avec <code>sudo -n</code>
+          </label>
+        </>
+      )}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+        <label className="flex items-center gap-2 text-muted-foreground">
+          <input type="checkbox" className="accent-[var(--primary)]" checked={step.failOnError} onChange={(e) => onChange({ ...step, failOnError: e.target.checked })} />
+          Échouer si code ≠ 0
+        </label>
+        <span className="flex items-center gap-2 text-muted-foreground">
+          délai <Num label="Délai" value={step.timeoutSecs} min={1} max={3600} onChange={(timeoutSecs) => onChange({ ...step, timeoutSecs })} /> s
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground">Exécution non interactive (clé SSH). La sortie est enregistrée dans l'historique (tronquée).</p>
+    </div>
+  );
+}
+
 function StepFields({ step, onChange, refs }: { step: AutomationStep; onChange: (s: AutomationStep) => void; refs: Refs }) {
   switch (step.kind) {
     case "startWorkspace":
@@ -255,6 +316,8 @@ function StepFields({ step, onChange, refs }: { step: AutomationStep; onChange: 
       );
     case "httpRequest":
       return <HttpFields step={step} onChange={onChange} />;
+    case "sshCommand":
+      return <SshFields step={step} onChange={onChange} refs={refs} />;
     case "condition":
       return <ConditionEditor condition={step.condition} onChange={(condition) => onChange({ ...step, condition })} refs={refs} />;
   }
@@ -351,7 +414,7 @@ export function AutomationEditor({
             </ol>
             <div className="flex gap-2">
               <Select value={adding} onChange={(e) => setAdding(e.target.value as AutomationStep["kind"])} aria-label="Type d'étape" className="flex-1">
-                {["Workspaces", "Projets", "Ouvrir", "Contrôle"].map((g) => (
+                {["Workspaces", "Projets", "Ouvrir", "Serveurs", "Contrôle"].map((g) => (
                   <optgroup key={g} label={g}>
                     {STEP_KINDS.filter((k) => k.group === g).map((k) => (
                       <option key={k.kind} value={k.kind}>{k.label}</option>

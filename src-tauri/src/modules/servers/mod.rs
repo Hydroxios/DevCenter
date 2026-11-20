@@ -2,6 +2,7 @@
 
 pub mod agent;
 pub mod remote;
+pub mod snippets;
 pub mod ssh;
 pub mod terminal;
 

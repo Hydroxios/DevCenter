@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Box, Copy, Gauge, Pencil, Plus, Server as ServerIcon, Settings2, TerminalSquare, Trash2, Zap } from "lucide-react";
+import { Box, Copy, Gauge, Pencil, Plus, Server as ServerIcon, Settings2, SquareChevronRight, TerminalSquare, Trash2, Zap } from "lucide-react";
 
 import { EmptyState, ListItem, ListPane, Page, PageBar, PageBody, PageMain, PageNotice, PageTabs, TauriOnly } from "@/components/layout/Page";
 import { Button } from "@/components/ui/button";
@@ -19,17 +19,19 @@ import type { Server } from "@/types";
 import { KeyHelp } from "./KeyHelp";
 import { DockerPanel, OverviewPanel, ServicesPanel } from "./RemotePanels";
 import { ServerDialog } from "./ServerDialog";
+import { SnippetsPanel } from "./SnippetsPanel";
 import { SshTerminal, sshKey } from "./SshTerminal";
 import { remoteCache } from "./remoteCache";
 import { terminals, useTerminalsVersion } from "./terminalManager";
 
-type Tab = "overview" | "terminal" | "services" | "docker";
+type Tab = "overview" | "terminal" | "commands" | "services" | "docker";
 
 /** Dernier onglet ouvert par serveur (conservé le temps de la session de l'app). */
 const lastTab = new Map<number, Tab>();
 const TABS: { id: Tab; label: string; icon: typeof Gauge }[] = [
   { id: "overview", label: "Aperçu", icon: Gauge },
   { id: "terminal", label: "Terminal", icon: TerminalSquare },
+  { id: "commands", label: "Commandes", icon: SquareChevronRight },
   { id: "services", label: "Services", icon: Settings2 },
   { id: "docker", label: "Docker", icon: Box },
 ];
@@ -134,6 +136,7 @@ function ServerView({
       <PageBody>
         {offline && <KeyHelp server={server} onFixed={onTest} />}
         {tab === "overview" && <OverviewPanel server={server} />}
+        {tab === "commands" && <SnippetsPanel server={server} />}
         {tab === "services" && <ServicesPanel server={server} />}
         {tab === "docker" && <DockerPanel server={server} />}
         {/* La session SSH vit dans terminalManager : quitter l'onglet ou la page ne la coupe pas. */}

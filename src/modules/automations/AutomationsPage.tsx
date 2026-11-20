@@ -80,7 +80,7 @@ function RunLog({ run }: { run: AutomationRun }) {
           )}
           <span className={cn("min-w-0 flex-1", s.outcome === "skipped" && "text-muted-foreground")}>
             {s.label}
-            {s.message && <span className={cn("block text-xs", s.outcome === "failed" ? "text-destructive" : "text-muted-foreground")}>{s.message}</span>}
+            {s.message && <span className={cn("block max-h-48 overflow-auto text-xs break-words whitespace-pre-wrap", s.message.includes("\n") && "font-mono", s.outcome === "failed" ? "text-destructive" : "text-muted-foreground")}>{s.message}</span>}
           </span>
           {s.durationMs > 0 && <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{(s.durationMs / 1000).toFixed(1)} s</span>}
         </li>
@@ -427,6 +427,8 @@ function stepSummary(s: AutomationStep, refs: Refs): string {
       return `${label} · ${s.url}`;
     case "httpRequest":
       return `${s.method} ${s.url}`;
+    case "sshCommand":
+      return `SSH ${name(refs.servers, s.serverId)} › ${s.snippetId !== null ? name(refs.snippets, s.snippetId) : s.command}`;
     case "notify":
       return `${label} · « ${s.title} »`;
     case "wait":
@@ -447,7 +449,7 @@ export function AutomationsPage() {
 
 function AutomationsView() {
   const [list, setList] = useState<Automation[] | null>(null);
-  const [refs, setRefs] = useState<Refs>({ projects: [], apps: [], workspaces: [], servers: [] });
+  const [refs, setRefs] = useState<Refs>({ projects: [], apps: [], workspaces: [], servers: [], snippets: [] });
   const [editor, setEditor] = useState<{ open: boolean; initial: AutomationInput | null }>({ open: false, initial: null });
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -466,8 +468,8 @@ function AutomationsView() {
 
   useEffect(() => {
     refresh();
-    Promise.all([api.projects.list(), api.apps.list(), api.workspaces.list(), api.servers.list()])
-      .then(([projects, apps, workspaces, servers]) => setRefs({ projects, apps, workspaces, servers }))
+    Promise.all([api.projects.list(), api.apps.list(), api.workspaces.list(), api.servers.list(), api.snippets.list()])
+      .then(([projects, apps, workspaces, servers, snippets]) => setRefs({ projects, apps, workspaces, servers, snippets }))
       .catch(() => {});
     const unlisten = listen("automation://changed", refresh);
     return () => {

@@ -276,6 +276,37 @@ export interface Container {
 
 export type RemoteAction = "start" | "stop" | "restart";
 
+/** Commande enregistrée, exécutée en un clic sur un serveur. */
+export interface Snippet {
+  id: number;
+  name: string;
+  command: string;
+  /** `null` = disponible sur tous les serveurs. */
+  serverId: number | null;
+  /** Demander une confirmation avant l'exécution. */
+  confirm: boolean;
+  /** Exécuter via `sudo -n`. */
+  sudo: boolean;
+}
+
+export interface SnippetInput {
+  id: number | null;
+  name: string;
+  command: string;
+  serverId: number | null;
+  confirm: boolean;
+  sudo: boolean;
+}
+
+export interface CommandResult {
+  stdout: string;
+  stderr: string;
+  /** `null` si la commande a été interrompue par un signal. */
+  exitCode: number | null;
+  durationMs: number;
+  truncated: boolean;
+}
+
 export interface KeyStatus {
   agent: "running" | "unavailable";
   loaded: string[];
@@ -320,6 +351,18 @@ export type AutomationStep =
       body: string;
       /** Codes acceptés (« 2xx », « 200-299 », « 200,204 ») ; vide = 2xx. */
       expectStatus: string;
+      timeoutSecs: number;
+    }
+  | {
+      kind: "sshCommand";
+      serverId: number;
+      /** Commande enregistrée ; `null` = commande libre (`command`). */
+      snippetId: number | null;
+      command: string;
+      /** Commande libre exécutée via `sudo -n`. */
+      sudo: boolean;
+      /** Échouer si le code de sortie est non nul. */
+      failOnError: boolean;
       timeoutSecs: number;
     }
   | { kind: "condition"; condition: AutomationCondition };

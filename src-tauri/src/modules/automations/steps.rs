@@ -45,6 +45,23 @@ pub enum Step {
         #[serde(default = "default_http_timeout")]
         timeout_secs: u32,
     },
+    /// Commande SSH sur un serveur : commande enregistrée (`snippet_id`) ou commande libre.
+    SshCommand {
+        server_id: i64,
+        #[serde(default)]
+        snippet_id: Option<i64>,
+        /// Commande libre (ignorée si `snippet_id` est renseigné).
+        #[serde(default)]
+        command: String,
+        /// Commande libre exécutée via `sudo -n`.
+        #[serde(default)]
+        sudo: bool,
+        /// Échouer si le code de sortie est non nul.
+        #[serde(default)]
+        fail_on_error: bool,
+        #[serde(default = "default_ssh_timeout")]
+        timeout_secs: u32,
+    },
     /// « Continuer seulement si… » : arrête proprement le workflow si la condition est fausse.
     Condition { condition: Condition },
 }
@@ -88,6 +105,38 @@ impl HttpMethod {
 
 fn default_http_timeout() -> u32 {
     30
+}
+
+fn default_ssh_timeout() -> u32 {
+    120
+}
+
+/// Taille maximale de la sortie conservée dans l'historique d'exécution.
+const SSH_LOG_MAX: usize = 2000;
+
+/// Sortie condensée pour l'historique : fin de la sortie (la plus utile), tronquée.
+fn ssh_summary(out: &str) -> String {
+    let out = out.trim();
+    let count = out.chars().count();
+    if count <= SSH_LOG_MAX {
+        return out.to_string();
+    }
+    let tail: String = out.chars().skip(count - SSH_LOG_MAX).collect();
+    format!("…{tail}")
+}
+
+/// Commande et mode sudo effectifs d'une étape SSH.
+fn ssh_target(db: &Database, server_id: i64, snippet_id: Option<i64>, command: &str, sudo: bool) -> AppResult<(String, bool)> {
+    match snippet_id {
+        Some(id) => {
+            let snippet = servers::snippets::get(db, id)?;
+            if !servers::snippets::available_on(&snippet, server_id) {
+                return Err(AppError::InvalidInput(format!("la commande « {} » n'est pas disponible sur ce serveur", snippet.name)));
+            }
+            Ok((snippet.command, snippet.sudo))
+        }
+        None => Ok((servers::snippets::validate_command(command)?, sudo)),
+    }
 }
 
 pub enum Flow {
@@ -239,6 +288,14 @@ pub fn validate(db: &Database, step: &Step) -> AppResult<()> {
             }
             Ok(())
         }
+        Step::SshCommand { server_id, snippet_id, command, sudo, timeout_secs, .. } => {
+            require(db, "servers", *server_id, "serveur")?;
+            ssh_target(db, *server_id, *snippet_id, command, *sudo)?;
+            if !(1..=3600).contains(timeout_secs) {
+                return Err(AppError::InvalidInput("délai de commande entre 1 et 3600 secondes".into()));
+            }
+            Ok(())
+        }
         Step::Condition { condition } => match condition {
             Condition::ProcessRunning { name, .. } => {
                 if name.trim().is_empty() || name.len() > 260 { Err(AppError::InvalidInput("nom de processus invalide".into())) } else { Ok(()) }
@@ -286,6 +343,16 @@ pub fn label(app: &AppHandle, step: &Step) -> String {
         Step::Wait { seconds } => format!("Attendre {seconds} s"),
         Step::WaitForPort { host, port, .. } => format!("Attendre {host}:{port}"),
         Step::HttpRequest { method, url, .. } => format!("{} {url}", method.as_str()),
+        Step::SshCommand { server_id, snippet_id, command, .. } => {
+            let what = match snippet_id {
+                Some(id) => name_of(db, "server_snippets", *id),
+                None => {
+                    let c: String = command.trim().chars().take(60).collect();
+                    if command.trim().chars().count() > 60 { format!("{c}…") } else { c }
+                }
+            };
+            format!("SSH {} › {what}", name_of(db, "servers", *server_id))
+        }
         Step::Condition { condition } => format!(
             "Si {}",
             match condition {
@@ -454,6 +521,23 @@ pub fn run(app: &AppHandle, step: &Step, deadline: Instant) -> AppResult<Flow> {
             }
             return Ok(Flow::Done(detail));
         }
+        Step::SshCommand { server_id, snippet_id, command, sudo, fail_on_error, timeout_secs } => {
+            let server = servers::get(db, *server_id)?;
+            let (command, sudo) = ssh_target(db, *server_id, *snippet_id, command, *sudo)?;
+            let remaining = deadline.saturating_duration_since(Instant::now()).as_secs().max(1);
+            let timeout = Duration::from_secs((*timeout_secs as u64).min(remaining));
+            let r = servers::snippets::execute(&server, &command, sudo, timeout)?;
+            let code = r.exit_code.map(|c| c.to_string()).unwrap_or_else(|| "?".into());
+            let ok = r.exit_code == Some(0);
+            // En cas d'échec, stderr est généralement plus parlant que stdout.
+            let output = if (!ok && !r.stderr.trim().is_empty()) || r.stdout.trim().is_empty() { &r.stderr } else { &r.stdout };
+            let summary = ssh_summary(output);
+            let detail = if summary.is_empty() { format!("code {code}") } else { format!("code {code}\n{summary}") };
+            if !ok && *fail_on_error {
+                return Err(AppError::InvalidInput(detail));
+            }
+            return Ok(Flow::Done(detail));
+        }
         Step::Condition { condition } => {
             let (value, negate) = evaluate(app, condition)?;
             if value == negate {
@@ -475,6 +559,24 @@ mod tests {
         assert!(port_open("127.0.0.1", port, Duration::from_millis(500)));
         drop(listener);
         assert!(time_between("00:00", "23:59") || time_between("23:59", "00:00"));
+    }
+
+    #[test]
+    fn summarizes_ssh_output() {
+        assert_eq!(ssh_summary("  ok\n"), "ok");
+        let long = "a".repeat(SSH_LOG_MAX + 10);
+        let s = ssh_summary(&long);
+        assert!(s.starts_with('…'));
+        assert_eq!(s.chars().count(), SSH_LOG_MAX + 1);
+    }
+
+    #[test]
+    fn deserializes_ssh_step_defaults() {
+        let step: Step = serde_json::from_str(r#"{"kind":"sshCommand","serverId":1,"command":"df -h"}"#).unwrap();
+        assert_eq!(
+            step,
+            Step::SshCommand { server_id: 1, snippet_id: None, command: "df -h".into(), sudo: false, fail_on_error: false, timeout_secs: 120 }
+        );
     }
 
     #[test]

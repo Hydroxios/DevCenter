@@ -112,8 +112,18 @@ pub fn exec_ok(server: &Server, remote_cmd: &str, timeout: Duration) -> AppResul
     Err(AppError::InvalidInput(explain(&msg, out.status.code())))
 }
 
+/// Le message d'erreur provient-il du client `ssh` (connexion, authentification) plutôt que
+/// de la commande distante ? Utile car `ssh` sort avec le code 255 dans les deux cas rares.
+pub fn is_connection_error(stderr: &str) -> bool {
+    let lower = stderr.to_lowercase();
+    lower.starts_with("ssh:")
+        || ["permission denied (", "could not resolve hostname", "connection refused", "connection timed out", "host key verification failed", "remote host identification has changed", "connection closed by"]
+            .iter()
+            .any(|p| lower.contains(p))
+}
+
 /// Traduit les erreurs SSH courantes.
-fn explain(stderr: &str, code: Option<i32>) -> String {
+pub fn explain(stderr: &str, code: Option<i32>) -> String {
     let lower = stderr.to_lowercase();
     if lower.contains("permission denied") {
         "authentification refusée : vérifiez l'utilisateur et la clé SSH (la connexion par mot de passe n'est pas utilisée)".into()
