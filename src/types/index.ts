@@ -176,7 +176,9 @@ export type WorkspaceStep =
   | { kind: "folder"; projectId: number }
   | { kind: "script"; projectId: number; script: string; openBrowser: boolean }
   | { kind: "app"; appId: number; closeOnStop: boolean }
-  | { kind: "url"; url: string };
+  | { kind: "url"; url: string }
+  | { kind: "tunnelOpen"; tunnelId: number; closeOnStop: boolean }
+  | { kind: "tunnelClose"; tunnelId: number };
 
 export interface StepResult {
   label: string;
@@ -237,6 +239,48 @@ export interface ServerInput {
   port: number | null;
   user: string | null;
   keyPath: string | null;
+}
+
+export type TunnelKind = "local" | "remote" | "dynamic";
+
+export type TunnelState = "stopped" | "starting" | "running" | "retrying" | "error";
+
+export interface TunnelStatus {
+  state: TunnelState;
+  /** Erreur de ssh (traduite) ou délai avant la prochaine tentative. */
+  message: string | null;
+  since: number;
+  restarts: number;
+}
+
+export interface Tunnel {
+  id: number;
+  serverId: number;
+  serverName: string;
+  name: string;
+  kind: TunnelKind;
+  /** Adresse de ce PC : écoute pour -L / -D, destination pour -R. */
+  bindAddress: string;
+  localPort: number;
+  /** Adresse côté serveur : destination pour -L, écoute pour -R ; null pour -D. */
+  remoteHost: string | null;
+  remotePort: number | null;
+  autoStart: boolean;
+  autoRestart: boolean;
+  status: TunnelStatus;
+}
+
+export interface TunnelInput {
+  id: number | null;
+  serverId: number;
+  name: string;
+  kind: TunnelKind;
+  bindAddress: string | null;
+  localPort: number;
+  remoteHost: string | null;
+  remotePort: number | null;
+  autoStart: boolean;
+  autoRestart: boolean;
 }
 
 export interface RemoteMetrics {
@@ -308,6 +352,8 @@ export type AutomationStep =
   | { kind: "openFolder"; projectId: number }
   | { kind: "launchApp"; appId: number }
   | { kind: "openUrl"; url: string }
+  | { kind: "openTunnel"; tunnelId: number }
+  | { kind: "closeTunnel"; tunnelId: number }
   | { kind: "notify"; title: string; body: string }
   | { kind: "wait"; seconds: number }
   | { kind: "waitForPort"; host: string; port: number; timeoutSecs: number }

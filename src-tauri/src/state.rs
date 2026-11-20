@@ -6,6 +6,7 @@ use crate::modules::automations::AutomationRuntime;
 use crate::modules::remote::RemoteAccess;
 use crate::modules::runner::Runner;
 use crate::modules::servers::terminal::Terminals;
+use crate::modules::servers::tunnels::TunnelRuntime;
 use crate::modules::settings::SettingsService;
 use crate::modules::system::SystemService;
 use crate::modules::workspaces::WorkspaceRuntime;
@@ -18,6 +19,8 @@ pub struct AppState {
     pub runner: Runner,
     pub workspaces: WorkspaceRuntime,
     pub terminals: Terminals,
+    /// Tunnels SSH ouverts (processus `ssh -N` surveillés).
+    pub tunnels: TunnelRuntime,
     pub automations: AutomationRuntime,
     pub remote: RemoteAccess,
     pub clones: CloneJobs,

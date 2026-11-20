@@ -104,6 +104,20 @@ const MIGRATIONS: &[&str] = &[
         auth       TEXT NOT NULL,
         created_at INTEGER NOT NULL
     );",
+    // 9 — tunnels SSH (redirections de ports -L / -R / -D) par serveur
+    "CREATE TABLE ssh_tunnels (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        server_id    INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+        name         TEXT NOT NULL,
+        kind         TEXT NOT NULL,
+        bind_address TEXT NOT NULL DEFAULT '127.0.0.1',
+        local_port   INTEGER NOT NULL,
+        remote_host  TEXT,
+        remote_port  INTEGER,
+        auto_start   INTEGER NOT NULL DEFAULT 0,
+        auto_restart INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX idx_ssh_tunnels_server ON ssh_tunnels(server_id);",
 ];
 
 pub struct Database {

@@ -113,7 +113,7 @@ pub fn exec_ok(server: &Server, remote_cmd: &str, timeout: Duration) -> AppResul
 }
 
 /// Traduit les erreurs SSH courantes.
-fn explain(stderr: &str, code: Option<i32>) -> String {
+pub fn explain(stderr: &str, code: Option<i32>) -> String {
     let lower = stderr.to_lowercase();
     if lower.contains("permission denied") {
         "authentification refusée : vérifiez l'utilisateur et la clé SSH (la connexion par mot de passe n'est pas utilisée)".into()

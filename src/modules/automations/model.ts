@@ -7,11 +7,13 @@ import {
   Globe,
   Hourglass,
   Layers,
+  Network,
   Play,
   PlugZap,
   Send,
   Square,
   SquareStop,
+  Unplug,
   type LucideIcon,
 } from "lucide-react";
 
@@ -49,6 +51,8 @@ export const STEP_KINDS: { kind: AutomationStep["kind"]; label: string; icon: Lu
   { kind: "launchApp", label: "Lancer une application", icon: AppWindow, group: "Ouvrir" },
   { kind: "openUrl", label: "Ouvrir une URL", icon: Globe, group: "Ouvrir" },
   { kind: "httpRequest", label: "Requête HTTP", icon: Send, group: "Ouvrir" },
+  { kind: "openTunnel", label: "Ouvrir un tunnel", icon: Network, group: "Serveurs" },
+  { kind: "closeTunnel", label: "Fermer un tunnel", icon: Unplug, group: "Serveurs" },
   { kind: "notify", label: "Notifier", icon: Bell, group: "Contrôle" },
   { kind: "wait", label: "Attendre", icon: Hourglass, group: "Contrôle" },
   { kind: "waitForPort", label: "Attendre un port", icon: PlugZap, group: "Contrôle" },
@@ -72,6 +76,8 @@ export interface Refs {
   apps: { id: number; name: string }[];
   workspaces: { id: number; name: string }[];
   servers: { id: number; name: string }[];
+  /** Tunnels SSH, nommés « tunnel (serveur) ». */
+  tunnels: { id: number; name: string }[];
 }
 
 export function defaultCondition(kind: AutomationCondition["kind"], refs: Refs): AutomationCondition {
@@ -111,6 +117,9 @@ export function defaultStep(kind: AutomationStep["kind"], refs: Refs): Automatio
       return { kind, appId: refs.apps[0]?.id ?? 0 };
     case "openUrl":
       return { kind, url: "http://localhost:3000" };
+    case "openTunnel":
+    case "closeTunnel":
+      return { kind, tunnelId: refs.tunnels[0]?.id ?? 0 };
     case "httpRequest":
       return { kind, method: "GET", url: "http://localhost:3000/health", headers: "", body: "", expectStatus: "", timeoutSecs: 30 };
     case "notify":

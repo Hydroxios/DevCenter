@@ -4,6 +4,7 @@ pub mod agent;
 pub mod remote;
 pub mod ssh;
 pub mod terminal;
+pub mod tunnels;
 
 use std::path::Path;
 

@@ -25,6 +25,9 @@ pub enum Step {
     OpenFolder { project_id: i64 },
     LaunchApp { app_id: i64 },
     OpenUrl { url: String },
+    /// Ouvre un tunnel SSH et attend qu'il soit actif.
+    OpenTunnel { tunnel_id: i64 },
+    CloseTunnel { tunnel_id: i64 },
     Notify { title: String, #[serde(default)] body: String },
     /// Pause (1 à 3600 s).
     Wait { seconds: u32 },
@@ -210,6 +213,7 @@ pub fn validate(db: &Database, step: &Step) -> AppResult<()> {
         Step::OpenEditor { project_id } | Step::OpenFolder { project_id } => require(db, "projects", *project_id, "projet"),
         Step::LaunchApp { app_id } => require(db, "app_shortcuts", *app_id, "application"),
         Step::OpenUrl { url } => validate_url(url),
+        Step::OpenTunnel { tunnel_id } | Step::CloseTunnel { tunnel_id } => require(db, "ssh_tunnels", *tunnel_id, "tunnel"),
         Step::Notify { title, body } => {
             if title.trim().is_empty() || title.len() > 120 || body.len() > 500 {
                 Err(AppError::InvalidInput("notification : titre de 1 à 120 caractères, texte de 500 maximum".into()))
@@ -282,6 +286,8 @@ pub fn label(app: &AppHandle, step: &Step) -> String {
         Step::OpenFolder { project_id } => format!("Ouvrir le dossier de {}", name_of(db, "projects", *project_id)),
         Step::LaunchApp { app_id } => format!("Lancer {}", name_of(db, "app_shortcuts", *app_id)),
         Step::OpenUrl { url } => format!("Ouvrir {url}"),
+        Step::OpenTunnel { tunnel_id } => format!("Ouvrir le tunnel {}", name_of(db, "ssh_tunnels", *tunnel_id)),
+        Step::CloseTunnel { tunnel_id } => format!("Fermer le tunnel {}", name_of(db, "ssh_tunnels", *tunnel_id)),
         Step::Notify { title, .. } => format!("Notifier « {title} »"),
         Step::Wait { seconds } => format!("Attendre {seconds} s"),
         Step::WaitForPort { host, port, .. } => format!("Attendre {host}:{port}"),
@@ -407,6 +413,15 @@ pub fn run(app: &AppHandle, step: &Step, deadline: Instant) -> AppResult<Flow> {
         Step::OpenUrl { url } => {
             validate_url(url)?;
             tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| AppError::InvalidInput(e.to_string()))?;
+        }
+        Step::OpenTunnel { tunnel_id } => {
+            state.tunnels.start(app, db, *tunnel_id)?;
+            let remaining = deadline.saturating_duration_since(Instant::now()).min(Duration::from_secs(30));
+            state.tunnels.wait_ready(*tunnel_id, remaining.max(Duration::from_secs(1)))?;
+        }
+        Step::CloseTunnel { tunnel_id } => {
+            servers::tunnels::get(db, *tunnel_id)?;
+            state.tunnels.stop(app, *tunnel_id)?;
         }
         Step::Notify { title, body } => {
             app.notification()

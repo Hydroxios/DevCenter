@@ -13,6 +13,7 @@ use tauri::{AppHandle, Emitter};
 use crate::database::Database;
 use crate::error::{AppError, AppResult};
 use crate::modules::settings::SettingsService;
+use crate::modules::servers::tunnels;
 use crate::modules::{apps, editor, projects, runner};
 use crate::state::AppState;
 
@@ -32,6 +33,10 @@ pub enum Step {
     App { app_id: i64, #[serde(default)] close_on_stop: bool },
     /// Ouvre une adresse http(s) dans le navigateur.
     Url { url: String },
+    /// Ouvre un tunnel SSH ; `close_on_stop` le ferme à l'arrêt de la session.
+    TunnelOpen { tunnel_id: i64, #[serde(default)] close_on_stop: bool },
+    /// Ferme un tunnel SSH.
+    TunnelClose { tunnel_id: i64 },
 }
 
 #[derive(Debug, Serialize)]
@@ -92,6 +97,8 @@ struct ActiveSession {
     info: ActiveInfo,
     /// PID des applications à fermer à l'arrêt.
     app_pids: Vec<u32>,
+    /// Tunnels SSH à fermer à l'arrêt.
+    tunnel_ids: Vec<i64>,
 }
 
 /// Sessions en cours, indexées par workspace (une seule session active par workspace).
@@ -145,6 +152,11 @@ fn validate(db: &Database, input: &WorkspaceInput) -> AppResult<()> {
                 }
             }
             Step::Url { url } => validate_url(url)?,
+            Step::TunnelOpen { tunnel_id, .. } | Step::TunnelClose { tunnel_id } => {
+                if !exists(db, "ssh_tunnels", *tunnel_id)? {
+                    return Err(AppError::InvalidInput(format!("tunnel {tunnel_id} inconnu")));
+                }
+            }
         }
     }
     Ok(())
@@ -293,8 +305,35 @@ fn project_label(db: &Database, project_id: i64) -> String {
     .unwrap_or_else(|| format!("projet {project_id}"))
 }
 
-/// Exécute une étape. Retourne (libellé, résultat, run_id éventuel, pid à fermer éventuel).
-fn run_step(app: &AppHandle, state: &AppState, step: &Step) -> (String, AppResult<(Option<u64>, Option<u32>)>) {
+/// Ce qu'une étape a lancé et que l'arrêt de la session devra fermer.
+#[derive(Default)]
+struct Launched {
+    run_id: Option<u64>,
+    pid: Option<u32>,
+    tunnel_id: Option<i64>,
+}
+
+impl Launched {
+    fn run(run_id: u64) -> AppResult<Self> {
+        Ok(Self { run_id: Some(run_id), ..Default::default() })
+    }
+    fn pid(pid: Option<u32>) -> AppResult<Self> {
+        Ok(Self { pid, ..Default::default() })
+    }
+    fn nothing() -> AppResult<Self> {
+        Ok(Self::default())
+    }
+}
+
+/// Délai d'ouverture d'un tunnel avant de passer à l'étape suivante.
+const TUNNEL_READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
+fn tunnel_label(db: &Database, tunnel_id: i64) -> String {
+    tunnels::get(db, tunnel_id).map(|t| format!("{} ({})", t.name, t.server_name)).unwrap_or_else(|_| format!("tunnel {tunnel_id}"))
+}
+
+/// Exécute une étape. Retourne le libellé et ce qui a été lancé.
+fn run_step(app: &AppHandle, state: &AppState, step: &Step) -> (String, AppResult<Launched>) {
     let db = &state.db;
     match step {
         Step::Editor { project_id } => (
@@ -302,7 +341,7 @@ fn run_step(app: &AppHandle, state: &AppState, step: &Step) -> (String, AppResul
             projects::path_of(db, *project_id).and_then(|path| {
                 let settings = SettingsService::load(db)?;
                 editor::open(settings.editor_path.as_deref(), &path)?;
-                Ok((None, None))
+                Launched::nothing()
             }),
         ),
         Step::Folder { project_id } => (
@@ -310,7 +349,7 @@ fn run_step(app: &AppHandle, state: &AppState, step: &Step) -> (String, AppResul
             projects::path_of(db, *project_id).and_then(|path| {
                 tauri_plugin_opener::open_path(&path, None::<&str>)
                     .map_err(|e| AppError::InvalidInput(e.to_string()))?;
-                Ok((None, None))
+                Launched::nothing()
             }),
         ),
         Step::Script { project_id, script, open_browser } => (
@@ -324,21 +363,38 @@ fn run_step(app: &AppHandle, state: &AppState, step: &Step) -> (String, AppResul
                     .ok_or_else(|| AppError::InvalidInput(format!("script « {script} » absent du package.json")))?;
                 let pm = meta.package_manager.as_deref().unwrap_or("npm");
                 let run = state.runner.start(app, *project_id, &path, pm, &declared.name, &declared.command, *open_browser)?;
-                Ok((Some(run.id), None))
+                Launched::run(run.id)
             }),
         ),
         Step::App { app_id, close_on_stop } => (
             format!("Lancer {}", apps::name_of(db, *app_id).unwrap_or_else(|| format!("application {app_id}"))),
             apps::resolve(db, *app_id).and_then(|path| {
                 let pid = apps::launch(&path)?;
-                Ok((None, if *close_on_stop { pid } else { None }))
+                Launched::pid(if *close_on_stop { pid } else { None })
             }),
         ),
         Step::Url { url } => (
             format!("Ouvrir {url}"),
             validate_url(url).and_then(|_| {
                 tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| AppError::InvalidInput(e.to_string()))?;
-                Ok((None, None))
+                Launched::nothing()
+            }),
+        ),
+        Step::TunnelOpen { tunnel_id, close_on_stop } => (
+            format!("Ouvrir le tunnel {}", tunnel_label(db, *tunnel_id)),
+            (|| {
+                let already = state.tunnels.is_active(*tunnel_id);
+                state.tunnels.start(app, db, *tunnel_id)?;
+                state.tunnels.wait_ready(*tunnel_id, TUNNEL_READY_TIMEOUT)?;
+                // Un tunnel déjà ouvert avant la session n'est pas fermé par elle.
+                Ok(Launched { tunnel_id: (*close_on_stop && !already).then_some(*tunnel_id), ..Default::default() })
+            })(),
+        ),
+        Step::TunnelClose { tunnel_id } => (
+            format!("Fermer le tunnel {}", tunnel_label(db, *tunnel_id)),
+            tunnels::get(db, *tunnel_id).and_then(|_| {
+                state.tunnels.stop(app, *tunnel_id)?;
+                Launched::nothing()
             }),
         ),
     }
@@ -361,13 +417,15 @@ pub fn start(app: &AppHandle, state: &AppState, id: i64) -> AppResult<ActiveInfo
     let mut results = Vec::new();
     let mut run_ids = Vec::new();
     let mut app_pids = Vec::new();
+    let mut tunnel_ids = Vec::new();
     // Les étapes s'enchaînent ; un échec n'empêche pas les suivantes.
     for step in &steps {
         let (label, outcome) = run_step(app, state, step);
         match outcome {
-            Ok((run_id, pid)) => {
-                run_ids.extend(run_id);
-                app_pids.extend(pid);
+            Ok(launched) => {
+                run_ids.extend(launched.run_id);
+                app_pids.extend(launched.pid);
+                tunnel_ids.extend(launched.tunnel_id);
                 results.push(StepResult { label, ok: true, message: None });
             }
             Err(e) => results.push(StepResult { label, ok: false, message: Some(e.to_string()) }),
@@ -398,7 +456,7 @@ pub fn start(app: &AppHandle, state: &AppState, id: i64) -> AppResult<ActiveInfo
         );
     }
     let info = ActiveInfo { session_id, started_at, run_ids, results };
-    state.workspaces.active.lock()?.insert(id, ActiveSession { info: info.clone(), app_pids });
+    state.workspaces.active.lock()?.insert(id, ActiveSession { info: info.clone(), app_pids, tunnel_ids });
     let _ = app.emit(EVENT_CHANGED, id);
     Ok(info)
 }
@@ -416,6 +474,9 @@ pub fn stop(app: &AppHandle, state: &AppState, id: i64) -> AppResult<()> {
     }
     for pid in &session.app_pids {
         runner::kill_tree(*pid);
+    }
+    for tunnel_id in &session.tunnel_ids {
+        let _ = state.tunnels.stop(app, *tunnel_id);
     }
     let status = if session.info.results.iter().all(|r| r.ok) { "completed" } else { "partial" };
     state.db.with(|conn| {

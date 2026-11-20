@@ -16,6 +16,9 @@ import type {
   Container,
   RemoteAction,
   KeyStatus,
+  Tunnel,
+  TunnelInput,
+  TunnelStatus,
   Automation,
   AutomationInput,
   AutomationRun,
@@ -120,6 +123,15 @@ export const api = {
     containerAction: (id: number, container: string, action: RemoteAction) =>
       invoke<void>("server_container_action", { id, container, action }),
     containerLogs: (id: number, container: string, lines = 300) => invoke<string>("server_container_logs", { id, container, lines }),
+  },
+  tunnels: {
+    /** Sans `serverId` : tous les tunnels (étapes de workspace et d'automatisation). */
+    list: (serverId: number | null = null) => invoke<Tunnel[]>("list_tunnels", { serverId }),
+    save: (input: TunnelInput) => invoke<Tunnel[]>("save_tunnel", { input }),
+    remove: (id: number) => invoke<Tunnel[]>("delete_tunnel", { id }),
+    /** Le passage à « actif » ou l'erreur arrive ensuite par l'événement `tunnel://status`. */
+    start: (id: number) => invoke<TunnelStatus>("start_tunnel", { id }),
+    stop: (id: number) => invoke<void>("stop_tunnel", { id }),
   },
   automations: {
     list: () => invoke<Automation[]>("list_automations"),

@@ -53,7 +53,7 @@ function StepFields({
   onChange: (s: WorkspaceStep) => void;
   scriptsOf: (projectId: number) => ProjectScript[] | null;
 }) {
-  const { projects, apps } = useWorkspaces();
+  const { projects, apps, tunnels } = useWorkspaces();
 
   const projectSelect = (projectId: number, set: (id: number) => void) => (
     <Select value={projectId} onChange={(e) => set(Number(e.target.value))} aria-label="Projet" className="min-w-0 flex-1">
@@ -114,6 +114,26 @@ function StepFields({
         </div>
       );
 
+    case "tunnelOpen":
+    case "tunnelClose":
+      return (
+        <div className="grid min-w-0 flex-1 gap-2">
+          <Select value={step.tunnelId} onChange={(e) => onChange({ ...step, tunnelId: Number(e.target.value) })} aria-label="Tunnel">
+            {tunnels.length === 0 && <option value={0}>Aucun tunnel : créez-en dans Serveurs › Tunnels</option>}
+            {tunnels.map((t) => (
+              <option key={t.id} value={t.id}>{t.name} ({t.serverName})</option>
+            ))}
+          </Select>
+          {step.kind === "tunnelOpen" && (
+            <Checkbox
+              label="Fermer à l'arrêt de la session"
+              checked={step.closeOnStop}
+              onChange={(closeOnStop) => onChange({ ...step, closeOnStop })}
+            />
+          )}
+        </div>
+      );
+
     case "url":
       return (
         <Input
@@ -137,7 +157,7 @@ export function WorkspaceEditor({
   open: boolean;
   onOpenChange: (o: boolean) => void;
 }) {
-  const { projects, apps, save, error, clearError, refreshRefs } = useWorkspaces();
+  const { projects, apps, tunnels, save, error, clearError, refreshRefs } = useWorkspaces();
   const scriptsOf = useProjectScripts();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -231,7 +251,7 @@ export function WorkspaceEditor({
             </ol>
             <div className="flex flex-wrap gap-2">
               {STEP_KINDS.map(({ kind, label }) => (
-                <Button key={kind} variant="secondary" size="sm" onClick={() => setSteps((prev) => [...prev, defaultStep(kind, projects, apps)])}>
+                <Button key={kind} variant="secondary" size="sm" onClick={() => setSteps((prev) => [...prev, defaultStep(kind, projects, apps, tunnels)])}>
                   <Plus /> {label}
                 </Button>
               ))}

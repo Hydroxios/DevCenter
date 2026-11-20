@@ -53,7 +53,7 @@ export function BackupSettings() {
         <div>
           <h3 className="font-semibold">Sauvegarde et synchronisation</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Exportez projets, applications, workspaces, serveurs et automatisations dans un fichier JSON (sans aucun secret). Placez-le dans OneDrive
+            Exportez projets, applications, workspaces, serveurs, tunnels SSH et automatisations dans un fichier JSON (sans aucun secret). Placez-le dans OneDrive
             ou Dropbox pour retrouver votre configuration sur un autre PC ; l'import fusionne sans créer de doublons.
           </p>
         </div>

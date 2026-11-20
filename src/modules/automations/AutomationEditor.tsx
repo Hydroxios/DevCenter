@@ -229,6 +229,9 @@ function StepFields({ step, onChange, refs }: { step: AutomationStep; onChange: 
       );
     case "launchApp":
       return <RefSelect label="Application" items={refs.apps} value={step.appId} onChange={(appId) => onChange({ ...step, appId })} empty="Aucune application (voir Système)" />;
+    case "openTunnel":
+    case "closeTunnel":
+      return <RefSelect label="Tunnel" items={refs.tunnels} value={step.tunnelId} onChange={(tunnelId) => onChange({ ...step, tunnelId })} empty="Aucun tunnel (voir Serveurs › Tunnels)" />;
     case "openUrl":
       return <Input aria-label="URL" className="min-w-0 flex-1" value={step.url} onChange={(e) => onChange({ ...step, url: e.target.value })} />;
     case "notify":
@@ -351,7 +354,7 @@ export function AutomationEditor({
             </ol>
             <div className="flex gap-2">
               <Select value={adding} onChange={(e) => setAdding(e.target.value as AutomationStep["kind"])} aria-label="Type d'étape" className="flex-1">
-                {["Workspaces", "Projets", "Ouvrir", "Contrôle"].map((g) => (
+                {["Workspaces", "Projets", "Ouvrir", "Serveurs", "Contrôle"].map((g) => (
                   <optgroup key={g} label={g}>
                     {STEP_KINDS.filter((k) => k.group === g).map((k) => (
                       <option key={k.kind} value={k.kind}>{k.label}</option>
