@@ -317,6 +317,8 @@ impl Runner {
                         tag: Some(format!("run-{}-{}", info.project_id, info.script)),
                     },
                 );
+                // Automatisations « un script plante ».
+                crate::modules::automations::on_script_failed(&app, info.project_id, &info.script, info.exit_code);
             }
             let _ = app.emit(EVENT_STATUS, &info);
         });

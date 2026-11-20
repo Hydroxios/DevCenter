@@ -22,8 +22,96 @@ import type { AutomationCondition, AutomationInput, AutomationStep, AutomationTr
 
 export const DAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 
-export function triggerLabel(t: AutomationTrigger): string {
+const refName = (items: { id: number; name: string }[] | undefined, id: number | null) =>
+  id === null ? null : (items?.find((i) => i.id === id)?.name ?? `#${id}`);
+
+/** Jeton de webhook : 256 bits aléatoires en hexadécimal. */
+export function newWebhookToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Déclencheurs sur événement (pas d'horaire : réagissent à ce qui se passe). */
+export const EVENT_TRIGGERS: AutomationTrigger["kind"][] = ["scriptFailed", "serverDown", "serverUp", "containerStopped", "gitChange", "webhook"];
+
+export interface StepVar {
+  name: string;
+  description: string;
+}
+
+/** Variables `{{nom}}` présentes dans toutes les exécutions (voir `automations/vars.rs`). */
+const BASE_VARS: StepVar[] = [
+  { name: "automation", description: "nom de l'automatisation" },
+  { name: "context", description: "résumé de l'événement (comme dans l'historique)" },
+  { name: "date", description: "date du jour (JJ/MM/AAAA)" },
+  { name: "time", description: "heure (HH:MM)" },
+  { name: "datetime", description: "date et heure ISO 8601" },
+  { name: "origin", description: "manual, schedule, startup, event ou webhook" },
+];
+
+const EVENT_VARS: Partial<Record<AutomationTrigger["kind"], StepVar[]>> = {
+  gitChange: [
+    { name: "project", description: "nom du projet" },
+    { name: "branch", description: "branche courante" },
+    { name: "previous_branch", description: "branche avant le changement" },
+    { name: "commit", description: "hash court (7 caractères)" },
+    { name: "commit_full", description: "hash complet" },
+    { name: "message", description: "titre du commit" },
+  ],
+  scriptFailed: [
+    { name: "project", description: "nom du projet" },
+    { name: "script", description: "nom du script" },
+    { name: "code", description: "code de sortie" },
+  ],
+  serverDown: [
+    { name: "server", description: "nom du serveur" },
+    { name: "state", description: "« injoignable »" },
+    { name: "error", description: "raison de l'échec" },
+  ],
+  serverUp: [
+    { name: "server", description: "nom du serveur" },
+    { name: "state", description: "« joignable »" },
+    { name: "latency", description: "latence en ms" },
+  ],
+  containerStopped: [
+    { name: "server", description: "nom du serveur" },
+    { name: "container", description: "nom du conteneur" },
+    { name: "state", description: "nouvel état (exited, supprimé…)" },
+  ],
+  webhook: [
+    { name: "caller", description: "adresse IP de l'appelant" },
+    { name: "body", description: "corps de la requête reçue" },
+  ],
+};
+
+/** Variables utilisables dans les étapes avec ce déclencheur : celles de l'événement d'abord. */
+export function stepVars(kind: AutomationTrigger["kind"]): StepVar[] {
+  return [...(EVENT_VARS[kind] ?? []), ...BASE_VARS];
+}
+
+export function triggerLabel(t: AutomationTrigger, refs?: Refs): string {
   switch (t.kind) {
+    case "scriptFailed": {
+      const p = refName(refs?.projects, t.projectId);
+      const target = [p, t.script.trim() || null].filter(Boolean).join(" › ");
+      return target ? `Quand ${target} plante` : "Quand un script plante";
+    }
+    case "serverDown":
+    case "serverUp": {
+      const s = refName(refs?.servers, t.serverId) ?? "un serveur";
+      return t.kind === "serverDown" ? `Quand ${s} devient injoignable` : `Quand ${s} redevient joignable`;
+    }
+    case "containerStopped": {
+      const s = refName(refs?.servers, t.serverId);
+      return `Quand ${t.container.trim() ? `le conteneur ${t.container.trim()}` : "un conteneur"} s'arrête${s ? ` (${s})` : ""}`;
+    }
+    case "gitChange": {
+      const what = t.onCommit && t.onBranch ? "Commit ou branche" : t.onCommit ? "Nouveau commit" : "Changement de branche";
+      const p = refName(refs?.projects, t.projectId);
+      return p ? `${what} · ${p}` : `${what} (tous les projets)`;
+    }
+    case "webhook":
+      return "Webhook local";
     case "manual":
       return "Manuel";
     case "interval":
@@ -230,6 +318,75 @@ export function templates(refs: Refs): { id: string; title: string; description:
           ...(refs.apps[0] ? [{ kind: "launchApp" as const, appId: refs.apps[0].id }] : []),
           { kind: "wait", seconds: 20 },
           { kind: "startWorkspace", workspaceId: ws },
+        ],
+      },
+    },
+    {
+      id: "script-crash",
+      title: "Relancer un script qui plante",
+      description: "Quand `dev` s'arrête avec une erreur : notification, puis relance 5 s plus tard.",
+      input: {
+        ...base,
+        name: "Relancer le serveur de dev",
+        description: "",
+        trigger: { kind: "scriptFailed", projectId: refs.projects[0] ? project : null, script: "dev" },
+        steps: [
+          { kind: "notify", title: "Script planté", body: "Le serveur de dev s'est arrêté, relance en cours." },
+          { kind: "wait", seconds: 5 },
+          { kind: "runScript", projectId: project, script: "dev", openBrowser: false },
+        ],
+      },
+    },
+    {
+      id: "server-down-event",
+      title: "Alerte serveur en panne",
+      description: "Notification dès qu'un serveur enregistré ne répond plus (vérifié chaque minute).",
+      input: {
+        ...base,
+        name: "Serveur en panne",
+        description: "",
+        trigger: { kind: "serverDown", serverId: null },
+        steps: [{ kind: "notify", title: "{{server}} injoignable", body: "{{error}}" }],
+      },
+    },
+    {
+      id: "discord-commit",
+      title: "Discord à chaque commit",
+      description: "Poste projet, branche, hash et message du commit sur un webhook Discord (URL à coller).",
+      input: {
+        ...base,
+        // Désactivée tant que l'URL du webhook n'est pas collée.
+        enabled: false,
+        name: "Commit → Discord",
+        description: "",
+        trigger: { kind: "gitChange", projectId: null, onCommit: true, onBranch: false },
+        steps: [
+          {
+            kind: "httpRequest",
+            method: "POST",
+            url: "https://discord.com/api/webhooks/…",
+            headers: "Content-Type: application/json",
+            body: '{"content": "**{{project}}** · `{{branch}}` · `{{commit}}` — {{message}}"}',
+            expectStatus: "",
+            timeoutSecs: 30,
+          },
+        ],
+      },
+    },
+    {
+      id: "webhook-deploy",
+      title: "Webhook de déploiement",
+      description: "Une URL locale à appeler (CI, script, téléphone) : relance le workspace et prévient.",
+      input: {
+        ...base,
+        onError: "stop",
+        name: "Webhook de déploiement",
+        description: "",
+        trigger: { kind: "webhook", token: newWebhookToken() },
+        steps: [
+          { kind: "stopWorkspace", workspaceId: ws },
+          { kind: "startWorkspace", workspaceId: ws },
+          { kind: "notify", title: "Déploiement local", body: "Workspace relancé par le webhook." },
         ],
       },
     },

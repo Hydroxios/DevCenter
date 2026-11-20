@@ -514,7 +514,17 @@ export type AutomationTrigger =
   | { kind: "manual" }
   | { kind: "interval"; minutes: number }
   | { kind: "daily"; time: string; days: number[] }
-  | { kind: "appStart" };
+  | { kind: "appStart" }
+  /** Un script de projet se termine avec un code non nul (`null` / vide = tous). */
+  | { kind: "scriptFailed"; projectId: number | null; script: string }
+  /** Un serveur devient injoignable / redevient joignable (`null` = n'importe lequel). */
+  | { kind: "serverDown"; serverId: number | null }
+  | { kind: "serverUp"; serverId: number | null }
+  /** Un conteneur Docker en marche s'arrête (`container` vide = n'importe lequel). */
+  | { kind: "containerStopped"; serverId: number; container: string }
+  | { kind: "gitChange"; projectId: number | null; onCommit: boolean; onBranch: boolean }
+  /** `POST /hook/<token>` sur le serveur d'accès à distance. */
+  | { kind: "webhook"; token: string };
 
 export type AutomationCondition =
   | { kind: "processRunning"; name: string; negate: boolean }
@@ -581,7 +591,9 @@ export interface AutomationRun {
   id: number;
   automationId: number | null;
   automationName: string;
-  origin: "manual" | "schedule" | "startup";
+  origin: "manual" | "schedule" | "startup" | "event" | "webhook";
+  /** Contexte du déclenchement (projet, script, serveur…), pour les événements. */
+  context: string | null;
   startedAt: number;
   endedAt: number | null;
   status: AutomationRunStatus;

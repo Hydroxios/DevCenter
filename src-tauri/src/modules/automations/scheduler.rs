@@ -32,11 +32,14 @@ fn is_due(a: &Automation, last: Option<i64>, now_ts: i64) -> bool {
             // Fenêtre de rattrapage de 10 min : DevCenter ouvert juste après l'heure prévue.
             daily_slot_today(time, days).is_some_and(|slot| now_ts - slot < 600 && last.is_none_or(|l| l < slot))
         }
-        Trigger::Manual | Trigger::AppStart => false,
+        // Manuel, au démarrage ou sur événement : jamais par le planificateur.
+        _ => false,
     }
 }
 
 pub fn spawn_scheduler(app: AppHandle) {
+    // Serveurs et conteneurs surveillés pour les déclencheurs sur événement.
+    super::events::spawn_monitor(app.clone());
     std::thread::Builder::new()
         .name("automation-scheduler".into())
         .spawn(move || {

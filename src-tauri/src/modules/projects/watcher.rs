@@ -18,6 +18,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use super::git::GitStatus;
 use super::gitcache;
+use crate::modules::automations::{self, GitHead};
 use crate::state::AppState;
 
 pub const EVENT_GIT: &str = "projects://git";
@@ -49,6 +50,8 @@ struct Repo {
     dirty_since: Option<Instant>,
     last_read: Option<Instant>,
     last_sent: Option<Option<GitStatus>>,
+    /// Branche et commit courants (automatisations « changement Git »).
+    head: Option<GitHead>,
 }
 
 #[derive(Default)]
@@ -154,7 +157,10 @@ impl GitWatcher {
                 continue;
             }
             match watcher.watch(&path, RecursiveMode::Recursive) {
-                Ok(()) => repos.push(Repo { id, path, dirty_since: None, last_read: None, last_sent: None }),
+                Ok(()) => {
+                    let head = GitHead::read(&path);
+                    repos.push(Repo { id, path, dirty_since: None, last_read: None, last_sent: None, head })
+                }
                 Err(e) => log::warn!("observation impossible de {} : {e}", path.display()),
             }
         }
@@ -190,13 +196,21 @@ fn flush(app: &AppHandle, inner: &Arc<Mutex<Inner>>) {
     // `git status` hors du verrou : les événements continuent d'être enregistrés pendant ce temps.
     for (id, path) in due {
         let git = gitcache::status(&path, true);
-        let changed = {
+        let head = GitHead::read(&path);
+        let (changed, previous_head) = {
             let Ok(mut inner) = inner.lock() else { return };
             let Some(repo) = inner.repos.iter_mut().find(|r| r.id == id) else { continue };
             let changed = repo.last_sent.as_ref() != Some(&git);
             repo.last_sent = Some(git.clone());
-            changed
+            let previous = if head.is_some() { std::mem::replace(&mut repo.head, head.clone()) } else { None };
+            (changed, previous)
         };
+        if let (Some(before), Some(after)) = (&previous_head, &head) {
+            if before != after {
+                let subject = git.as_ref().and_then(|g| g.last_commit.as_ref()).map(|c| c.subject.clone());
+                automations::on_git_change(app, id, before, after, subject);
+            }
+        }
         if changed {
             let _ = app.emit(EVENT_GIT, GitEvent { id, git });
         }

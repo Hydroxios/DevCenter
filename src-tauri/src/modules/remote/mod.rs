@@ -546,7 +546,7 @@ fn status_payload(app: &AppHandle) -> AppResult<MobileStatus> {
                 steps: a.steps.len(),
                 last_status: a.last_run.as_ref().map(|r| r.status.clone()),
                 last_started_at: a.last_run.as_ref().map(|r| r.started_at),
-                trigger: a.trigger,
+                trigger: a.trigger.redacted(),
                 name: a.name,
             })
             .collect(),
@@ -674,6 +674,23 @@ fn handle(app: &AppHandle, mut req: Request) {
     }
 
     let state = app.state::<AppState>();
+
+    // Webhook local : le jeton (256 bits, propre à chaque automatisation) tient lieu d'authentification.
+    if let Some(token) = path.strip_prefix("/hook/") {
+        let resp = if method != Method::Post {
+            error(405, "utilisez POST")
+        } else {
+            let mut body = String::new();
+            let _ = req.as_reader().take(8192).read_to_string(&mut body);
+            let peer = req.remote_addr().map(|a| a.ip().to_string()).unwrap_or_default();
+            match automations::webhook(app, token.trim_end_matches('/'), &peer, &body) {
+                Ok(run_id) => json_response(202, &serde_json::json!({ "ok": true, "runId": run_id })),
+                Err((code, msg)) => error(code, &msg),
+            }
+        };
+        let _ = req.respond(resp);
+        return;
+    }
 
     if method == Method::Post && path == "/api/pair" {
         let mut body = String::new();

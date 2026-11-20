@@ -14,6 +14,8 @@ use crate::modules::settings::SettingsService;
 use crate::modules::{apps, editor, projects, servers, workspaces};
 use crate::state::AppState;
 
+use super::vars::{Escape, Vars, body_is_json, render};
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum Step {
@@ -154,7 +156,7 @@ fn exists(db: &Database, table: &str, id: i64) -> AppResult<bool> {
     db.with(|conn| Ok(conn.query_row(&format!("SELECT 1 FROM {table} WHERE id = ?1"), params![id], |_| Ok(())).optional()?.is_some()))
 }
 
-fn require(db: &Database, table: &str, id: i64, what: &str) -> AppResult<()> {
+pub(super) fn require(db: &Database, table: &str, id: i64, what: &str) -> AppResult<()> {
     if exists(db, table, id)? { Ok(()) } else { Err(AppError::InvalidInput(format!("{what} {id} inconnu(e)"))) }
 }
 
@@ -324,7 +326,7 @@ pub fn validate(db: &Database, step: &Step) -> AppResult<()> {
     }
 }
 
-fn name_of(db: &Database, table: &str, id: i64) -> String {
+pub(super) fn name_of(db: &Database, table: &str, id: i64) -> String {
     db.with(|conn| Ok(conn.query_row(&format!("SELECT name FROM {table} WHERE id = ?1"), params![id], |r| r.get::<_, String>(0)).optional()?))
         .ok()
         .flatten()
@@ -424,7 +426,7 @@ fn evaluate(app: &AppHandle, c: &Condition) -> AppResult<(bool, bool)> {
     })
 }
 
-pub fn run(app: &AppHandle, step: &Step, deadline: Instant) -> AppResult<Flow> {
+pub fn run(app: &AppHandle, step: &Step, deadline: Instant, run_vars: &Vars) -> AppResult<Flow> {
     let state = app.state::<AppState>();
     let db = &state.db;
     match step {
@@ -491,6 +493,8 @@ pub fn run(app: &AppHandle, step: &Step, deadline: Instant) -> AppResult<Flow> {
             state.tunnels.stop(app, *tunnel_id)?;
         }
         Step::Notify { title, body } => {
+            let title = &render(title, run_vars, Escape::Raw);
+            let body = &render(body, run_vars, Escape::Raw);
             app.notification()
                 .builder()
                 .title(title)
@@ -525,11 +529,17 @@ pub fn run(app: &AppHandle, step: &Step, deadline: Instant) -> AppResult<Flow> {
             }
         }
         Step::HttpRequest { method, url, headers, body, expect_status, timeout_secs } => {
-            validate_url(url)?;
-            let headers = parse_headers(headers)?;
+            // Variables `{{nom}}` : encodées pour l'URL, nettoyées pour les en-têtes, échappées
+            // en JSON quand le corps est du JSON (sinon insérées telles quelles).
+            let url = render(url, run_vars, Escape::Url);
+            validate_url(&url)?;
+            let headers: Vec<(String, String)> =
+                parse_headers(headers)?.into_iter().map(|(k, v)| (k, render(&v, run_vars, Escape::Header))).collect();
+            let body_escape = if body_is_json(&headers, body) { Escape::Json } else { Escape::Raw };
+            let body = render(body, run_vars, body_escape);
             let expected = parse_expect(expect_status)?;
             let remaining = deadline.saturating_duration_since(Instant::now()).as_secs().max(1) as u32;
-            let (code, snippet) = http_request(*method, url, &headers, body, (*timeout_secs).min(remaining))?;
+            let (code, snippet) = http_request(*method, &url, &headers, &body, (*timeout_secs).min(remaining))?;
             let detail = if snippet.is_empty() { format!("HTTP {code}") } else { format!("HTTP {code} · {snippet}") };
             if !expected.iter().any(|(a, b)| (*a..=*b).contains(&code)) {
                 return Err(AppError::InvalidInput(format!("code inattendu : {detail}")));
