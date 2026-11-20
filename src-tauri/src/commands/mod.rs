@@ -747,3 +747,80 @@ pub async fn git_push(app: AppHandle, project_id: i64) -> AppResult<ProjectDetai
     })
     .await
 }
+
+// ---------------------------------------------------------------- Synchronisation Git
+
+#[tauri::command]
+pub async fn git_fetch(app: AppHandle, project_id: i64) -> AppResult<ProjectDetails> {
+    blocking(move || {
+        let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
+        projects::sync::fetch(&path)?;
+        Ok(projects::details_fresh(project_id, &path))
+    })
+    .await
+}
+
+/// `mode` : `ffOnly` (par défaut), `rebase` ou `merge`.
+#[tauri::command]
+pub async fn git_pull(app: AppHandle, project_id: i64, mode: Option<projects::sync::PullMode>) -> AppResult<ProjectDetails> {
+    blocking(move || {
+        let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
+        projects::sync::pull(&path, mode.unwrap_or_default())?;
+        Ok(projects::details_fresh(project_id, &path))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_stash_list(app: AppHandle, project_id: i64) -> AppResult<Vec<projects::sync::StashEntry>> {
+    blocking(move || {
+        let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
+        projects::sync::stash_list(&path)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_stash_push(
+    app: AppHandle,
+    project_id: i64,
+    message: Option<String>,
+    include_untracked: bool,
+) -> AppResult<ProjectDetails> {
+    blocking(move || {
+        let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
+        projects::sync::stash_push(&path, message.as_deref(), include_untracked)?;
+        Ok(projects::details_fresh(project_id, &path))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_stash_apply(app: AppHandle, project_id: i64, hash: String) -> AppResult<ProjectDetails> {
+    blocking(move || {
+        let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
+        projects::sync::stash_apply(&path, &hash)?;
+        Ok(projects::details_fresh(project_id, &path))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_stash_pop(app: AppHandle, project_id: i64, hash: String) -> AppResult<ProjectDetails> {
+    blocking(move || {
+        let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
+        projects::sync::stash_pop(&path, &hash)?;
+        Ok(projects::details_fresh(project_id, &path))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_stash_drop(app: AppHandle, project_id: i64, hash: String) -> AppResult<Vec<projects::sync::StashEntry>> {
+    blocking(move || {
+        let path = projects::path_of(&app.state::<AppState>().db, project_id)?;
+        projects::sync::stash_drop(&path, &hash)?;
+        projects::sync::stash_list(&path)
+    })
+    .await
+}

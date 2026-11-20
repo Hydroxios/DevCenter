@@ -13,6 +13,8 @@ export interface Settings {
   projectsRoot: string | null;
   /** Assistant de premier lancement terminé ou ignoré. */
   onboardingDone: boolean;
+  /** Fetch Git périodique en arrière-plan, en minutes : 0 (désactivé), 5, 15 ou 30. */
+  gitFetchInterval: number;
 }
 
 export interface SystemInfo {
@@ -160,6 +162,20 @@ export interface ChangedFile {
   unstaged: string | null;
   conflict: boolean;
 }
+
+/** Remise Git (`git stash`). */
+export interface StashEntry {
+  /** Position dans la pile (`stash@{index}`) au moment de la lecture. */
+  index: number;
+  /** Identifiant stable, utilisé pour appliquer / supprimer. */
+  hash: string;
+  timestamp: number;
+  branch: string | null;
+  message: string;
+}
+
+/** `ffOnly` : avance rapide uniquement (par défaut). */
+export type PullMode = "ffOnly" | "rebase" | "merge";
 
 export interface ProjectDetails {
   id: number;

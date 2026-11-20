@@ -36,6 +36,8 @@ import type {
   CommitDetails,
   ChangedFile,
   GitBranch,
+  PullMode,
+  StashEntry,
   SessionRecord,
   ActiveSession,
   Workspace,
@@ -186,6 +188,17 @@ export const api = {
       invoke<ProjectDetails>("git_create_commit", { projectId, message, all }),
     /** Pousse la branche courante (la publie sur `origin` si elle n'a pas de branche suivie). */
     push: (projectId: number) => invoke<ProjectDetails>("git_push", { projectId }),
+    /** `git fetch --prune` ; renvoie les détails à jour (compteurs ↑/↓). */
+    fetch: (projectId: number) => invoke<ProjectDetails>("git_fetch", { projectId }),
+    /** `git pull` de la branche suivie ; avance rapide uniquement par défaut. */
+    pull: (projectId: number, mode: PullMode = "ffOnly") => invoke<ProjectDetails>("git_pull", { projectId, mode }),
+    stashList: (projectId: number) => invoke<StashEntry[]>("git_stash_list", { projectId }),
+    stashPush: (projectId: number, message: string | null, includeUntracked: boolean) =>
+      invoke<ProjectDetails>("git_stash_push", { projectId, message, includeUntracked }),
+    stashApply: (projectId: number, hash: string) => invoke<ProjectDetails>("git_stash_apply", { projectId, hash }),
+    stashPop: (projectId: number, hash: string) => invoke<ProjectDetails>("git_stash_pop", { projectId, hash }),
+    /** Supprime une remise ; renvoie la pile à jour. */
+    stashDrop: (projectId: number, hash: string) => invoke<StashEntry[]>("git_stash_drop", { projectId, hash }),
   },
   push: {
     /** Notification de test vers tous les téléphones abonnés ; retourne le nombre d'envois réussis. */

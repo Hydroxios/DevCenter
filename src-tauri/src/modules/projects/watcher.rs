@@ -161,6 +161,13 @@ impl GitWatcher {
     }
 }
 
+/// Relit le statut d'un dépôt (cache rafraîchi) et l'envoie à l'interface, par exemple après un
+/// fetch d'arrière-plan qui a changé les compteurs ↑/↓.
+pub fn push_status(app: &AppHandle, id: i64, path: &Path) {
+    let git = gitcache::status(path, true);
+    let _ = app.emit(EVENT_GIT, GitEvent { id, git });
+}
+
 /// Relit les dépôts dont l'activité est retombée et envoie les statuts qui ont changé.
 fn flush(app: &AppHandle, inner: &Arc<Mutex<Inner>>) {
     let now = Instant::now();

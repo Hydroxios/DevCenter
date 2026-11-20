@@ -68,6 +68,8 @@ pub fn run() {
                 git_watcher: Default::default(),
             });
             modules::automations::spawn_scheduler(app.handle().clone());
+            // Fetch Git périodique (compteurs ↑/↓ à jour), selon le réglage `gitFetchInterval`.
+            modules::projects::sync::spawn_fetch_scheduler(app.handle().clone());
 
             // Statut Git en direct ; la liste suivie est réalignée à chaque changement de projets
             // (ajout, retrait, clonage, import depuis le téléphone).
@@ -205,6 +207,13 @@ pub fn run() {
             commands::git_file_diff,
             commands::git_create_commit,
             commands::git_push,
+            commands::git_fetch,
+            commands::git_pull,
+            commands::git_stash_list,
+            commands::git_stash_push,
+            commands::git_stash_apply,
+            commands::git_stash_pop,
+            commands::git_stash_drop,
         ])
         .build(tauri::generate_context!())
         .expect("erreur au lancement de DevCenter")
