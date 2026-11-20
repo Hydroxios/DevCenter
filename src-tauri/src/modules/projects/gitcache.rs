@@ -51,7 +51,11 @@ fn git_dir(dir: &Path) -> Option<PathBuf> {
     }
     let text = std::fs::read_to_string(&dot).ok()?;
     let target = PathBuf::from(text.strip_prefix("gitdir:")?.trim());
-    Some(if target.is_absolute() { target } else { dir.join(target) })
+    Some(if target.is_absolute() {
+        target
+    } else {
+        dir.join(target)
+    })
 }
 
 fn mtime(path: &Path) -> u128 {
@@ -66,16 +70,26 @@ fn mtime(path: &Path) -> u128 {
 fn refs_fingerprint(gd: &Path) -> u128 {
     let mut fp: u128 = 0;
     let mut mix = |v: u128| fp = fp.rotate_left(7) ^ v.wrapping_mul(0x9E37_79B9_7F4A_7C15);
-    for f in ["HEAD", "packed-refs", "FETCH_HEAD", "ORIG_HEAD", "MERGE_HEAD"] {
+    for f in [
+        "HEAD",
+        "packed-refs",
+        "FETCH_HEAD",
+        "ORIG_HEAD",
+        "MERGE_HEAD",
+    ] {
         mix(mtime(&gd.join(f)));
     }
     // Les worktrees partagent les refs du dépôt principal.
-    let common = std::fs::read_to_string(gd.join("commondir")).ok().map(|c| gd.join(c.trim()));
+    let common = std::fs::read_to_string(gd.join("commondir"))
+        .ok()
+        .map(|c| gd.join(c.trim()));
     let refs_root = common.as_deref().unwrap_or(gd).join("refs");
     let mut stack = vec![refs_root];
     let mut seen = 0usize;
     while let Some(d) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&d) else { continue };
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
         for e in entries.flatten() {
             seen += 1;
             if seen > 20_000 {
@@ -108,7 +122,14 @@ pub fn status(dir: &Path, force: bool) -> Option<GitStatus> {
     }
     let fresh = git::status(dir);
     if let Ok(mut c) = caches().lock() {
-        c.status.insert(dir.to_path_buf(), StatusEntry { fingerprint, at: Instant::now(), status: fresh.clone() });
+        c.status.insert(
+            dir.to_path_buf(),
+            StatusEntry {
+                fingerprint,
+                at: Instant::now(),
+                status: fresh.clone(),
+            },
+        );
     }
     fresh
 }
@@ -125,7 +146,13 @@ pub fn log(dir: &Path, limit: usize) -> AppResult<Arc<GitLog>> {
     }
     let log = Arc::new(history::log(dir, limit)?);
     if fingerprint != 0 {
-        caches().lock()?.logs.insert((dir.to_path_buf(), limit), LogEntry { fingerprint, log: Arc::clone(&log) });
+        caches().lock()?.logs.insert(
+            (dir.to_path_buf(), limit),
+            LogEntry {
+                fingerprint,
+                log: Arc::clone(&log),
+            },
+        );
     }
     Ok(log)
 }

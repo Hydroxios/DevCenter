@@ -73,7 +73,11 @@ fn sections(text: &str) -> Vec<(&str, Vec<&str>)> {
 }
 
 fn cpu_times(line: &str) -> Option<(u64, u64)> {
-    let nums: Vec<u64> = line.split_whitespace().skip(1).filter_map(|n| n.parse().ok()).collect();
+    let nums: Vec<u64> = line
+        .split_whitespace()
+        .skip(1)
+        .filter_map(|n| n.parse().ok())
+        .collect();
     if nums.len() < 4 {
         return None;
     }
@@ -92,7 +96,13 @@ pub fn parse_metrics(text: &str) -> RemoteMetrics {
             "host" => m.hostname = first.into(),
             "os" => m.os = first.trim_matches('"').into(),
             "kernel" => m.kernel = first.into(),
-            "uptime" => m.uptime_secs = first.split_whitespace().next().and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0) as u64,
+            "uptime" => {
+                m.uptime_secs = first
+                    .split_whitespace()
+                    .next()
+                    .and_then(|v| v.parse::<f64>().ok())
+                    .unwrap_or(0.0) as u64
+            }
             "load" => {
                 for (i, v) in first.split_whitespace().take(3).enumerate() {
                     m.load[i] = v.parse().unwrap_or(0.0);
@@ -123,7 +133,11 @@ pub fn parse_metrics(text: &str) -> RemoteMetrics {
                         let used: u64 = cols[2].parse().unwrap_or(0);
                         let mount = cols[5..].join(" ");
                         if total > 0 && !m.disks.iter().any(|d| d.mount == mount) {
-                            m.disks.push(RemoteDisk { mount, total_bytes: total * 1024, used_bytes: used * 1024 });
+                            m.disks.push(RemoteDisk {
+                                mount,
+                                total_bytes: total * 1024,
+                                used_bytes: used * 1024,
+                            });
                         }
                     }
                 }
@@ -146,7 +160,8 @@ pub fn parse_metrics(text: &str) -> RemoteMetrics {
 
 pub fn metrics(server: &Server) -> AppResult<RemoteMetrics> {
     let start = Instant::now();
-    let text = ssh::exec_ok(server, METRICS_SCRIPT, TIMEOUT).map_err(|e| explain_auth(server, e))?;
+    let text =
+        ssh::exec_ok(server, METRICS_SCRIPT, TIMEOUT).map_err(|e| explain_auth(server, e))?;
     let mut m = parse_metrics(&text);
     // Le script contient une pause de 0,5 s : on la retire de la latence affichée.
     m.latency_ms = (start.elapsed().as_millis() as u64).saturating_sub(500);
@@ -193,8 +208,16 @@ fn validate_name(kind: &str, name: &str) -> AppResult<()> {
     let ok = !name.is_empty()
         && name.len() <= 128
         && !name.starts_with('-')
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || "@._:-".contains(c));
-    if ok { Ok(()) } else { Err(AppError::InvalidInput(format!("nom de {kind} invalide : {name}"))) }
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "@._:-".contains(c));
+    if ok {
+        Ok(())
+    } else {
+        Err(AppError::InvalidInput(format!(
+            "nom de {kind} invalide : {name}"
+        )))
+    }
 }
 
 pub fn services(server: &Server) -> AppResult<Vec<RemoteService>> {
@@ -229,10 +252,17 @@ pub fn parse_services(text: &str) -> Vec<RemoteService> {
 pub fn service_action(server: &Server, name: &str, action: &str) -> AppResult<()> {
     validate_name("service", name)?;
     if !["start", "stop", "restart"].contains(&action) {
-        return Err(AppError::InvalidInput(format!("action inconnue : {action}")));
+        return Err(AppError::InvalidInput(format!(
+            "action inconnue : {action}"
+        )));
     }
     // `sudo -n` : échoue immédiatement au lieu d'attendre un mot de passe.
-    ssh::exec_ok(server, &format!("sudo -n systemctl {action} -- {}", quote(name)), TIMEOUT).map(|_| ())
+    ssh::exec_ok(
+        server,
+        &format!("sudo -n systemctl {action} -- {}", quote(name)),
+        TIMEOUT,
+    )
+    .map(|_| ())
 }
 
 pub fn service_logs(server: &Server, name: &str, lines: u32) -> AppResult<String> {
@@ -286,15 +316,26 @@ pub fn parse_containers(text: &str) -> Vec<Container> {
 pub fn container_action(server: &Server, id: &str, action: &str) -> AppResult<()> {
     validate_name("conteneur", id)?;
     if !["start", "stop", "restart"].contains(&action) {
-        return Err(AppError::InvalidInput(format!("action inconnue : {action}")));
+        return Err(AppError::InvalidInput(format!(
+            "action inconnue : {action}"
+        )));
     }
-    ssh::exec_ok(server, &format!("docker {action} {}", quote(id)), Duration::from_secs(40)).map(|_| ())
+    ssh::exec_ok(
+        server,
+        &format!("docker {action} {}", quote(id)),
+        Duration::from_secs(40),
+    )
+    .map(|_| ())
 }
 
 pub fn container_logs(server: &Server, id: &str, lines: u32) -> AppResult<String> {
     validate_name("conteneur", id)?;
     let n = lines.clamp(10, 2000);
-    ssh::exec_ok(server, &format!("docker logs --tail {n} --timestamps {} 2>&1", quote(id)), TIMEOUT)
+    ssh::exec_ok(
+        server,
+        &format!("docker logs --tail {n} --timestamps {} 2>&1", quote(id)),
+        TIMEOUT,
+    )
 }
 
 #[cfg(test)]
@@ -324,12 +365,16 @@ mod tests {
 
     #[test]
     fn parses_services_and_containers() {
-        let s = parse_services("● nginx.service loaded active running A high performance web server\nssh.service loaded active running OpenBSD Secure Shell server\nfoo.socket loaded active listening x\n");
+        let s = parse_services(
+            "● nginx.service loaded active running A high performance web server\nssh.service loaded active running OpenBSD Secure Shell server\nfoo.socket loaded active listening x\n",
+        );
         assert_eq!(s.len(), 2);
         assert_eq!(s[0].name, "nginx.service");
         assert_eq!(s[1].description, "OpenBSD Secure Shell server");
 
-        let c = parse_containers("0123456789abcdef0123\tweb\tnginx:alpine\trunning\tUp 3 hours\t0.0.0.0:80->80/tcp\n");
+        let c = parse_containers(
+            "0123456789abcdef0123\tweb\tnginx:alpine\trunning\tUp 3 hours\t0.0.0.0:80->80/tcp\n",
+        );
         assert_eq!(c[0].id, "0123456789ab");
         assert_eq!(c[0].state, "running");
     }

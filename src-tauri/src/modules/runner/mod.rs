@@ -84,10 +84,16 @@ pub struct Runner {
 
 /// Cherche `http://localhost:PORT` ou `http://127.0.0.1:PORT` dans une ligne de log.
 fn detect_url(line: &str) -> Option<String> {
-    for prefix in ["http://localhost:", "http://127.0.0.1:", "https://localhost:"] {
+    for prefix in [
+        "http://localhost:",
+        "http://127.0.0.1:",
+        "https://localhost:",
+    ] {
         if let Some(start) = line.find(prefix) {
             let rest = &line[start..];
-            let end = rest.find(|c: char| c.is_whitespace() || c == ')' || c == ',' || c == '"').unwrap_or(rest.len());
+            let end = rest
+                .find(|c: char| c.is_whitespace() || c == ')' || c == ',' || c == '"')
+                .unwrap_or(rest.len());
             let url = rest[..end].trim_end_matches(['.', '/']);
             if url.len() > prefix.len() {
                 return Some(url.to_string());
@@ -106,38 +112,47 @@ impl Drop for ReaderDone {
 }
 
 /// Envoie les lignes en attente par lots, jusqu'à la fermeture des deux flux du processus.
-fn spawn_log_flusher(app: AppHandle, runs: Arc<Mutex<HashMap<u64, Run>>>, id: u64, batch: Arc<LogBatch>) {
-    std::thread::spawn(move || loop {
-        std::thread::sleep(LOG_FLUSH_EVERY);
-        // Lu avant de vider le tampon : une ligne poussée juste avant la fermeture n'est pas perdue.
-        let done = batch.open_readers.load(Ordering::SeqCst) == 0;
-        // Abonnés servis sous le verrou du tampon : `subscribe` voit donc chaque ligne soit dans
-        // l'instantané, soit dans un lot, jamais les deux.
-        let lines = {
-            let Ok(mut pending) = batch.lines.lock() else { return };
-            let lines = std::mem::take(&mut *pending);
-            if let Ok(mut subs) = batch.subscribers.lock() {
-                if !lines.is_empty() {
-                    subs.retain(|s| s.send(lines.clone()).is_ok());
+fn spawn_log_flusher(
+    app: AppHandle,
+    runs: Arc<Mutex<HashMap<u64, Run>>>,
+    id: u64,
+    batch: Arc<LogBatch>,
+) {
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(LOG_FLUSH_EVERY);
+            // Lu avant de vider le tampon : une ligne poussée juste avant la fermeture n'est pas perdue.
+            let done = batch.open_readers.load(Ordering::SeqCst) == 0;
+            // Abonnés servis sous le verrou du tampon : `subscribe` voit donc chaque ligne soit dans
+            // l'instantané, soit dans un lot, jamais les deux.
+            let lines = {
+                let Ok(mut pending) = batch.lines.lock() else {
+                    return;
+                };
+                let lines = std::mem::take(&mut *pending);
+                if let Ok(mut subs) = batch.subscribers.lock() {
+                    if !lines.is_empty() {
+                        subs.retain(|s| s.send(lines.clone()).is_ok());
+                    }
+                    if done {
+                        subs.clear(); // fin de l'exécution : les flux se ferment
+                    }
                 }
-                if done {
-                    subs.clear(); // fin de l'exécution : les flux se ferment
-                }
+                lines
+            };
+            if !lines.is_empty() {
+                let _ = app.emit(EVENT_LOG, LogEvent { run_id: id, lines });
             }
-            lines
-        };
-        if !lines.is_empty() {
-            let _ = app.emit(EVENT_LOG, LogEvent { run_id: id, lines });
-        }
-        let url_info = runs.lock().ok().and_then(|mut runs| {
-            let run = runs.get_mut(&id)?;
-            std::mem::take(&mut run.url_pending).then(|| run.info.clone())
-        });
-        if let Some(info) = url_info {
-            let _ = app.emit(EVENT_STATUS, &info);
-        }
-        if done {
-            return;
+            let url_info = runs.lock().ok().and_then(|mut runs| {
+                let run = runs.get_mut(&id)?;
+                std::mem::take(&mut run.url_pending).then(|| run.info.clone())
+            });
+            if let Some(info) = url_info {
+                let _ = app.emit(EVENT_STATUS, &info);
+            }
+            if done {
+                return;
+            }
         }
     });
 }
@@ -151,20 +166,34 @@ impl Runner {
 
     pub fn logs(&self, run_id: u64) -> AppResult<Vec<String>> {
         let runs = self.runs.lock()?;
-        let run = runs.get(&run_id).ok_or_else(|| AppError::InvalidInput(format!("exécution {run_id} inconnue")))?;
+        let run = runs
+            .get(&run_id)
+            .ok_or_else(|| AppError::InvalidInput(format!("exécution {run_id} inconnue")))?;
         Ok(run.logs.iter().cloned().collect())
     }
 
     /// Abonnement au flux de logs d'une exécution : les `tail` dernières lignes déjà reçues, puis
     /// chaque nouveau lot via le canal (`None` si l'exécution est terminée : rien ne viendra plus).
-    pub fn subscribe(&self, run_id: u64, tail: usize) -> AppResult<(Vec<String>, Option<mpsc::Receiver<Vec<String>>>)> {
+    pub fn subscribe(
+        &self,
+        run_id: u64,
+        tail: usize,
+    ) -> AppResult<(Vec<String>, Option<mpsc::Receiver<Vec<String>>>)> {
         let runs = self.runs.lock()?;
-        let run = runs.get(&run_id).ok_or_else(|| AppError::InvalidInput(format!("exécution {run_id} inconnue")))?;
+        let run = runs
+            .get(&run_id)
+            .ok_or_else(|| AppError::InvalidInput(format!("exécution {run_id} inconnue")))?;
         let pending = run.batch.lines.lock()?;
         let mut subs = run.batch.subscribers.lock()?;
         // Les lignes encore en attente partiront dans le prochain lot : exclues de l'instantané.
         let sent = run.logs.len().saturating_sub(pending.len());
-        let snapshot: Vec<String> = run.logs.iter().take(sent).skip(sent.saturating_sub(tail)).cloned().collect();
+        let snapshot: Vec<String> = run
+            .logs
+            .iter()
+            .take(sent)
+            .skip(sent.saturating_sub(tail))
+            .cloned()
+            .collect();
         let live = run.batch.open_readers.load(Ordering::SeqCst) > 0 || !pending.is_empty();
         let rx = live.then(|| {
             let (tx, rx) = mpsc::channel();
@@ -185,23 +214,42 @@ impl Runner {
         open_browser: bool,
     ) -> AppResult<RunInfo> {
         // Gradle : la tâche est passée directement (`gradlew build`) ; npm & co : `pnpm run dev`.
-        let (program, args, shown): (std::ffi::OsString, Vec<&str>, String) = if package_manager == "gradle" {
-            let program = shell::gradle_program(dir)
-                .ok_or_else(|| AppError::InvalidInput("Gradle introuvable : ni gradlew dans le projet, ni gradle dans le PATH".into()))?;
-            (program.into_os_string(), vec![script, "--console=plain"], format!("gradle {script}"))
+        let (program, args, shown): (std::ffi::OsString, Vec<&str>, String) = if package_manager
+            == "gradle"
+        {
+            let program = shell::gradle_program(dir).ok_or_else(|| {
+                AppError::InvalidInput(
+                    "Gradle introuvable : ni gradlew dans le projet, ni gradle dans le PATH".into(),
+                )
+            })?;
+            (
+                program.into_os_string(),
+                vec![script, "--console=plain"],
+                format!("gradle {script}"),
+            )
         } else {
             let program = shell::package_manager_program(package_manager).ok_or_else(|| {
-                AppError::InvalidInput(format!("exécution de scripts non prise en charge pour {package_manager}"))
+                AppError::InvalidInput(format!(
+                    "exécution de scripts non prise en charge pour {package_manager}"
+                ))
             })?;
-            (program.into(), vec!["run", script], format!("{package_manager} run {script}  →  {command}"))
+            (
+                program.into(),
+                vec!["run", script],
+                format!("{package_manager} run {script}  →  {command}"),
+            )
         };
 
         {
             let runs = self.runs.lock()?;
             if runs.values().any(|r| {
-                r.info.project_id == project_id && r.info.script == script && r.info.status == RunStatus::Running
+                r.info.project_id == project_id
+                    && r.info.script == script
+                    && r.info.status == RunStatus::Running
             }) {
-                return Err(AppError::InvalidInput(format!("« {script} » tourne déjà pour ce projet")));
+                return Err(AppError::InvalidInput(format!(
+                    "« {script} » tourne déjà pour ce projet"
+                )));
             }
         }
 
@@ -215,7 +263,12 @@ impl Runner {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| AppError::InvalidInput(format!("impossible de lancer {} : {e}", program.to_string_lossy())))?;
+            .map_err(|e| {
+                AppError::InvalidInput(format!(
+                    "impossible de lancer {} : {e}",
+                    program.to_string_lossy()
+                ))
+            })?;
 
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
         let info = RunInfo {
@@ -227,7 +280,10 @@ impl Runner {
             status: RunStatus::Running,
             exit_code: None,
             url: None,
-            started_at: SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
+            started_at: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
         };
 
         let batch = Arc::new(LogBatch {
@@ -239,7 +295,9 @@ impl Runner {
         {
             let mut runs = self.runs.lock()?;
             runs.retain(|_, r| {
-                !(r.info.project_id == project_id && r.info.script == script && r.info.status != RunStatus::Running)
+                !(r.info.project_id == project_id
+                    && r.info.script == script
+                    && r.info.status != RunStatus::Running)
             });
             runs.insert(
                 id,
@@ -286,7 +344,12 @@ impl Runner {
                     &app,
                     crate::modules::push::Notification {
                         title: format!("Script arrêté · {}", info.script),
-                        body: format!("Code de sortie {}", info.exit_code.map(|c| c.to_string()).unwrap_or_else(|| "?".into())),
+                        body: format!(
+                            "Code de sortie {}",
+                            info.exit_code
+                                .map(|c| c.to_string())
+                                .unwrap_or_else(|| "?".into())
+                        ),
                         tab: Some("scripts".into()),
                         tag: Some(format!("run-{}-{}", info.project_id, info.script)),
                     },
@@ -344,7 +407,9 @@ impl Runner {
     pub fn stop(&self, run_id: u64) -> AppResult<()> {
         let pid = {
             let mut runs = self.runs.lock()?;
-            let run = runs.get_mut(&run_id).ok_or_else(|| AppError::InvalidInput(format!("exécution {run_id} inconnue")))?;
+            let run = runs
+                .get_mut(&run_id)
+                .ok_or_else(|| AppError::InvalidInput(format!("exécution {run_id} inconnue")))?;
             if run.info.status != RunStatus::Running {
                 return Ok(());
             }
@@ -358,7 +423,10 @@ impl Runner {
     /// Supprime une exécution terminée (et ses logs).
     pub fn dismiss(&self, run_id: u64) -> AppResult<()> {
         let mut runs = self.runs.lock()?;
-        if runs.get(&run_id).is_some_and(|r| r.info.status != RunStatus::Running) {
+        if runs
+            .get(&run_id)
+            .is_some_and(|r| r.info.status != RunStatus::Running)
+        {
             runs.remove(&run_id);
         }
         Ok(())
@@ -386,11 +454,15 @@ impl Runner {
 pub fn kill_tree(pid: u32) {
     #[cfg(windows)]
     {
-        let _ = shell::command("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"]).output();
+        let _ = shell::command("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .output();
     }
     #[cfg(not(windows))]
     {
-        let _ = shell::command("kill").args(["-TERM", &pid.to_string()]).output();
+        let _ = shell::command("kill")
+            .args(["-TERM", &pid.to_string()])
+            .output();
     }
 }
 
@@ -400,9 +472,18 @@ mod tests {
 
     #[test]
     fn detects_dev_server_urls() {
-        assert_eq!(detect_url("  ➜  Local:   http://localhost:5173/").as_deref(), Some("http://localhost:5173"));
-        assert_eq!(detect_url("ready - started server on http://127.0.0.1:3000, url").as_deref(), Some("http://127.0.0.1:3000"));
-        assert_eq!(detect_url("Listening (http://localhost:8080)").as_deref(), Some("http://localhost:8080"));
+        assert_eq!(
+            detect_url("  ➜  Local:   http://localhost:5173/").as_deref(),
+            Some("http://localhost:5173")
+        );
+        assert_eq!(
+            detect_url("ready - started server on http://127.0.0.1:3000, url").as_deref(),
+            Some("http://127.0.0.1:3000")
+        );
+        assert_eq!(
+            detect_url("Listening (http://localhost:8080)").as_deref(),
+            Some("http://localhost:8080")
+        );
         assert_eq!(detect_url("compiled successfully"), None);
         assert_eq!(detect_url("see http://localhost: for help"), None);
     }

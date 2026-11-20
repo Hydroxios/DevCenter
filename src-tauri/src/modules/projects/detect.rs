@@ -111,7 +111,11 @@ fn read(dir: &Path, file: &str) -> Option<String> {
 }
 
 pub fn detect(dir: &Path) -> ProjectMeta {
-    let mut meta = ProjectMeta { has_git: dir.join(".git").exists(), tasks_loaded: true, ..Default::default() };
+    let mut meta = ProjectMeta {
+        has_git: dir.join(".git").exists(),
+        tasks_loaded: true,
+        ..Default::default()
+    };
 
     if let Some(text) = read(dir, "package.json") {
         push_unique(&mut meta.languages, "Node");
@@ -132,7 +136,13 @@ pub fn detect(dir: &Path) -> ProjectMeta {
             if let Some(scripts) = pkg.get("scripts").and_then(|s| s.as_object()) {
                 meta.scripts = scripts
                     .iter()
-                    .filter_map(|(k, v)| v.as_str().map(|c| Script { name: k.clone(), command: c.to_string(), group: None }))
+                    .filter_map(|(k, v)| {
+                        v.as_str().map(|c| Script {
+                            name: k.clone(),
+                            command: c.to_string(),
+                            group: None,
+                        })
+                    })
                     .collect();
             }
             // Champ `packageManager` (Corepack) : prioritaire sur les fichiers de verrouillage.
@@ -162,7 +172,12 @@ pub fn detect(dir: &Path) -> ProjectMeta {
     let cargo = read(dir, "Cargo.toml").or_else(|| read(dir, "src-tauri/Cargo.toml"));
     if let Some(text) = cargo {
         push_unique(&mut meta.languages, "Rust");
-        for (dep, label) in [("tauri", "Tauri"), ("axum", "Axum"), ("actix-web", "Actix"), ("bevy", "Bevy")] {
+        for (dep, label) in [
+            ("tauri", "Tauri"),
+            ("axum", "Axum"),
+            ("actix-web", "Actix"),
+            ("bevy", "Bevy"),
+        ] {
             if text.contains(dep) {
                 push_unique(&mut meta.frameworks, label);
             }
@@ -172,11 +187,18 @@ pub fn detect(dir: &Path) -> ProjectMeta {
         }
     }
 
-    let python = [read(dir, "pyproject.toml"), read(dir, "requirements.txt")].into_iter().flatten().collect::<Vec<_>>();
+    let python = [read(dir, "pyproject.toml"), read(dir, "requirements.txt")]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
     if !python.is_empty() {
         push_unique(&mut meta.languages, "Python");
         let all = python.join("\n").to_lowercase();
-        for (dep, label) in [("django", "Django"), ("fastapi", "FastAPI"), ("flask", "Flask")] {
+        for (dep, label) in [
+            ("django", "Django"),
+            ("fastapi", "FastAPI"),
+            ("flask", "Flask"),
+        ] {
             if all.contains(dep) {
                 push_unique(&mut meta.frameworks, label);
             }
@@ -200,7 +222,10 @@ pub fn detect(dir: &Path) -> ProjectMeta {
         meta.package_manager.get_or_insert_with(|| "go".into());
     }
 
-    let gradle: Vec<(&str, String)> = GRADLE_FILES.iter().filter_map(|f| read(dir, f).map(|t| (*f, t))).collect();
+    let gradle: Vec<(&str, String)> = GRADLE_FILES
+        .iter()
+        .filter_map(|f| read(dir, f).map(|t| (*f, t)))
+        .collect();
     if gradle.iter().any(|(f, _)| !f.ends_with(".toml")) {
         detect_gradle(dir, &gradle, &mut meta);
     } else if let Some(text) = read(dir, "pom.xml") {
@@ -222,21 +247,30 @@ pub fn detect(dir: &Path) -> ProjectMeta {
         if text.contains("laravel/framework") {
             push_unique(&mut meta.frameworks, "Laravel");
         }
-        meta.package_manager.get_or_insert_with(|| "composer".into());
+        meta.package_manager
+            .get_or_insert_with(|| "composer".into());
     }
 
     meta
 }
 
 fn detect_gradle(dir: &Path, files: &[(&str, String)], meta: &mut ProjectMeta) {
-    let all = files.iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>().join("
-");
+    let all = files
+        .iter()
+        .map(|(_, t)| t.as_str())
+        .collect::<Vec<_>>()
+        .join(
+            "
+",
+        );
     let kotlin = all.contains("kotlin(\"jvm\")")
         || all.contains("org.jetbrains.kotlin")
         || all.contains("kotlin-android")
         || dir.join("src/main/kotlin").is_dir()
         || dir.join("app/src/main/kotlin").is_dir();
-    let java = dir.join("src/main/java").is_dir() || dir.join("app/src/main/java").is_dir() || all.contains("java");
+    let java = dir.join("src/main/java").is_dir()
+        || dir.join("app/src/main/java").is_dir()
+        || all.contains("java");
     if java || !kotlin {
         push_unique(&mut meta.languages, "Java");
     }
@@ -277,18 +311,31 @@ fn detect_gradle(dir: &Path, files: &[(&str, String)], meta: &mut ProjectMeta) {
     if has("Paper") && all.contains("run-paper") {
         tasks.push(("runServer", "Lance un serveur Paper de test"));
     }
-    if has("Ktor") || has("Compose") || ["\"application\"", "'application'", "`application`"].iter().any(|p| all.contains(p)) {
+    if has("Ktor")
+        || has("Compose")
+        || ["\"application\"", "'application'", "`application`"]
+            .iter()
+            .any(|p| all.contains(p))
+    {
         tasks.push(("run", "Lance l'application"));
     }
     if has("Quarkus") {
         tasks.push(("quarkusDev", "Mode développement Quarkus"));
     }
-    tasks.extend([("build", "Compile et teste"), ("test", "Lance les tests"), ("clean", "Supprime les sorties de build")]);
+    tasks.extend([
+        ("build", "Compile et teste"),
+        ("test", "Lance les tests"),
+        ("clean", "Supprime les sorties de build"),
+    ]);
     let wrapper = dir.join("gradlew").exists() || dir.join("gradlew.bat").exists();
     let exe = if wrapper { "gradlew" } else { "gradle" };
     for (task, about) in tasks {
         if !meta.scripts.iter().any(|s| s.name == task) {
-            meta.scripts.push(Script { name: task.into(), command: format!("{exe} {task} · {about}"), group: None });
+            meta.scripts.push(Script {
+                name: task.into(),
+                command: format!("{exe} {task} · {about}"),
+                group: None,
+            });
         }
     }
 }
@@ -329,7 +376,14 @@ mod tests {
         assert_eq!(meta.package_manager.as_deref(), Some("gradle"));
         assert!(meta.languages.contains(&"Kotlin".to_string()));
         assert!(meta.frameworks.contains(&"Spring Boot".to_string()));
-        assert_eq!(meta.scripts.first().map(|s| s.name.as_str()), Some("bootRun"));
-        assert!(meta.scripts.iter().any(|s| s.name == "build" && s.command.starts_with("gradlew build")));
+        assert_eq!(
+            meta.scripts.first().map(|s| s.name.as_str()),
+            Some("bootRun")
+        );
+        assert!(
+            meta.scripts
+                .iter()
+                .any(|s| s.name == "build" && s.command.starts_with("gradlew build"))
+        );
     }
 }

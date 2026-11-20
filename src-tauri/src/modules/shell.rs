@@ -28,8 +28,15 @@ pub fn open_terminal(dir: &std::path::Path) -> std::io::Result<()> {
         }
         // Programme console : il lui faut sa propre fenêtre (pas CREATE_NO_WINDOW).
         const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
-        let shell = which(&["pwsh.exe"]).map(|p| p.into_os_string()).unwrap_or_else(|| "powershell.exe".into());
-        Command::new(shell).arg("-NoLogo").current_dir(dir).creation_flags(CREATE_NEW_CONSOLE).spawn().map(|_| ())
+        let shell = which(&["pwsh.exe"])
+            .map(|p| p.into_os_string())
+            .unwrap_or_else(|| "powershell.exe".into());
+        Command::new(shell)
+            .arg("-NoLogo")
+            .current_dir(dir)
+            .creation_flags(CREATE_NEW_CONSOLE)
+            .spawn()
+            .map(|_| ())
     }
     #[cfg(not(windows))]
     {
@@ -64,11 +71,19 @@ pub fn package_manager_program(pm: &str) -> Option<&'static str> {
 
 /// Gradle d'un projet : le wrapper `gradlew` du dossier en priorité, sinon `gradle` du PATH.
 pub fn gradle_program(dir: &std::path::Path) -> Option<PathBuf> {
-    let wrapper = dir.join(if cfg!(windows) { "gradlew.bat" } else { "gradlew" });
+    let wrapper = dir.join(if cfg!(windows) {
+        "gradlew.bat"
+    } else {
+        "gradlew"
+    });
     if wrapper.is_file() {
         return Some(wrapper);
     }
-    which(if cfg!(windows) { &["gradle.bat", "gradle.cmd", "gradle.exe"] } else { &["gradle"] })
+    which(if cfg!(windows) {
+        &["gradle.bat", "gradle.cmd", "gradle.exe"]
+    } else {
+        &["gradle"]
+    })
 }
 
 /// Supprime les séquences d'échappement ANSI (couleurs, curseur) d'une ligne de log.
@@ -118,7 +133,10 @@ mod tests {
     #[test]
     fn strips_ansi_sequences() {
         assert_eq!(strip_ansi("\u{1b}[32m✓\u{1b}[39m ready\r"), "✓ ready");
-        assert_eq!(strip_ansi("\u{1b}]8;;http://x\u{7}lien\u{1b}]8;;\u{7}"), "lien");
+        assert_eq!(
+            strip_ansi("\u{1b}]8;;http://x\u{7}lien\u{1b}]8;;\u{7}"),
+            "lien"
+        );
     }
 }
 
@@ -132,7 +150,10 @@ mod machine_tests {
         if which(&["pnpm.cmd", "pnpm"]).is_none() {
             return; // pnpm absent sur cette machine
         }
-        let out = command(package_manager_program("pnpm").unwrap()).arg("--version").output().unwrap();
+        let out = command(package_manager_program("pnpm").unwrap())
+            .arg("--version")
+            .output()
+            .unwrap();
         assert!(out.status.success());
         eprintln!("pnpm {}", String::from_utf8_lossy(&out.stdout).trim());
         eprintln!("éditeur détecté : {:?}", crate::modules::editor::detect());

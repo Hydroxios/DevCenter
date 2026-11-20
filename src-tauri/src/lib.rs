@@ -16,7 +16,10 @@ use state::AppState;
 fn install_panic_logging() {
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        let location = info.location().map(|l| format!(" ({}:{})", l.file(), l.line())).unwrap_or_default();
+        let location = info
+            .location()
+            .map(|l| format!(" ({}:{})", l.file(), l.line()))
+            .unwrap_or_default();
         log::error!("PANIC{location} : {info}");
         default(info);
     }));
@@ -34,7 +37,9 @@ pub fn run() {
             tauri_plugin_log::Builder::new()
                 .targets([
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: Some("devcenter".into()) }),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                        file_name: Some("devcenter".into()),
+                    }),
                 ])
                 .level(log::LevelFilter::Info)
                 .max_file_size(2_000_000)

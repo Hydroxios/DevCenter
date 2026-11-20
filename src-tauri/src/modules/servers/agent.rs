@@ -56,7 +56,9 @@ fn base64_decode(input: &str) -> Option<Vec<u8>> {
 
 /// Lit l'en-tête d'une clé privée pour savoir si elle est chiffrée.
 pub fn is_encrypted(path: &Path) -> bool {
-    let Ok(text) = std::fs::read_to_string(path) else { return false };
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return false;
+    };
     if text.contains("ENCRYPTED") {
         return true; // ancien format PEM (« Proc-Type: 4,ENCRYPTED » / « ENCRYPTED PRIVATE KEY »)
     }
@@ -64,10 +66,14 @@ pub fn is_encrypted(path: &Path) -> bool {
         return false;
     }
     let body: String = text.lines().filter(|l| !l.starts_with("-----")).collect();
-    let Some(bytes) = base64_decode(&body) else { return false };
+    let Some(bytes) = base64_decode(&body) else {
+        return false;
+    };
     // Format : "openssh-key-v1\0" puis chaîne (u32 longueur) du nom du chiffrement.
     const MAGIC: &[u8] = b"openssh-key-v1\0";
-    let Some(rest) = bytes.strip_prefix(MAGIC) else { return false };
+    let Some(rest) = bytes.strip_prefix(MAGIC) else {
+        return false;
+    };
     if rest.len() < 4 {
         return false;
     }
@@ -78,21 +84,36 @@ pub fn is_encrypted(path: &Path) -> bool {
 /// Empreinte SHA256 d'une clé (via `ssh-keygen -lf`, qui lit la clé publique associée).
 fn fingerprint(path: &Path) -> Option<String> {
     let pub_path = format!("{}.pub", path.display());
-    let target = if Path::new(&pub_path).is_file() { pub_path } else { path.display().to_string() };
-    let out = shell::command("ssh-keygen").args(["-l", "-f", &target]).output().ok()?;
+    let target = if Path::new(&pub_path).is_file() {
+        pub_path
+    } else {
+        path.display().to_string()
+    };
+    let out = shell::command("ssh-keygen")
+        .args(["-l", "-f", &target])
+        .output()
+        .ok()?;
     if !out.status.success() {
         return None;
     }
-    String::from_utf8_lossy(&out.stdout).split_whitespace().nth(1).map(str::to_string)
+    String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .nth(1)
+        .map(str::to_string)
 }
 
 pub fn status(key_path: Option<&str>) -> KeyStatus {
     // `ssh-add -l` : 0 = clés listées, 1 = agent vide, 2 = agent injoignable.
-    let out = shell::command("ssh-add").args(["-l", "-E", "sha256"]).output();
+    let out = shell::command("ssh-add")
+        .args(["-l", "-E", "sha256"])
+        .output();
     let (agent, loaded) = match out {
         Ok(o) if o.status.code() == Some(0) => (
             AgentState::Running,
-            String::from_utf8_lossy(&o.stdout).lines().filter_map(|l| l.split_whitespace().nth(1).map(str::to_string)).collect(),
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .filter_map(|l| l.split_whitespace().nth(1).map(str::to_string))
+                .collect(),
         ),
         Ok(o) if o.status.code() == Some(1) => (AgentState::Running, Vec::new()),
         _ => (AgentState::Unavailable, Vec::new()),
@@ -106,7 +127,13 @@ pub fn status(key_path: Option<&str>) -> KeyStatus {
         }
         None => (false, !loaded.is_empty()),
     };
-    KeyStatus { agent, loaded, key_path: key_path.map(str::to_string), encrypted, key_loaded }
+    KeyStatus {
+        agent,
+        loaded,
+        key_path: key_path.map(str::to_string),
+        encrypted,
+        key_loaded,
+    }
 }
 
 #[cfg(test)]
@@ -129,7 +156,9 @@ mod tests {
             raw.extend_from_slice(cipher);
             raw.extend_from_slice(&[0, 0, 0, 0]);
             let b64 = encode(&raw);
-            format!("-----BEGIN OPENSSH PRIVATE KEY-----\n{b64}\n-----END OPENSSH PRIVATE KEY-----\n")
+            format!(
+                "-----BEGIN OPENSSH PRIVATE KEY-----\n{b64}\n-----END OPENSSH PRIVATE KEY-----\n"
+            )
         };
         let plain = dir.join("plain");
         let enc = dir.join("enc");
@@ -144,7 +173,11 @@ mod tests {
         const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
         let mut s = String::new();
         for chunk in data.chunks(3) {
-            let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+            let b = [
+                chunk[0],
+                *chunk.get(1).unwrap_or(&0),
+                *chunk.get(2).unwrap_or(&0),
+            ];
             let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
             for i in 0..4 {
                 if i <= chunk.len() {

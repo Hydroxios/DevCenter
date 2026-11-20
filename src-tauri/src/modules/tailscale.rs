@@ -40,7 +40,11 @@ fn run(args: &[&str]) -> AppResult<String> {
         Ok(stdout)
     } else {
         let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
-        Err(AppError::InvalidInput(if err.is_empty() { stdout.trim().to_string() } else { err }))
+        Err(AppError::InvalidInput(if err.is_empty() {
+            stdout.trim().to_string()
+        } else {
+            err
+        }))
     }
 }
 
@@ -48,15 +52,28 @@ pub fn status(local_port: u16) -> TailscaleStatus {
     if exe().is_none() {
         return TailscaleStatus::default();
     }
-    let mut st = TailscaleStatus { installed: true, ..Default::default() };
-    if let Ok(json) = run(&["status", "--json"]).and_then(|s| serde_json::from_str::<serde_json::Value>(&s).map_err(|e| AppError::InvalidInput(e.to_string()))) {
+    let mut st = TailscaleStatus {
+        installed: true,
+        ..Default::default()
+    };
+    if let Ok(json) = run(&["status", "--json"]).and_then(|s| {
+        serde_json::from_str::<serde_json::Value>(&s)
+            .map_err(|e| AppError::InvalidInput(e.to_string()))
+    }) {
         st.online = json["Self"]["Online"].as_bool().unwrap_or(false);
-        st.dns_name = json["Self"]["DNSName"].as_str().map(|s| s.trim_end_matches('.').to_string()).filter(|s| !s.is_empty());
-        st.https_enabled = json["CertDomains"].as_array().is_some_and(|a| !a.is_empty());
+        st.dns_name = json["Self"]["DNSName"]
+            .as_str()
+            .map(|s| s.trim_end_matches('.').to_string())
+            .filter(|s| !s.is_empty());
+        st.https_enabled = json["CertDomains"]
+            .as_array()
+            .is_some_and(|a| !a.is_empty());
     }
     // `tailscale serve status --json` : la configuration pointe-t-elle vers notre port ?
     if let (Some(dns), Ok(serve)) = (&st.dns_name, run(&["serve", "status", "--json"])) {
-        if serve.contains(&format!("127.0.0.1:{local_port}")) || serve.contains(&format!("localhost:{local_port}")) {
+        if serve.contains(&format!("127.0.0.1:{local_port}"))
+            || serve.contains(&format!("localhost:{local_port}"))
+        {
             st.serve_url = Some(format!("https://{dns}"));
         }
     }

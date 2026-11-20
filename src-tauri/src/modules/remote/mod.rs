@@ -32,13 +32,41 @@ const PAGE: &str = include_str!("page.html");
 
 /// Fichiers de l'appli installable (PWA), servis sans authentification : aucune donnée dedans.
 const ASSETS: &[(&str, &str, &[u8])] = &[
-    ("/manifest.webmanifest", "application/manifest+json", include_bytes!("assets/manifest.webmanifest")),
-    ("/sw.js", "text/javascript; charset=utf-8", include_bytes!("assets/sw.js")),
-    ("/icon-180.png", "image/png", include_bytes!("assets/icon-180.png")),
-    ("/icon-192.png", "image/png", include_bytes!("assets/icon-192.png")),
-    ("/icon-512.png", "image/png", include_bytes!("assets/icon-512.png")),
-    ("/icon-maskable-512.png", "image/png", include_bytes!("assets/icon-maskable-512.png")),
-    ("/badge-96.png", "image/png", include_bytes!("assets/badge-96.png")),
+    (
+        "/manifest.webmanifest",
+        "application/manifest+json",
+        include_bytes!("assets/manifest.webmanifest"),
+    ),
+    (
+        "/sw.js",
+        "text/javascript; charset=utf-8",
+        include_bytes!("assets/sw.js"),
+    ),
+    (
+        "/icon-180.png",
+        "image/png",
+        include_bytes!("assets/icon-180.png"),
+    ),
+    (
+        "/icon-192.png",
+        "image/png",
+        include_bytes!("assets/icon-192.png"),
+    ),
+    (
+        "/icon-512.png",
+        "image/png",
+        include_bytes!("assets/icon-512.png"),
+    ),
+    (
+        "/icon-maskable-512.png",
+        "image/png",
+        include_bytes!("assets/icon-maskable-512.png"),
+    ),
+    (
+        "/badge-96.png",
+        "image/png",
+        include_bytes!("assets/badge-96.png"),
+    ),
 ];
 
 struct Pairing {
@@ -89,7 +117,8 @@ pub struct PairingCode {
 
 fn random_bytes<const N: usize>() -> AppResult<[u8; N]> {
     let mut buf = [0u8; N];
-    getrandom::fill(&mut buf).map_err(|e| AppError::InvalidInput(format!("générateur aléatoire indisponible : {e}")))?;
+    getrandom::fill(&mut buf)
+        .map_err(|e| AppError::InvalidInput(format!("générateur aléatoire indisponible : {e}")))?;
     Ok(buf)
 }
 
@@ -99,7 +128,11 @@ fn sha256_hex(s: &str) -> String {
 
 /// Comparaison en temps constant (évite de deviner un code caractère par caractère).
 fn constant_eq(a: &str, b: &str) -> bool {
-    a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    a.len() == b.len()
+        && a.bytes()
+            .zip(b.bytes())
+            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+            == 0
 }
 
 /// Réseau privé uniquement : 10/8, 172.16/12, 192.168/16, 127/8, 100.64/10 (Tailscale), 169.254/16, IPv6 local.
@@ -107,7 +140,10 @@ pub fn is_private(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
             let o = v4.octets();
-            v4.is_private() || v4.is_loopback() || v4.is_link_local() || (o[0] == 100 && (64..128).contains(&o[1]))
+            v4.is_private()
+                || v4.is_loopback()
+                || v4.is_link_local()
+                || (o[0] == 100 && (64..128).contains(&o[1]))
         }
         IpAddr::V6(v6) => {
             if let Some(v4) = v6.to_ipv4_mapped() {
@@ -130,9 +166,17 @@ fn lan_ip() -> Option<IpAddr> {
 
 pub fn devices(db: &Database) -> AppResult<Vec<Device>> {
     db.with(|conn| {
-        let mut stmt = conn.prepare("SELECT id, name, created_at, last_seen FROM remote_devices ORDER BY created_at DESC")?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, created_at, last_seen FROM remote_devices ORDER BY created_at DESC",
+        )?;
         let rows = stmt.query_map([], |r| {
-            Ok(Device { id: r.get(0)?, name: r.get(1)?, created_at: r.get(2)?, last_seen: r.get(3)?, notifications: false })
+            Ok(Device {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                created_at: r.get(2)?,
+                last_seen: r.get(3)?,
+                notifications: false,
+            })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     })
@@ -158,9 +202,18 @@ fn authenticate(db: &Database, token: &str) -> AppResult<Option<i64>> {
     }
     let hash = sha256_hex(token);
     db.with(|conn| {
-        let id: Option<i64> = conn.query_row("SELECT id FROM remote_devices WHERE token_hash = ?1", params![hash], |r| r.get(0)).optional()?;
+        let id: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM remote_devices WHERE token_hash = ?1",
+                params![hash],
+                |r| r.get(0),
+            )
+            .optional()?;
         if let Some(id) = id {
-            conn.execute("UPDATE remote_devices SET last_seen = ?1 WHERE id = ?2", params![automations::now(), id])?;
+            conn.execute(
+                "UPDATE remote_devices SET last_seen = ?1 WHERE id = ?2",
+                params![automations::now(), id],
+            )?;
         }
         Ok(id)
     })
@@ -179,7 +232,13 @@ impl RemoteAccess {
             }
             urls.push(format!("http://localhost:{p}"));
         }
-        Ok(RemoteStatus { running: port.is_some(), port, urls, error: self.last_error.lock()?.clone(), devices: devices(db)? })
+        Ok(RemoteStatus {
+            running: port.is_some(),
+            port,
+            urls,
+            error: self.last_error.lock()?.clone(),
+            devices: devices(db)?,
+        })
     }
 
     pub fn stop(&self) {
@@ -201,32 +260,48 @@ impl RemoteAccess {
             }
         };
         *self.last_error.lock()? = None;
-        *self.running.lock()? = Some(Running { server: Arc::clone(&server), port });
+        *self.running.lock()? = Some(Running {
+            server: Arc::clone(&server),
+            port,
+        });
 
         let app = app.clone();
-        std::thread::Builder::new().name("remote-http".into()).spawn(move || {
-            for request in server.incoming_requests() {
-                let app = app.clone();
-                // Une requête par thread : une action longue ne bloque pas les autres.
-                std::thread::spawn(move || handle(&app, request));
-            }
-        })?;
+        std::thread::Builder::new()
+            .name("remote-http".into())
+            .spawn(move || {
+                for request in server.incoming_requests() {
+                    let app = app.clone();
+                    // Une requête par thread : une action longue ne bloque pas les autres.
+                    std::thread::spawn(move || handle(&app, request));
+                }
+            })?;
         Ok(())
     }
 
     pub fn new_pairing_code(&self) -> AppResult<PairingCode> {
         if self.running.lock()?.is_none() {
-            return Err(AppError::InvalidInput("activez d'abord l'accès à distance".into()));
+            return Err(AppError::InvalidInput(
+                "activez d'abord l'accès à distance".into(),
+            ));
         }
         let n = u32::from_le_bytes(random_bytes::<4>()?) % 1_000_000;
         let code = format!("{n:06}");
-        *self.pairing.lock()? = Some(Pairing { code: code.clone(), expires: Instant::now() + PAIRING_TTL, attempts: 0 });
-        Ok(PairingCode { code, expires_in_secs: PAIRING_TTL.as_secs() })
+        *self.pairing.lock()? = Some(Pairing {
+            code: code.clone(),
+            expires: Instant::now() + PAIRING_TTL,
+            attempts: 0,
+        });
+        Ok(PairingCode {
+            code,
+            expires_in_secs: PAIRING_TTL.as_secs(),
+        })
     }
 
     fn try_pair(&self, code: &str) -> Result<(), &'static str> {
         let mut pairing = self.pairing.lock().map_err(|_| "erreur interne")?;
-        let Some(p) = pairing.as_mut() else { return Err("aucun appairage en cours : générez un code dans DevCenter") };
+        let Some(p) = pairing.as_mut() else {
+            return Err("aucun appairage en cours : générez un code dans DevCenter");
+        };
         if Instant::now() > p.expires {
             *pairing = None;
             return Err("code expiré : générez-en un nouveau dans DevCenter");
@@ -323,7 +398,9 @@ fn projects_payload(app: &AppHandle) -> AppResult<Vec<MobileProject>> {
             .map(|p| {
                 scope.spawn(move || {
                     let path = std::path::Path::new(&p.path);
-                    let d = p.exists.then(|| crate::modules::projects::details(p.id, path));
+                    let d = p
+                        .exists
+                        .then(|| crate::modules::projects::details(p.id, path));
                     let meta = d.as_ref().map(|d| &d.meta);
                     let git = d.as_ref().and_then(|d| d.git.as_ref());
                     MobileProject {
@@ -334,13 +411,19 @@ fn projects_payload(app: &AppHandle) -> AppResult<Vec<MobileProject>> {
                         languages: meta.map(|m| m.languages.clone()).unwrap_or_default(),
                         frameworks: meta.map(|m| m.frameworks.clone()).unwrap_or_default(),
                         package_manager: meta.and_then(|m| m.package_manager.clone()),
-                        scripts: meta.map(|m| m.scripts.iter().map(|s| s.name.clone()).collect()).unwrap_or_default(),
+                        scripts: meta
+                            .map(|m| m.scripts.iter().map(|s| s.name.clone()).collect())
+                            .unwrap_or_default(),
                         branch: git.and_then(|g| g.branch.clone()),
-                        changes: git.map(|g| g.staged + g.modified + g.untracked + g.conflicts).unwrap_or(0),
+                        changes: git
+                            .map(|g| g.staged + g.modified + g.untracked + g.conflicts)
+                            .unwrap_or(0),
                         ahead: git.map(|g| g.ahead).unwrap_or(0),
                         behind: git.map(|g| g.behind).unwrap_or(0),
-                        last_commit: git.and_then(|g| g.last_commit.as_ref().map(|c| c.subject.clone())),
-                        last_commit_at: git.and_then(|g| g.last_commit.as_ref().map(|c| c.timestamp)),
+                        last_commit: git
+                            .and_then(|g| g.last_commit.as_ref().map(|c| c.subject.clone())),
+                        last_commit_at: git
+                            .and_then(|g| g.last_commit.as_ref().map(|c| c.timestamp)),
                     }
                 })
             })
@@ -464,7 +547,13 @@ fn status_payload(app: &AppHandle) -> AppResult<MobileStatus> {
     let snap = state.system.snapshot()?;
     let info = state.system.info()?;
     let projects = crate::modules::projects::list(&state.db)?;
-    let project_name = |id: i64| projects.iter().find(|p| p.id == id).map(|p| p.name.clone()).unwrap_or_else(|| format!("projet {id}"));
+    let project_name = |id: i64| {
+        projects
+            .iter()
+            .find(|p| p.id == id)
+            .map(|p| p.name.clone())
+            .unwrap_or_else(|| format!("projet {id}"))
+    };
 
     let mut procs = state.system.processes(None, None)?;
     procs.sort_by(|a, b| b.cpu_usage.total_cmp(&a.cpu_usage));
@@ -493,16 +582,29 @@ fn status_payload(app: &AppHandle) -> AppResult<MobileStatus> {
             .disks
             .into_iter()
             .filter(|d| d.total_bytes > 0)
-            .map(|d| MobileDisk { mount: d.mount_point, total_bytes: d.total_bytes, available_bytes: d.available_bytes })
+            .map(|d| MobileDisk {
+                mount: d.mount_point,
+                total_bytes: d.total_bytes,
+                available_bytes: d.available_bytes,
+            })
             .collect(),
         gpus: gpus
             .into_iter()
-            .map(|g| MobileGpu { name: g.model.or(g.vendor).unwrap_or_else(|| "GPU".into()), usage: g.usage, memory_total: g.memory_total })
+            .map(|g| MobileGpu {
+                name: g.model.or(g.vendor).unwrap_or_else(|| "GPU".into()),
+                usage: g.usage,
+                memory_total: g.memory_total,
+            })
             .collect(),
         top_processes: procs
             .into_iter()
             .take(8)
-            .map(|p| MobileProcess { name: p.name, pid: p.pid, cpu_usage: p.cpu_usage, memory: p.memory })
+            .map(|p| MobileProcess {
+                name: p.name,
+                pid: p.pid,
+                cpu_usage: p.cpu_usage,
+                memory: p.memory,
+            })
             .collect(),
         runs: state
             .runner
@@ -526,11 +628,23 @@ fn status_payload(app: &AppHandle) -> AppResult<MobileStatus> {
                 favorite: w.favorite,
                 active: w.active.is_some(),
                 started_at: w.active.as_ref().map(|a| a.started_at),
-                run_ids: w.active.as_ref().map(|a| a.run_ids.clone()).unwrap_or_default(),
+                run_ids: w
+                    .active
+                    .as_ref()
+                    .map(|a| a.run_ids.clone())
+                    .unwrap_or_default(),
                 failures: w
                     .active
                     .as_ref()
-                    .map(|a| a.results.iter().filter(|r| !r.ok).map(|r| format!("{} : {}", r.label, r.message.clone().unwrap_or_default())).collect())
+                    .map(|a| {
+                        a.results
+                            .iter()
+                            .filter(|r| !r.ok)
+                            .map(|r| {
+                                format!("{} : {}", r.label, r.message.clone().unwrap_or_default())
+                            })
+                            .collect()
+                    })
                     .unwrap_or_default(),
                 steps: w.steps.len(),
                 last_started_at: w.last_started_at,
@@ -552,7 +666,11 @@ fn status_payload(app: &AppHandle) -> AppResult<MobileStatus> {
             .collect(),
         servers: crate::modules::servers::list(&state.db)?
             .into_iter()
-            .map(|s| MobileServer { destination: crate::modules::servers::ssh::destination(&s), id: s.id, name: s.name })
+            .map(|s| MobileServer {
+                destination: crate::modules::servers::ssh::destination(&s),
+                id: s.id,
+                name: s.name,
+            })
             .collect(),
         clone_jobs: state.clones.list(),
     })
@@ -569,17 +687,29 @@ fn history_payload(app: &AppHandle) -> AppResult<Vec<MobileHistoryItem>> {
             status: r.status,
             started_at: r.started_at,
             ended_at: r.ended_at,
-            failures: r.log.into_iter().filter(|l| l.outcome == "failed").map(|l| format!("{} : {}", l.label, l.message.unwrap_or_default())).collect(),
+            failures: r
+                .log
+                .into_iter()
+                .filter(|l| l.outcome == "failed")
+                .map(|l| format!("{} : {}", l.label, l.message.unwrap_or_default()))
+                .collect(),
         })
         .collect();
-    items.extend(workspaces::history(&state.db, 15)?.into_iter().map(|s| MobileHistoryItem {
-        kind: "workspace",
-        name: s.workspace_name,
-        origin: None,
-        status: s.status,
-        started_at: s.started_at,
-        ended_at: s.ended_at,
-        failures: s.results.into_iter().filter(|r| !r.ok).map(|r| format!("{} : {}", r.label, r.message.unwrap_or_default())).collect(),
+    items.extend(workspaces::history(&state.db, 15)?.into_iter().map(|s| {
+        MobileHistoryItem {
+            kind: "workspace",
+            name: s.workspace_name,
+            origin: None,
+            status: s.status,
+            started_at: s.started_at,
+            ended_at: s.ended_at,
+            failures: s
+                .results
+                .into_iter()
+                .filter(|r| !r.ok)
+                .map(|r| format!("{} : {}", r.label, r.message.unwrap_or_default()))
+                .collect(),
+        }
     }));
     items.sort_by_key(|i| std::cmp::Reverse(i.started_at));
     items.truncate(30);
@@ -604,8 +734,17 @@ fn stream_logs(runner: &crate::modules::runner::Runner, req: Request, run_id: u6
         }
     };
     let mut w = req.into_writer();
-    let mut send = |chunk: &str| w.write_all(chunk.as_bytes()).and_then(|_| w.flush()).is_ok();
-    let event = |lines: &[String], reset: bool| format!("data: {}\n\n", serde_json::json!({ "lines": lines, "reset": reset }));
+    let mut send = |chunk: &str| {
+        w.write_all(chunk.as_bytes())
+            .and_then(|_| w.flush())
+            .is_ok()
+    };
+    let event = |lines: &[String], reset: bool| {
+        format!(
+            "data: {}\n\n",
+            serde_json::json!({ "lines": lines, "reset": reset })
+        )
+    };
 
     // Réponse écrite à la main : pas de longueur ni d'encodage par blocs, le corps dure jusqu'à la
     // fermeture et chaque message part aussitôt (flush).
@@ -640,7 +779,11 @@ fn handle(app: &AppHandle, mut req: Request) {
         return;
     }
     let path = req.url().split('?').next().unwrap_or("/").to_string();
-    let query = req.url().split_once('?').map(|(_, q)| q.to_string()).unwrap_or_default();
+    let query = req
+        .url()
+        .split_once('?')
+        .map(|(_, q)| q.to_string())
+        .unwrap_or_default();
     let method = req.method().clone();
 
     // Page web (aucune donnée sensible : tout passe ensuite par l'API authentifiée).
@@ -664,7 +807,8 @@ fn handle(app: &AppHandle, mut req: Request) {
                 .with_header(header("X-Content-Type-Options", "nosniff"));
             // Le service worker doit être revalidé à chaque fois ; les icônes peuvent être mises en cache.
             resp = if path == "/sw.js" {
-                resp.with_header(header("Cache-Control", "no-cache")).with_header(header("Service-Worker-Allowed", "/"))
+                resp.with_header(header("Cache-Control", "no-cache"))
+                    .with_header(header("Service-Worker-Allowed", "/"))
             } else {
                 resp.with_header(header("Cache-Control", "public, max-age=86400"))
             };
@@ -677,7 +821,12 @@ fn handle(app: &AppHandle, mut req: Request) {
 
     if method == Method::Post && path == "/api/pair" {
         let mut body = String::new();
-        if req.as_reader().take(4096).read_to_string(&mut body).is_err() {
+        if req
+            .as_reader()
+            .take(4096)
+            .read_to_string(&mut body)
+            .is_err()
+        {
             let _ = req.respond(error(400, "requête invalide"));
             return;
         }
@@ -691,8 +840,17 @@ fn handle(app: &AppHandle, mut req: Request) {
                 Err(_) => error(500, "erreur interne"),
                 Ok(bytes) => {
                     let token = hex::encode(bytes);
-                    let name: String = pair.name.chars().filter(|c| !c.is_control()).take(60).collect();
-                    let name = if name.trim().is_empty() { "Appareil".to_string() } else { name };
+                    let name: String = pair
+                        .name
+                        .chars()
+                        .filter(|c| !c.is_control())
+                        .take(60)
+                        .collect();
+                    let name = if name.trim().is_empty() {
+                        "Appareil".to_string()
+                    } else {
+                        name
+                    };
                     let saved = state.db.with(|conn| {
                         conn.execute(
                             "INSERT INTO remote_devices (name, token_hash, created_at) VALUES (?1, ?2, ?3)",
@@ -753,16 +911,22 @@ fn handle(app: &AppHandle, mut req: Request) {
             Ok(h) => json_response(200, &h),
             Err(e) => error(500, &e.to_string()),
         },
-        (Method::Post, ["api", "workspaces", id, action @ ("start" | "stop")]) => match id.parse::<i64>() {
-            Err(_) => error(400, "identifiant invalide"),
-            Ok(id) => {
-                let r = if *action == "start" { workspaces::start(app, &state, id).map(|_| ()) } else { workspaces::stop(app, &state, id) };
-                match r {
-                    Ok(()) => ok(),
-                    Err(e) => error(400, &e.to_string()),
+        (Method::Post, ["api", "workspaces", id, action @ ("start" | "stop")]) => {
+            match id.parse::<i64>() {
+                Err(_) => error(400, "identifiant invalide"),
+                Ok(id) => {
+                    let r = if *action == "start" {
+                        workspaces::start(app, &state, id).map(|_| ())
+                    } else {
+                        workspaces::stop(app, &state, id)
+                    };
+                    match r {
+                        Ok(()) => ok(),
+                        Err(e) => error(400, &e.to_string()),
+                    }
                 }
             }
-        },
+        }
         (Method::Post, ["api", "automations", id, "run"]) => match id.parse::<i64>() {
             Err(_) => error(400, "identifiant invalide"),
             Ok(id) => match automations::trigger(app, id, "manual") {
@@ -790,9 +954,14 @@ fn handle(app: &AppHandle, mut req: Request) {
         },
         (Method::Post, ["api", "servers", id, "ping"]) => match id.parse::<i64>() {
             Err(_) => error(400, "identifiant invalide"),
-            Ok(id) => match crate::modules::servers::get(&state.db, id).and_then(|s| crate::modules::servers::remote::ping(&s)) {
+            Ok(id) => match crate::modules::servers::get(&state.db, id)
+                .and_then(|s| crate::modules::servers::remote::ping(&s))
+            {
                 Ok(ms) => json_response(200, &serde_json::json!({ "ok": true, "ms": ms })),
-                Err(e) => json_response(200, &serde_json::json!({ "ok": false, "error": e.to_string() })),
+                Err(e) => json_response(
+                    200,
+                    &serde_json::json!({ "ok": false, "error": e.to_string() }),
+                ),
             },
         },
         // Projets : liste, scripts, éditeur, import (dossiers de projets uniquement) et clonage.
@@ -800,18 +969,28 @@ fn handle(app: &AppHandle, mut req: Request) {
             Ok(p) => json_response(200, &p),
             Err(e) => error(500, &e.to_string()),
         },
-        (Method::Post, ["api", "projects", id, "run"]) => match (id.parse::<i64>(), serde_json::from_str::<RunBody>(&body)) {
-            (Ok(id), Ok(b)) => match crate::modules::projects::run_script(app, id, &b.script) {
-                Ok(run) => json_response(200, &serde_json::json!({ "ok": true, "runId": run.id })),
-                Err(e) => error(400, &e.to_string()),
-            },
-            _ => error(400, "requête invalide"),
-        },
+        (Method::Post, ["api", "projects", id, "run"]) => {
+            match (id.parse::<i64>(), serde_json::from_str::<RunBody>(&body)) {
+                (Ok(id), Ok(b)) => match crate::modules::projects::run_script(app, id, &b.script) {
+                    Ok(run) => {
+                        json_response(200, &serde_json::json!({ "ok": true, "runId": run.id }))
+                    }
+                    Err(e) => error(400, &e.to_string()),
+                },
+                _ => error(400, "requête invalide"),
+            }
+        }
         (Method::Get, ["api", "projects", id, "log"]) => match id.parse::<i64>() {
             Err(_) => error(400, "identifiant invalide"),
             Ok(id) => {
-                let limit = query.split('&').find_map(|p| p.strip_prefix("limit=")).and_then(|v| v.parse().ok()).unwrap_or(150);
-                match crate::modules::projects::path_of(&state.db, id).and_then(|p| crate::modules::projects::gitcache::log(&p, limit)) {
+                let limit = query
+                    .split('&')
+                    .find_map(|p| p.strip_prefix("limit="))
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(150);
+                match crate::modules::projects::path_of(&state.db, id)
+                    .and_then(|p| crate::modules::projects::gitcache::log(&p, limit))
+                {
                     Ok(log) => json_response(200, &log),
                     Err(e) => error(400, &e.to_string()),
                 }
@@ -819,7 +998,9 @@ fn handle(app: &AppHandle, mut req: Request) {
         },
         (Method::Get, ["api", "projects", id, "commits", hash]) => match id.parse::<i64>() {
             Err(_) => error(400, "identifiant invalide"),
-            Ok(id) => match crate::modules::projects::path_of(&state.db, id).and_then(|p| crate::modules::projects::gitcache::commit(&p, hash)) {
+            Ok(id) => match crate::modules::projects::path_of(&state.db, id)
+                .and_then(|p| crate::modules::projects::gitcache::commit(&p, hash))
+            {
                 Ok(d) => json_response(200, &d),
                 Err(e) => error(400, &e.to_string()),
             },
@@ -847,80 +1028,121 @@ fn handle(app: &AppHandle, mut req: Request) {
                 (Err(e), _) | (_, Err(e)) => error(500, &e.to_string()),
             }
         }
-        (Method::Post, ["api", "projects", "scan"]) => match serde_json::from_str::<ScanBody>(&body) {
-            Err(_) => error(400, "requête invalide"),
-            Ok(b) => {
-                let allowed = crate::modules::projects::import::roots(&state.db)
-                    .map(|r| r.iter().any(|x| x.eq_ignore_ascii_case(b.root.trim_end_matches(['\\', '/']))))
-                    .unwrap_or(false);
-                if !allowed {
-                    error(403, "dossier non autorisé : choisissez un des dossiers de projets")
-                } else {
-                    match crate::modules::projects::scan(&state.db, &b.root) {
-                        Ok(c) => json_response(200, &c),
-                        Err(e) => error(400, &e.to_string()),
-                    }
-                }
-            }
-        },
-        (Method::Post, ["api", "projects", "import"]) => match serde_json::from_str::<ImportBody>(&body) {
-            Err(_) => error(400, "requête invalide"),
-            Ok(b) if b.paths.is_empty() || b.paths.len() > 200 => error(400, "liste de dossiers invalide"),
-            Ok(b) => {
-                let all_allowed = b.paths.iter().all(|p| crate::modules::projects::import::within_roots(&state.db, p).unwrap_or(false));
-                if !all_allowed {
-                    error(403, "dossier hors des dossiers de projets")
-                } else {
-                    match crate::modules::projects::add(&state.db, &b.paths) {
-                        Ok(_) => {
-                            let _ = app.emit(crate::modules::projects::import::EVENT_CHANGED, ());
-                            json_response(200, &serde_json::json!({ "ok": true, "count": b.paths.len() }))
+        (Method::Post, ["api", "projects", "scan"]) => {
+            match serde_json::from_str::<ScanBody>(&body) {
+                Err(_) => error(400, "requête invalide"),
+                Ok(b) => {
+                    let allowed = crate::modules::projects::import::roots(&state.db)
+                        .map(|r| {
+                            r.iter().any(|x| {
+                                x.eq_ignore_ascii_case(b.root.trim_end_matches(['\\', '/']))
+                            })
+                        })
+                        .unwrap_or(false);
+                    if !allowed {
+                        error(
+                            403,
+                            "dossier non autorisé : choisissez un des dossiers de projets",
+                        )
+                    } else {
+                        match crate::modules::projects::scan(&state.db, &b.root) {
+                            Ok(c) => json_response(200, &c),
+                            Err(e) => error(400, &e.to_string()),
                         }
-                        Err(e) => error(400, &e.to_string()),
                     }
                 }
             }
-        },
-        (Method::Post, ["api", "projects", "clone"]) => match serde_json::from_str::<CloneBody>(&body) {
-            Err(_) => error(400, "requête invalide"),
-            Ok(b) => match state.clones.start(app, &b.url, b.name.as_deref()) {
-                Ok(job) => json_response(200, &job),
-                Err(e) => error(400, &e.to_string()),
-            },
-        },
+        }
+        (Method::Post, ["api", "projects", "import"]) => {
+            match serde_json::from_str::<ImportBody>(&body) {
+                Err(_) => error(400, "requête invalide"),
+                Ok(b) if b.paths.is_empty() || b.paths.len() > 200 => {
+                    error(400, "liste de dossiers invalide")
+                }
+                Ok(b) => {
+                    let all_allowed = b.paths.iter().all(|p| {
+                        crate::modules::projects::import::within_roots(&state.db, p)
+                            .unwrap_or(false)
+                    });
+                    if !all_allowed {
+                        error(403, "dossier hors des dossiers de projets")
+                    } else {
+                        match crate::modules::projects::add(&state.db, &b.paths) {
+                            Ok(_) => {
+                                let _ =
+                                    app.emit(crate::modules::projects::import::EVENT_CHANGED, ());
+                                json_response(
+                                    200,
+                                    &serde_json::json!({ "ok": true, "count": b.paths.len() }),
+                                )
+                            }
+                            Err(e) => error(400, &e.to_string()),
+                        }
+                    }
+                }
+            }
+        }
+        (Method::Post, ["api", "projects", "clone"]) => {
+            match serde_json::from_str::<CloneBody>(&body) {
+                Err(_) => error(400, "requête invalide"),
+                Ok(b) => match state.clones.start(app, &b.url, b.name.as_deref()) {
+                    Ok(job) => json_response(200, &job),
+                    Err(e) => error(400, &e.to_string()),
+                },
+            }
+        }
         (Method::Get, ["api", "github", "repos"]) => {
             let st = crate::modules::github::status();
             if st.login.is_none() {
-                json_response(200, &serde_json::json!({ "installed": st.installed, "login": null, "repos": [] }))
+                json_response(
+                    200,
+                    &serde_json::json!({ "installed": st.installed, "login": null, "repos": [] }),
+                )
             } else {
-                match state.github.repos(&state.db, query.split('&').any(|p| p == "refresh=1")) {
-                    Ok((login, repos)) => json_response(200, &serde_json::json!({ "installed": true, "login": login, "repos": repos })),
+                match state
+                    .github
+                    .repos(&state.db, query.split('&').any(|p| p == "refresh=1"))
+                {
+                    Ok((login, repos)) => json_response(
+                        200,
+                        &serde_json::json!({ "installed": true, "login": login, "repos": repos }),
+                    ),
                     Err(e) => error(500, &e.to_string()),
                 }
             }
         }
         // Notifications push de cet appareil.
-        (Method::Get, ["api", "push"]) => match (crate::modules::push::public_key(&state.db), crate::modules::push::is_subscribed(&state.db, device_id)) {
-            (Ok(key), Ok(subscribed)) => json_response(200, &serde_json::json!({ "publicKey": key, "subscribed": subscribed })),
+        (Method::Get, ["api", "push"]) => match (
+            crate::modules::push::public_key(&state.db),
+            crate::modules::push::is_subscribed(&state.db, device_id),
+        ) {
+            (Ok(key), Ok(subscribed)) => json_response(
+                200,
+                &serde_json::json!({ "publicKey": key, "subscribed": subscribed }),
+            ),
             (Err(e), _) | (_, Err(e)) => error(500, &e.to_string()),
         },
-        (Method::Post, ["api", "push", "subscribe"]) => match serde_json::from_str::<crate::modules::push::SubscriptionInput>(&body) {
-            Err(_) => error(400, "abonnement invalide"),
-            Ok(sub) => match crate::modules::push::subscribe(&state.db, device_id, &sub) {
+        (Method::Post, ["api", "push", "subscribe"]) => {
+            match serde_json::from_str::<crate::modules::push::SubscriptionInput>(&body) {
+                Err(_) => error(400, "abonnement invalide"),
+                Ok(sub) => match crate::modules::push::subscribe(&state.db, device_id, &sub) {
+                    Ok(()) => {
+                        let _ = app.emit(EVENT_CHANGED, ());
+                        ok()
+                    }
+                    Err(e) => error(400, &e.to_string()),
+                },
+            }
+        }
+        (Method::Post, ["api", "push", "unsubscribe"]) => {
+            match crate::modules::push::unsubscribe(&state.db, device_id) {
                 Ok(()) => {
                     let _ = app.emit(EVENT_CHANGED, ());
                     ok()
                 }
-                Err(e) => error(400, &e.to_string()),
-            },
-        },
-        (Method::Post, ["api", "push", "unsubscribe"]) => match crate::modules::push::unsubscribe(&state.db, device_id) {
-            Ok(()) => {
-                let _ = app.emit(EVENT_CHANGED, ());
-                ok()
+                Err(e) => error(500, &e.to_string()),
             }
-            Err(e) => error(500, &e.to_string()),
-        },
+        }
         (Method::Post, ["api", "push", "test"]) => {
             let n = crate::modules::push::Notification {
                 title: "DevCenter".into(),
@@ -945,7 +1167,16 @@ mod tests {
 
     #[test]
     fn private_networks_only() {
-        for ok in ["192.168.1.20", "10.0.0.5", "172.20.1.1", "127.0.0.1", "100.101.102.103", "::1", "fd00::1", "fe80::1"] {
+        for ok in [
+            "192.168.1.20",
+            "10.0.0.5",
+            "172.20.1.1",
+            "127.0.0.1",
+            "100.101.102.103",
+            "::1",
+            "fd00::1",
+            "fe80::1",
+        ] {
             assert!(is_private(ok.parse().unwrap()), "{ok}");
         }
         for bad in ["8.8.8.8", "172.32.0.1", "100.128.0.1", "2001:4860::8888"] {
@@ -956,18 +1187,30 @@ mod tests {
     #[test]
     fn pairing_codes_are_single_use_and_limited() {
         let r = RemoteAccess::default();
-        *r.pairing.lock().unwrap() = Some(Pairing { code: "123456".into(), expires: Instant::now() + PAIRING_TTL, attempts: 0 });
+        *r.pairing.lock().unwrap() = Some(Pairing {
+            code: "123456".into(),
+            expires: Instant::now() + PAIRING_TTL,
+            attempts: 0,
+        });
         assert!(r.try_pair("000000").is_err());
         assert!(r.try_pair("123456").is_ok());
         assert!(r.try_pair("123456").is_err()); // usage unique
 
-        *r.pairing.lock().unwrap() = Some(Pairing { code: "123456".into(), expires: Instant::now() + PAIRING_TTL, attempts: 0 });
+        *r.pairing.lock().unwrap() = Some(Pairing {
+            code: "123456".into(),
+            expires: Instant::now() + PAIRING_TTL,
+            attempts: 0,
+        });
         for _ in 0..PAIRING_MAX_ATTEMPTS {
             let _ = r.try_pair("999999");
         }
         assert!(r.try_pair("123456").is_err()); // invalidé après 5 essais
 
-        *r.pairing.lock().unwrap() = Some(Pairing { code: "123456".into(), expires: Instant::now() - Duration::from_secs(1), attempts: 0 });
+        *r.pairing.lock().unwrap() = Some(Pairing {
+            code: "123456".into(),
+            expires: Instant::now() - Duration::from_secs(1),
+            attempts: 0,
+        });
         assert!(r.try_pair("123456").is_err()); // expiré
     }
 
@@ -978,7 +1221,10 @@ mod tests {
         let db = Database::open(&dir.join("t.db")).unwrap();
         let token = hex::encode(random_bytes::<32>().unwrap());
         db.with(|c| {
-            c.execute("INSERT INTO remote_devices (name, token_hash, created_at) VALUES ('tel', ?1, 0)", params![sha256_hex(&token)])?;
+            c.execute(
+                "INSERT INTO remote_devices (name, token_hash, created_at) VALUES ('tel', ?1, 0)",
+                params![sha256_hex(&token)],
+            )?;
             Ok(())
         })
         .unwrap();

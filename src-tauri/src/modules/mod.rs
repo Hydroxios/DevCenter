@@ -14,5 +14,5 @@ pub mod settings;
 pub mod shell;
 pub mod system;
 pub mod tailscale;
-pub mod workspaces;
 pub mod updates;
+pub mod workspaces;

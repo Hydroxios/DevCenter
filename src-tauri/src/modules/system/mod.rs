@@ -106,7 +106,10 @@ fn spawn_hardware_worker() -> Sender<Sender<HardwareSnapshot>> {
     tx
 }
 
-fn collect_hardware(gpus: Option<&mut Gpus>, components: Option<&mut Components>) -> HardwareSnapshot {
+fn collect_hardware(
+    gpus: Option<&mut Gpus>,
+    components: Option<&mut Components>,
+) -> HardwareSnapshot {
     let gpus = match gpus {
         Some(list) => {
             list.refresh(true);
@@ -161,7 +164,10 @@ impl SystemService {
             os_name: opt(System::name()),
             os_version: opt(System::long_os_version()),
             kernel_version: opt(System::kernel_version()),
-            cpu_brand: cpus.first().map(|c| c.brand().trim().to_string()).unwrap_or_default(),
+            cpu_brand: cpus
+                .first()
+                .map(|c| c.brand().trim().to_string())
+                .unwrap_or_default(),
             cpu_cores: cpus.len(),
         })
     }
@@ -206,18 +212,28 @@ impl SystemService {
                 .find(|p| p.to_string_lossy() == mount_point)
                 .ok_or_else(|| AppError::InvalidInput(format!("disque inconnu : {mount_point}")))?
         };
-        tauri_plugin_opener::open_path(&path, None::<&str>)
-            .map_err(|e| AppError::InvalidInput(format!("impossible d'ouvrir {} : {e}", path.display())))
+        tauri_plugin_opener::open_path(&path, None::<&str>).map_err(|e| {
+            AppError::InvalidInput(format!("impossible d'ouvrir {} : {e}", path.display()))
+        })
     }
 
     pub fn hardware(&self) -> AppResult<HardwareSnapshot> {
         let (reply_tx, reply_rx) = mpsc::channel();
-        self.hardware.lock()?.send(reply_tx).map_err(|_| AppError::Unavailable("matériel"))?;
-        reply_rx.recv().map_err(|_| AppError::Unavailable("matériel"))
+        self.hardware
+            .lock()?
+            .send(reply_tx)
+            .map_err(|_| AppError::Unavailable("matériel"))?;
+        reply_rx
+            .recv()
+            .map_err(|_| AppError::Unavailable("matériel"))
     }
 
     /// Liste des processus ; avec `sort`/`limit`, seuls les premiers du classement sont renvoyés.
-    pub fn processes(&self, sort: Option<ProcessSort>, limit: Option<usize>) -> AppResult<Vec<ProcessInfo>> {
+    pub fn processes(
+        &self,
+        sort: Option<ProcessSort>,
+        limit: Option<usize>,
+    ) -> AppResult<Vec<ProcessInfo>> {
         let cores = self.sys.lock()?.cpus().len().max(1);
         let mut list = {
             let mut procs = self.procs.lock()?;
@@ -250,14 +266,24 @@ mod tests {
         svc.hardware().unwrap();
         eprintln!("gpus={} sensors={}", hw.gpus.len(), hw.sensors.len());
         for g in &hw.gpus {
-            eprintln!("  gpu {:?} usage={:?} vram={:?}/{:?}", g.model, g.usage, g.memory_used, g.memory_total);
+            eprintln!(
+                "  gpu {:?} usage={:?} vram={:?}/{:?}",
+                g.model, g.usage, g.memory_used, g.memory_total
+            );
         }
 
         let procs = svc.processes(None, None).unwrap();
         assert!(procs.len() > 10);
-        let me = procs.iter().find(|p| p.pid == std::process::id()).expect("processus courant listé");
+        let me = procs
+            .iter()
+            .find(|p| p.pid == std::process::id())
+            .expect("processus courant listé");
         assert!(me.protected);
-        assert!(procs.iter().all(|p| p.cpu_usage >= 0.0 && p.cpu_usage <= 100.5));
+        assert!(
+            procs
+                .iter()
+                .all(|p| p.cpu_usage >= 0.0 && p.cpu_usage <= 100.5)
+        );
         eprintln!("processes={}", procs.len());
     }
 }

@@ -25,13 +25,23 @@ pub const EVENT_CHANGED: &str = "automation://changed";
 const MAX_STEPS: usize = 40;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum Trigger {
     Manual,
     /// Toutes les N minutes (1 à 1440).
-    Interval { minutes: u32 },
+    Interval {
+        minutes: u32,
+    },
     /// Chaque jour à `time` (« HH:MM », heure locale) ; `days` : 0 = lundi … 6 = dimanche, vide = tous.
-    Daily { time: String, #[serde(default)] days: Vec<u8> },
+    Daily {
+        time: String,
+        #[serde(default)]
+        days: Vec<u8>,
+    },
     /// Au démarrage de DevCenter.
     AppStart,
 }
@@ -133,24 +143,34 @@ pub fn parse_hhmm(s: &str) -> Option<(u32, u32)> {
 fn validate(db: &Database, input: &AutomationInput) -> AppResult<()> {
     let name = input.name.trim();
     if name.is_empty() || name.len() > 80 {
-        return Err(AppError::InvalidInput("le nom doit faire entre 1 et 80 caractères".into()));
+        return Err(AppError::InvalidInput(
+            "le nom doit faire entre 1 et 80 caractères".into(),
+        ));
     }
     if input.description.len() > 300 {
         return Err(AppError::InvalidInput("description trop longue".into()));
     }
     if input.steps.is_empty() || input.steps.len() > MAX_STEPS {
-        return Err(AppError::InvalidInput(format!("entre 1 et {MAX_STEPS} étapes")));
+        return Err(AppError::InvalidInput(format!(
+            "entre 1 et {MAX_STEPS} étapes"
+        )));
     }
     if !(1..=24 * 60).contains(&input.timeout_minutes) {
-        return Err(AppError::InvalidInput("délai maximum entre 1 et 1440 minutes".into()));
+        return Err(AppError::InvalidInput(
+            "délai maximum entre 1 et 1440 minutes".into(),
+        ));
     }
     match &input.trigger {
         Trigger::Interval { minutes } if !(1..=24 * 60).contains(minutes) => {
-            return Err(AppError::InvalidInput("intervalle entre 1 et 1440 minutes".into()));
+            return Err(AppError::InvalidInput(
+                "intervalle entre 1 et 1440 minutes".into(),
+            ));
         }
         Trigger::Daily { time, days } => {
             if parse_hhmm(time).is_none() {
-                return Err(AppError::InvalidInput(format!("heure invalide : {time} (HH:MM)")));
+                return Err(AppError::InvalidInput(format!(
+                    "heure invalide : {time} (HH:MM)"
+                )));
             }
             if days.iter().any(|d| *d > 6) {
                 return Err(AppError::InvalidInput("jour invalide".into()));
@@ -164,12 +184,25 @@ fn validate(db: &Database, input: &AutomationInput) -> AppResult<()> {
     Ok(())
 }
 
-fn row_to_automation(r: &rusqlite::Row<'_>) -> rusqlite::Result<(i64, String, String, bool, String, String, String, u32)> {
-    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get::<_, i64>(3)? != 0, r.get(4)?, r.get(5)?, r.get(6)?, r.get::<_, i64>(7)? as u32))
+fn row_to_automation(
+    r: &rusqlite::Row<'_>,
+) -> rusqlite::Result<(i64, String, String, bool, String, String, String, u32)> {
+    Ok((
+        r.get(0)?,
+        r.get(1)?,
+        r.get(2)?,
+        r.get::<_, i64>(3)? != 0,
+        r.get(4)?,
+        r.get(5)?,
+        r.get(6)?,
+        r.get::<_, i64>(7)? as u32,
+    ))
 }
 
 fn last_run(db: &Database, automation_id: i64) -> AppResult<Option<RunSummary>> {
-    Ok(history(db, Some(automation_id), 1, None)?.into_iter().next())
+    Ok(history(db, Some(automation_id), 1, None)?
+        .into_iter()
+        .next())
 }
 
 pub fn list(db: &Database, runtime: &AutomationRuntime) -> AppResult<Vec<Automation>> {
@@ -183,30 +216,37 @@ pub fn list(db: &Database, runtime: &AutomationRuntime) -> AppResult<Vec<Automat
     })?;
     let running = runtime.running.lock()?.clone();
     rows.into_iter()
-        .map(|(id, name, description, enabled, trigger, steps, on_error, timeout_minutes)| {
-            Ok(Automation {
-                trigger: serde_json::from_str(&trigger).unwrap_or(Trigger::Manual),
-                // Étape illisible (format changé) : ignorée plutôt que de casser la liste.
-                steps: serde_json::from_value::<Vec<serde_json::Value>>(serde_json::from_str(&steps).unwrap_or_default())
+        .map(
+            |(id, name, description, enabled, trigger, steps, on_error, timeout_minutes)| {
+                Ok(Automation {
+                    trigger: serde_json::from_str(&trigger).unwrap_or(Trigger::Manual),
+                    // Étape illisible (format changé) : ignorée plutôt que de casser la liste.
+                    steps: serde_json::from_value::<Vec<serde_json::Value>>(
+                        serde_json::from_str(&steps).unwrap_or_default(),
+                    )
                     .unwrap_or_default()
                     .into_iter()
                     .filter_map(|v| serde_json::from_value(v).ok())
                     .collect(),
-                on_error: serde_json::from_str(&on_error).unwrap_or_default(),
-                running: running.contains(&id),
-                last_run: last_run(db, id)?,
-                id,
-                name,
-                description,
-                enabled,
-                timeout_minutes,
-            })
-        })
+                    on_error: serde_json::from_str(&on_error).unwrap_or_default(),
+                    running: running.contains(&id),
+                    last_run: last_run(db, id)?,
+                    id,
+                    name,
+                    description,
+                    enabled,
+                    timeout_minutes,
+                })
+            },
+        )
         .collect()
 }
 
 pub fn get(db: &Database, runtime: &AutomationRuntime, id: i64) -> AppResult<Automation> {
-    list(db, runtime)?.into_iter().find(|a| a.id == id).ok_or_else(|| AppError::InvalidInput(format!("automatisation {id} inconnue")))
+    list(db, runtime)?
+        .into_iter()
+        .find(|a| a.id == id)
+        .ok_or_else(|| AppError::InvalidInput(format!("automatisation {id} inconnue")))
 }
 
 pub fn save(db: &Database, input: &AutomationInput) -> AppResult<i64> {
@@ -242,7 +282,9 @@ fn to_json<T: Serialize>(value: &T) -> String {
 
 pub fn delete(db: &Database, runtime: &AutomationRuntime, id: i64) -> AppResult<()> {
     if runtime.running.lock()?.contains(&id) {
-        return Err(AppError::InvalidInput("attendez la fin de l'exécution en cours".into()));
+        return Err(AppError::InvalidInput(
+            "attendez la fin de l'exécution en cours".into(),
+        ));
     }
     db.with(|conn| {
         conn.execute("DELETE FROM automations WHERE id = ?1", params![id])?;
@@ -252,14 +294,22 @@ pub fn delete(db: &Database, runtime: &AutomationRuntime, id: i64) -> AppResult<
 
 pub fn set_enabled(db: &Database, id: i64, enabled: bool) -> AppResult<()> {
     db.with(|conn| {
-        conn.execute("UPDATE automations SET enabled = ?1 WHERE id = ?2", params![enabled as i64, id])?;
+        conn.execute(
+            "UPDATE automations SET enabled = ?1 WHERE id = ?2",
+            params![enabled as i64, id],
+        )?;
         Ok(())
     })
 }
 
 /// Historique du plus récent au plus ancien. `before_id` : curseur de pagination (exécutions
 /// antérieures à celle-ci), pour charger la suite au défilement.
-pub fn history(db: &Database, automation_id: Option<i64>, limit: u32, before_id: Option<i64>) -> AppResult<Vec<RunSummary>> {
+pub fn history(
+    db: &Database,
+    automation_id: Option<i64>,
+    limit: u32,
+    before_id: Option<i64>,
+) -> AppResult<Vec<RunSummary>> {
     db.with(|conn| {
         let sql = "SELECT id, automation_id, automation_name, origin, started_at, ended_at, status, log
                    FROM automation_runs
@@ -319,7 +369,10 @@ pub fn trigger(app: &AppHandle, id: i64, origin: &str) -> AppResult<i64> {
     {
         let mut running = state.automations.running.lock()?;
         if !running.insert(id) {
-            return Err(AppError::InvalidInput(format!("« {} » est déjà en cours", automation.name)));
+            return Err(AppError::InvalidInput(format!(
+                "« {} » est déjà en cours",
+                automation.name
+            )));
         }
     }
     let run_id = state.db.with(|conn| {
@@ -364,7 +417,12 @@ pub fn trigger(app: &AppHandle, id: i64, origin: &str) -> AppResult<i64> {
             let _ = state.db.with(|conn| {
                 conn.execute(
                     "UPDATE automation_runs SET status = ?1, ended_at = ?2, log = ?3 WHERE id = ?4",
-                    params![status, now(), serde_json::to_string(&log).unwrap_or_else(|_| "[]".into()), run_id],
+                    params![
+                        status,
+                        now(),
+                        serde_json::to_string(&log).unwrap_or_else(|_| "[]".into()),
+                        run_id
+                    ],
                 )?;
                 Ok(())
             });
@@ -382,7 +440,12 @@ fn execute(app: &AppHandle, automation: &Automation) -> (&'static str, Vec<StepL
     let mut failed = false;
     for (i, step) in automation.steps.iter().enumerate() {
         if Instant::now() >= deadline {
-            log.push(StepLog { label: "Délai maximum atteint".into(), outcome: "failed".into(), message: None, duration_ms: 0 });
+            log.push(StepLog {
+                label: "Délai maximum atteint".into(),
+                outcome: "failed".into(),
+                message: None,
+                duration_ms: 0,
+            });
             return ("timeout", log);
         }
         let started = Instant::now();
@@ -390,22 +453,52 @@ fn execute(app: &AppHandle, automation: &Automation) -> (&'static str, Vec<StepL
         let result = steps::run(app, step, deadline);
         let duration_ms = started.elapsed().as_millis() as u64;
         match result {
-            Ok(steps::Flow::Continue) => log.push(StepLog { label, outcome: "ok".into(), message: None, duration_ms }),
-            Ok(steps::Flow::Done(detail)) => log.push(StepLog { label, outcome: "ok".into(), message: Some(detail), duration_ms }),
+            Ok(steps::Flow::Continue) => log.push(StepLog {
+                label,
+                outcome: "ok".into(),
+                message: None,
+                duration_ms,
+            }),
+            Ok(steps::Flow::Done(detail)) => log.push(StepLog {
+                label,
+                outcome: "ok".into(),
+                message: Some(detail),
+                duration_ms,
+            }),
             Ok(steps::Flow::Stop(reason)) => {
-                log.push(StepLog { label, outcome: "skipped".into(), message: Some(reason), duration_ms });
+                log.push(StepLog {
+                    label,
+                    outcome: "skipped".into(),
+                    message: Some(reason),
+                    duration_ms,
+                });
                 // Les étapes restantes ne sont pas exécutées : on les note pour la lisibilité.
                 for rest in &automation.steps[i + 1..] {
-                    log.push(StepLog { label: steps::label(app, rest), outcome: "skipped".into(), message: None, duration_ms: 0 });
+                    log.push(StepLog {
+                        label: steps::label(app, rest),
+                        outcome: "skipped".into(),
+                        message: None,
+                        duration_ms: 0,
+                    });
                 }
                 return (if failed { "failed" } else { "stopped" }, log);
             }
             Err(e) => {
                 failed = true;
-                log.push(StepLog { label, outcome: "failed".into(), message: Some(e.to_string()), duration_ms });
+                log.push(StepLog {
+                    label,
+                    outcome: "failed".into(),
+                    message: Some(e.to_string()),
+                    duration_ms,
+                });
                 if automation.on_error == OnError::Stop {
                     for rest in &automation.steps[i + 1..] {
-                        log.push(StepLog { label: steps::label(app, rest), outcome: "skipped".into(), message: None, duration_ms: 0 });
+                        log.push(StepLog {
+                            label: steps::label(app, rest),
+                            outcome: "skipped".into(),
+                            message: None,
+                            duration_ms: 0,
+                        });
                     }
                     return ("failed", log);
                 }
@@ -428,8 +521,15 @@ mod tests {
 
     #[test]
     fn trigger_and_step_json() {
-        let t: Trigger = serde_json::from_str(r#"{"kind":"daily","time":"09:00","days":[0,1,2,3,4]}"#).unwrap();
-        assert_eq!(t, Trigger::Daily { time: "09:00".into(), days: vec![0, 1, 2, 3, 4] });
+        let t: Trigger =
+            serde_json::from_str(r#"{"kind":"daily","time":"09:00","days":[0,1,2,3,4]}"#).unwrap();
+        assert_eq!(
+            t,
+            Trigger::Daily {
+                time: "09:00".into(),
+                days: vec![0, 1, 2, 3, 4]
+            }
+        );
         let s: Step = serde_json::from_str(
             r#"{"kind":"condition","condition":{"kind":"processRunning","name":"Docker Desktop.exe","negate":true}}"#,
         )
@@ -453,14 +553,65 @@ mod tests {
             on_error: OnError::Continue,
             timeout_minutes: 10,
         };
-        let notify = Step::Notify { title: "Bonjour".into(), body: String::new() };
-        assert!(save(&db, &base(Trigger::Daily { time: "25:00".into(), days: vec![] }, vec![notify.clone()])).is_err());
-        assert!(save(&db, &base(Trigger::Interval { minutes: 0 }, vec![notify.clone()])).is_err());
+        let notify = Step::Notify {
+            title: "Bonjour".into(),
+            body: String::new(),
+        };
+        assert!(
+            save(
+                &db,
+                &base(
+                    Trigger::Daily {
+                        time: "25:00".into(),
+                        days: vec![]
+                    },
+                    vec![notify.clone()]
+                )
+            )
+            .is_err()
+        );
+        assert!(
+            save(
+                &db,
+                &base(Trigger::Interval { minutes: 0 }, vec![notify.clone()])
+            )
+            .is_err()
+        );
         assert!(save(&db, &base(Trigger::Manual, vec![])).is_err());
-        assert!(save(&db, &base(Trigger::Manual, vec![Step::StartWorkspace { workspace_id: 42 }])).is_err());
-        assert!(save(&db, &base(Trigger::Manual, vec![Step::OpenUrl { url: "javascript:alert(1)".into() }])).is_err());
+        assert!(
+            save(
+                &db,
+                &base(
+                    Trigger::Manual,
+                    vec![Step::StartWorkspace { workspace_id: 42 }]
+                )
+            )
+            .is_err()
+        );
+        assert!(
+            save(
+                &db,
+                &base(
+                    Trigger::Manual,
+                    vec![Step::OpenUrl {
+                        url: "javascript:alert(1)".into()
+                    }]
+                )
+            )
+            .is_err()
+        );
 
-        let id = save(&db, &base(Trigger::Daily { time: "09:00".into(), days: vec![0, 4] }, vec![notify.clone(), Step::Wait { seconds: 5 }])).unwrap();
+        let id = save(
+            &db,
+            &base(
+                Trigger::Daily {
+                    time: "09:00".into(),
+                    days: vec![0, 4],
+                },
+                vec![notify.clone(), Step::Wait { seconds: 5 }],
+            ),
+        )
+        .unwrap();
         let a = get(&db, &rt, id).unwrap();
         assert_eq!(a.steps.len(), 2);
         assert_eq!(a.on_error, OnError::Continue);
@@ -500,7 +651,10 @@ mod tests {
         assert_eq!(seen.len(), 45);
         let mut sorted = seen.clone();
         sorted.sort_by(|a, b| b.cmp(a));
-        assert_eq!(seen, sorted, "du plus récent au plus ancien, sans doublon ni trou");
+        assert_eq!(
+            seen, sorted,
+            "du plus récent au plus ancien, sans doublon ni trou"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 }

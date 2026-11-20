@@ -51,7 +51,9 @@ pub struct SettingsService {
 impl SettingsService {
     pub fn new(db: &Database) -> AppResult<Self> {
         let settings = Self::load(db)?;
-        Ok(Self { close_to_tray: AtomicBool::new(settings.close_to_tray) })
+        Ok(Self {
+            close_to_tray: AtomicBool::new(settings.close_to_tray),
+        })
     }
 
     pub fn close_to_tray(&self) -> bool {
@@ -62,7 +64,8 @@ impl SettingsService {
         db.with(|conn| {
             let mut settings = Settings::default();
             let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
-            let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+            let rows =
+                stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
             for row in rows {
                 let (key, value) = row?;
                 // Les valeurs inconnues ou corrompues sont ignorées (valeur par défaut conservée).
@@ -131,7 +134,9 @@ impl SettingsService {
                 }
             }
             "projectsRoot" => {
-                if let Some(p) = serde_json::from_value::<Option<String>>(value.clone()).map_err(invalid)? {
+                if let Some(p) =
+                    serde_json::from_value::<Option<String>>(value.clone()).map_err(invalid)?
+                {
                     let path = std::path::Path::new(&p);
                     if !path.is_absolute() || !path.is_dir() {
                         return Err(AppError::InvalidInput(format!("dossier introuvable : {p}")));
@@ -163,7 +168,10 @@ mod tests {
     }
 
     fn rand_suffix() -> u128 {
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
     }
 
     #[test]
@@ -175,7 +183,8 @@ mod tests {
 
         let s = svc.set(&db, "theme", serde_json::json!("light")).unwrap();
         assert_eq!(s.theme, Theme::Light);
-        svc.set(&db, "closeToTray", serde_json::json!(false)).unwrap();
+        svc.set(&db, "closeToTray", serde_json::json!(false))
+            .unwrap();
         assert!(!svc.close_to_tray());
 
         // Réouverture : les valeurs et le schéma (migrations idempotentes) sont conservés.
@@ -192,6 +201,9 @@ mod tests {
         let svc = SettingsService::new(&db).unwrap();
         assert!(svc.set(&db, "shell", serde_json::json!("rm -rf")).is_err());
         assert!(svc.set(&db, "theme", serde_json::json!("purple")).is_err());
-        assert!(svc.set(&db, "closeToTray", serde_json::json!("yes")).is_err());
+        assert!(
+            svc.set(&db, "closeToTray", serde_json::json!("yes"))
+                .is_err()
+        );
     }
 }

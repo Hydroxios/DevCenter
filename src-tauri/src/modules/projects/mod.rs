@@ -51,8 +51,21 @@ pub struct ScanCandidate {
 
 /// Dossiers jamais explorés pendant un scan.
 const SKIP_DIRS: &[&str] = &[
-    "node_modules", "target", "dist", "build", "out", "vendor", "venv", ".venv", "__pycache__", "AppData",
-    "$RECYCLE.BIN", "System Volume Information", "Windows", "Program Files", "Program Files (x86)",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    "out",
+    "vendor",
+    "venv",
+    ".venv",
+    "__pycache__",
+    "AppData",
+    "$RECYCLE.BIN",
+    "System Volume Information",
+    "Windows",
+    "Program Files",
+    "Program Files (x86)",
 ];
 const SCAN_MAX_DEPTH: usize = 4;
 const SCAN_MAX_RESULTS: usize = 500;
@@ -60,19 +73,31 @@ const SCAN_MAX_RESULTS: usize = 500;
 fn normalize(path: &str) -> String {
     let trimmed = path.trim().trim_end_matches(['\\', '/']);
     // Conserve « C:\ » pour une racine de lecteur.
-    if trimmed.ends_with(':') { format!("{trimmed}\\") } else { trimmed.to_string() }
+    if trimmed.ends_with(':') {
+        format!("{trimmed}\\")
+    } else {
+        trimmed.to_string()
+    }
 }
 
 fn folder_name(path: &Path) -> String {
-    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path.display().to_string())
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string())
 }
 
 pub fn list(db: &Database) -> AppResult<Vec<Project>> {
     db.with(|conn| {
-        let mut stmt = conn.prepare("SELECT id, name, path FROM projects ORDER BY name COLLATE NOCASE")?;
+        let mut stmt =
+            conn.prepare("SELECT id, name, path FROM projects ORDER BY name COLLATE NOCASE")?;
         let rows = stmt.query_map([], |r| {
             let path: String = r.get(2)?;
-            Ok(Project { id: r.get(0)?, name: r.get(1)?, exists: Path::new(&path).is_dir(), path })
+            Ok(Project {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                exists: Path::new(&path).is_dir(),
+                path,
+            })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
     })
@@ -85,7 +110,9 @@ pub fn add(db: &Database, paths: &[String]) -> AppResult<Vec<Project>> {
         let path = normalize(raw);
         let p = Path::new(&path);
         if !p.is_absolute() || !p.is_dir() {
-            return Err(AppError::InvalidInput(format!("dossier introuvable : {raw}")));
+            return Err(AppError::InvalidInput(format!(
+                "dossier introuvable : {raw}"
+            )));
         }
         valid.push((folder_name(p), path));
     }
@@ -112,10 +139,15 @@ pub fn remove(db: &Database, id: i64) -> AppResult<Vec<Project>> {
 pub fn rename(db: &Database, id: i64, name: &str) -> AppResult<Vec<Project>> {
     let name = name.trim();
     if name.is_empty() || name.len() > 100 {
-        return Err(AppError::InvalidInput("le nom doit faire entre 1 et 100 caractères".into()));
+        return Err(AppError::InvalidInput(
+            "le nom doit faire entre 1 et 100 caractères".into(),
+        ));
     }
     db.with(|conn| {
-        conn.execute("UPDATE projects SET name = ?1 WHERE id = ?2", params![name, id])?;
+        conn.execute(
+            "UPDATE projects SET name = ?1 WHERE id = ?2",
+            params![name, id],
+        )?;
         Ok(())
     })?;
     list(db)
@@ -124,17 +156,31 @@ pub fn rename(db: &Database, id: i64, name: &str) -> AppResult<Vec<Project>> {
 /// Chemin d'un projet enregistré ; échoue si le dossier n'existe plus.
 pub fn path_of(db: &Database, id: i64) -> AppResult<PathBuf> {
     let path: Option<String> = db.with(|conn| {
-        Ok(conn.query_row("SELECT path FROM projects WHERE id = ?1", params![id], |r| r.get(0)).optional()?)
+        Ok(conn
+            .query_row(
+                "SELECT path FROM projects WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .optional()?)
     })?;
-    let path = PathBuf::from(path.ok_or_else(|| AppError::InvalidInput(format!("projet {id} inconnu")))?);
+    let path =
+        PathBuf::from(path.ok_or_else(|| AppError::InvalidInput(format!("projet {id} inconnu")))?);
     if !path.is_dir() {
-        return Err(AppError::InvalidInput(format!("dossier introuvable : {}", path.display())));
+        return Err(AppError::InvalidInput(format!(
+            "dossier introuvable : {}",
+            path.display()
+        )));
     }
     Ok(path)
 }
 
 /// Lance un script déclaré dans le package.json (même règle depuis le PC ou le téléphone).
-pub fn run_script(app: &tauri::AppHandle, project_id: i64, script: &str) -> AppResult<crate::modules::runner::RunInfo> {
+pub fn run_script(
+    app: &tauri::AppHandle,
+    project_id: i64,
+    script: &str,
+) -> AppResult<crate::modules::runner::RunInfo> {
     use tauri::Manager;
     let state = app.state::<crate::state::AppState>();
     let path = path_of(&state.db, project_id)?;
@@ -143,19 +189,37 @@ pub fn run_script(app: &tauri::AppHandle, project_id: i64, script: &str) -> AppR
         .scripts
         .iter()
         .find(|s| s.name == script)
-        .ok_or_else(|| AppError::InvalidInput(format!("script « {script} » absent du package.json")))?;
+        .ok_or_else(|| {
+            AppError::InvalidInput(format!("script « {script} » absent du package.json"))
+        })?;
     let pm = meta.package_manager.as_deref().unwrap_or("npm");
-    state.runner.start(app, project_id, &path, pm, &declared.name, &declared.command, false)
+    state.runner.start(
+        app,
+        project_id,
+        &path,
+        pm,
+        &declared.name,
+        &declared.command,
+        false,
+    )
 }
 
 /// Détails d'un projet ; le statut Git vient du cache (voir `gitcache`).
 pub fn details(id: i64, path: &Path) -> ProjectDetails {
-    ProjectDetails { id, meta: detect::detect(path), git: gitcache::status(path, false) }
+    ProjectDetails {
+        id,
+        meta: detect::detect(path),
+        git: gitcache::status(path, false),
+    }
 }
 
 /// Comme `details`, en relisant le dépôt (actualisation demandée par l'utilisateur).
 pub fn details_fresh(id: i64, path: &Path) -> ProjectDetails {
-    ProjectDetails { id, meta: detect::detect(path), git: gitcache::status(path, true) }
+    ProjectDetails {
+        id,
+        meta: detect::detect(path),
+        git: gitcache::status(path, true),
+    }
 }
 
 /// Parcourt `root` à la recherche de projets non encore enregistrés.
@@ -163,9 +227,15 @@ pub fn details_fresh(id: i64, path: &Path) -> ProjectDetails {
 pub fn scan(db: &Database, root: &str) -> AppResult<Vec<ScanCandidate>> {
     let root = PathBuf::from(normalize(root));
     if !root.is_dir() {
-        return Err(AppError::InvalidInput(format!("dossier introuvable : {}", root.display())));
+        return Err(AppError::InvalidInput(format!(
+            "dossier introuvable : {}",
+            root.display()
+        )));
     }
-    let known: Vec<String> = list(db)?.into_iter().map(|p| p.path.to_lowercase()).collect();
+    let known: Vec<String> = list(db)?
+        .into_iter()
+        .map(|p| p.path.to_lowercase())
+        .collect();
 
     let mut found = Vec::new();
     let mut stack = vec![(root, 0usize)];
@@ -189,7 +259,9 @@ pub fn scan(db: &Database, root: &str) -> AppResult<Vec<ScanCandidate>> {
         if depth >= SCAN_MAX_DEPTH {
             continue;
         }
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let Ok(ft) = entry.file_type() else { continue };
             // Pas de liens symboliques / jonctions : évite les boucles.
@@ -222,7 +294,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("devcenter-proj-{}", std::process::id()));
         let project = dir.join("my-app");
         std::fs::create_dir_all(&project).unwrap();
-        std::fs::write(project.join("package.json"), r#"{"scripts":{"dev":"vite"}}"#).unwrap();
+        std::fs::write(
+            project.join("package.json"),
+            r#"{"scripts":{"dev":"vite"}}"#,
+        )
+        .unwrap();
         let db = Database::open(&dir.join("t.db")).unwrap();
 
         let candidates = scan(&db, dir.to_str().unwrap()).unwrap();

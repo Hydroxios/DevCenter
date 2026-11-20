@@ -37,7 +37,11 @@ fn run(dir: &Path, args: &[&str]) -> AppResult<String> {
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with("hint:"))
         .collect();
-    Err(AppError::InvalidInput(if msg.is_empty() { "commande git en échec".into() } else { msg.join("\n") }))
+    Err(AppError::InvalidInput(if msg.is_empty() {
+        "commande git en échec".into()
+    } else {
+        msg.join("\n")
+    }))
 }
 
 pub fn list(dir: &Path) -> AppResult<Vec<Branch>> {
@@ -58,7 +62,9 @@ fn parse(text: &str) -> Vec<Branch> {
     text.lines()
         .filter_map(|line| {
             let parts: Vec<&str> = line.split('\u{1f}').collect();
-            let [full, short, head, upstream, ts, subject] = parts[..] else { return None };
+            let [full, short, head, upstream, ts, subject] = parts[..] else {
+                return None;
+            };
             let remote = full.starts_with("refs/remotes/");
             // `origin/HEAD` n'est qu'un alias de la branche par défaut du dépôt distant.
             if remote && full.ends_with("/HEAD") {
@@ -82,7 +88,9 @@ fn validate(dir: &Path, name: &str) -> AppResult<()> {
     }
     run(dir, &["check-ref-format", "--branch", name])
         .map(|_| ())
-        .map_err(|_| AppError::InvalidInput(format!("« {name} » n'est pas un nom de branche valide")))
+        .map_err(|_| {
+            AppError::InvalidInput(format!("« {name} » n'est pas un nom de branche valide"))
+        })
 }
 
 /// Bascule sur `name`. Une branche distante (`origin/feature`) crée la branche locale
@@ -91,7 +99,16 @@ pub fn checkout(dir: &Path, name: &str, remote: bool) -> AppResult<()> {
     validate(dir, name)?;
     if remote {
         let local = name.split_once('/').map(|(_, b)| b).unwrap_or(name);
-        let exists = run(dir, &["show-ref", "--verify", "--quiet", &format!("refs/heads/{local}")]).is_ok();
+        let exists = run(
+            dir,
+            &[
+                "show-ref",
+                "--verify",
+                "--quiet",
+                &format!("refs/heads/{local}"),
+            ],
+        )
+        .is_ok();
         if exists {
             run(dir, &["switch", local])?;
         } else {
@@ -111,7 +128,11 @@ pub fn create(dir: &Path, name: &str, from: Option<&str>, switch: bool) -> AppRe
         return Err(AppError::InvalidInput("point de départ invalide".into()));
     }
     // Partir d'une branche distante ne doit pas la faire suivre automatiquement.
-    let mut args = if switch { vec!["switch", "--no-track", "-c", name] } else { vec!["branch", "--no-track", name] };
+    let mut args = if switch {
+        vec!["switch", "--no-track", "-c", name]
+    } else {
+        vec!["branch", "--no-track", name]
+    };
     args.extend(from);
     run(dir, &args)?;
     Ok(())

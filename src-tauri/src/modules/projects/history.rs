@@ -88,7 +88,14 @@ pub struct CommitDetails {
 
 fn git(dir: &Path, args: &[&str]) -> AppResult<String> {
     let out = shell::command("git")
-        .args(["--no-optional-locks", "-c", "core.quotepath=off", "-c", "log.showSignature=false", "-C"])
+        .args([
+            "--no-optional-locks",
+            "-c",
+            "core.quotepath=off",
+            "-c",
+            "log.showSignature=false",
+            "-C",
+        ])
         .arg(dir)
         .args(args)
         .output()
@@ -100,12 +107,18 @@ fn git(dir: &Path, args: &[&str]) -> AppResult<String> {
         if err.contains("does not have any commits") || err.contains("bad default revision") {
             return Ok(String::new());
         }
-        Err(AppError::InvalidInput(err.trim().chars().take(300).collect()))
+        Err(AppError::InvalidInput(
+            err.trim().chars().take(300).collect(),
+        ))
     }
 }
 
 fn parse_refs(raw: &str) -> Vec<String> {
-    raw.split(", ").map(str::trim).filter(|r| !r.is_empty() && *r != "origin/HEAD").map(str::to_string).collect()
+    raw.split(", ")
+        .map(str::trim)
+        .filter(|r| !r.is_empty() && *r != "origin/HEAD")
+        .map(str::to_string)
+        .collect()
 }
 
 /// Graphe des `limit` commits les plus récents, toutes branches confondues.
@@ -114,7 +127,15 @@ pub fn log(dir: &Path, limit: usize) -> AppResult<GitLog> {
     let n = (limit + 1).to_string();
     let text = git(
         dir,
-        &["log", "--all", "--date-order", "--no-color", "-n", &n, "--format=%H%x1f%P%x1f%an%x1f%at%x1f%D%x1f%s%x1e"],
+        &[
+            "log",
+            "--all",
+            "--date-order",
+            "--no-color",
+            "-n",
+            &n,
+            "--format=%H%x1f%P%x1f%an%x1f%at%x1f%D%x1f%s%x1e",
+        ],
     )?;
     let mut raw: Vec<(String, Vec<String>, String, i64, Vec<String>, String)> = text
         .split('\u{1e}')
@@ -138,7 +159,10 @@ pub fn log(dir: &Path, limit: usize) -> AppResult<GitLog> {
 }
 
 /// Placement des commits en colonnes (algorithme classique des « voies » de `git log --graph`).
-fn layout(raw: Vec<(String, Vec<String>, String, i64, Vec<String>, String)>, truncated: bool) -> GitLog {
+fn layout(
+    raw: Vec<(String, Vec<String>, String, i64, Vec<String>, String)>,
+    truncated: bool,
+) -> GitLog {
     // Voie = hash attendu dans cette colonne + couleur.
     let mut lanes: Vec<Option<(String, usize)>> = Vec::new();
     let mut next_color = 0usize;
@@ -153,10 +177,16 @@ fn layout(raw: Vec<(String, Vec<String>, String, i64, Vec<String>, String)>, tru
 
     for (hash, parents, author, timestamp, refs, subject) in raw {
         // Colonne du commit : la voie qui l'attendait, sinon une voie libre (nouvelle pointe de branche).
-        let col = match lanes.iter().position(|l| l.as_ref().is_some_and(|(h, _)| *h == hash)) {
+        let col = match lanes
+            .iter()
+            .position(|l| l.as_ref().is_some_and(|(h, _)| *h == hash))
+        {
             Some(c) => c,
             None => {
-                let c = lanes.iter().position(Option::is_none).unwrap_or(lanes.len());
+                let c = lanes
+                    .iter()
+                    .position(Option::is_none)
+                    .unwrap_or(lanes.len());
                 let color = new_color();
                 if c == lanes.len() {
                     lanes.push(Some((hash.clone(), color)));
@@ -183,7 +213,10 @@ fn layout(raw: Vec<(String, Vec<String>, String, i64, Vec<String>, String)>, tru
         next[col] = None;
         let mut parent_cols = Vec::new();
         for (k, p) in parents.iter().enumerate() {
-            if let Some(i) = next.iter().position(|l| l.as_ref().is_some_and(|(h, _)| h == p)) {
+            if let Some(i) = next
+                .iter()
+                .position(|l| l.as_ref().is_some_and(|(h, _)| h == p))
+            {
                 if k == 0 && i > col {
                     // Le premier parent est déjà attendu plus à droite : l'historique continue dans la
                     // colonne la plus à gauche, l'autre voie vient la rejoindre.
@@ -215,13 +248,24 @@ fn layout(raw: Vec<(String, Vec<String>, String, i64, Vec<String>, String)>, tru
                 continue;
             }
             if let Some((h, c)) = lane {
-                if let Some(j) = next.iter().position(|l| l.as_ref().is_some_and(|(nh, _)| nh == h)) {
-                    edges.push(GraphEdge { from: i, to: j, color: *c });
+                if let Some(j) = next
+                    .iter()
+                    .position(|l| l.as_ref().is_some_and(|(nh, _)| nh == h))
+                {
+                    edges.push(GraphEdge {
+                        from: i,
+                        to: j,
+                        color: *c,
+                    });
                 }
             }
         }
         for &(to, c) in &parent_cols {
-            edges.push(GraphEdge { from: col, to, color: c });
+            edges.push(GraphEdge {
+                from: col,
+                to,
+                color: c,
+            });
         }
 
         while next.last().is_some_and(Option::is_none) {
@@ -231,7 +275,18 @@ fn layout(raw: Vec<(String, Vec<String>, String, i64, Vec<String>, String)>, tru
         lanes = next;
 
         let short = hash.chars().take(7).collect();
-        commits.push(GraphCommit { hash, short, parents, author, timestamp, subject, refs, column: col, color, edges });
+        commits.push(GraphCommit {
+            hash,
+            short,
+            parents,
+            author,
+            timestamp,
+            subject,
+            refs,
+            column: col,
+            color,
+            edges,
+        });
         // Convergences : les voies fusionnées rejoignent ce commit (dessinées sur la ligne précédente).
         if !converging.is_empty() {
             let row = commits.len() - 1;
@@ -245,30 +300,60 @@ fn layout(raw: Vec<(String, Vec<String>, String, i64, Vec<String>, String)>, tru
             }
         }
     }
-    GitLog { commits, width, truncated }
+    GitLog {
+        commits,
+        width,
+        truncated,
+    }
 }
 
 fn validate_hash(hash: &str) -> AppResult<()> {
     if (7..=40).contains(&hash.len()) && hash.chars().all(|c| c.is_ascii_hexdigit()) {
         Ok(())
     } else {
-        Err(AppError::InvalidInput("identifiant de commit invalide".into()))
+        Err(AppError::InvalidInput(
+            "identifiant de commit invalide".into(),
+        ))
     }
 }
 
 /// Détail d'un commit : message complet, fichiers modifiés et diff (par rapport au premier parent).
 pub fn commit(dir: &Path, hash: &str) -> AppResult<CommitDetails> {
     validate_hash(hash)?;
-    let meta = git(dir, &["show", "--no-color", "--no-patch", "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%cn%x1f%ct%x1f%D%x1f%s%x1f%b", hash])?;
+    let meta = git(
+        dir,
+        &[
+            "show",
+            "--no-color",
+            "--no-patch",
+            "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%cn%x1f%ct%x1f%D%x1f%s%x1f%b",
+            hash,
+        ],
+    )?;
     let f: Vec<&str> = meta.splitn(10, '\u{1f}').collect();
     if f.len() < 10 {
         return Err(AppError::InvalidInput("commit introuvable".into()));
     }
 
     // Statistiques par fichier (renommages détectés).
-    let numstat = git(dir, &["show", "--no-color", "--format=", "--numstat", "-M", "--diff-merges=first-parent", "-z", hash])?;
+    let numstat = git(
+        dir,
+        &[
+            "show",
+            "--no-color",
+            "--format=",
+            "--numstat",
+            "-M",
+            "--diff-merges=first-parent",
+            "-z",
+            hash,
+        ],
+    )?;
     let mut files: Vec<FileChange> = Vec::new();
-    let mut parts = numstat.split('\0').filter(|s| !s.is_empty() || false).peekable();
+    let mut parts = numstat
+        .split('\0')
+        .filter(|s| !s.is_empty() || false)
+        .peekable();
     while let Some(entry) = parts.next() {
         let entry = entry.trim_start_matches('\n');
         let cols: Vec<&str> = entry.splitn(3, '\t').collect();
@@ -286,7 +371,13 @@ pub fn commit(dir: &Path, hash: &str) -> AppResult<CommitDetails> {
             (cols[2].to_string(), None)
         };
         files.push(FileChange {
-            status: if binary { "binary".into() } else if old_path.is_some() { "renamed".into() } else { "modified".into() },
+            status: if binary {
+                "binary".into()
+            } else if old_path.is_some() {
+                "renamed".into()
+            } else {
+                "modified".into()
+            },
             path,
             old_path,
             additions: add,
@@ -297,10 +388,31 @@ pub fn commit(dir: &Path, hash: &str) -> AppResult<CommitDetails> {
     }
 
     // Diff complet, découpé par fichier.
-    let patch = git(dir, &["show", "--no-color", "--format=", "--patch", "-M", "--diff-merges=first-parent", hash])?;
+    let patch = git(
+        dir,
+        &[
+            "show",
+            "--no-color",
+            "--format=",
+            "--patch",
+            "-M",
+            "--diff-merges=first-parent",
+            hash,
+        ],
+    )?;
     let diff_truncated = patch.len() > MAX_DIFF_BYTES;
-    let patch = if diff_truncated { &patch[..floor_char_boundary(&patch, MAX_DIFF_BYTES)] } else { &patch[..] };
-    for chunk in patch.split("\ndiff --git ").enumerate().map(|(i, c)| if i == 0 { c.trim_start_matches("diff --git ").to_string() } else { c.to_string() }) {
+    let patch = if diff_truncated {
+        &patch[..floor_char_boundary(&patch, MAX_DIFF_BYTES)]
+    } else {
+        &patch[..]
+    };
+    for chunk in patch.split("\ndiff --git ").enumerate().map(|(i, c)| {
+        if i == 0 {
+            c.trim_start_matches("diff --git ").to_string()
+        } else {
+            c.to_string()
+        }
+    }) {
         if chunk.trim().is_empty() {
             continue;
         }
@@ -313,14 +425,20 @@ pub fn commit(dir: &Path, hash: &str) -> AppResult<CommitDetails> {
             None
         };
         // « a/x b/y » : on retrouve le fichier par son nouveau chemin.
-        let target = files.iter_mut().find(|f| header.ends_with(&format!(" b/{}", f.path)));
+        let target = files
+            .iter_mut()
+            .find(|f| header.ends_with(&format!(" b/{}", f.path)));
         if let Some(file) = target {
             if let Some(st) = status {
                 file.status = st.into();
             }
             let body: Vec<&str> = chunk.lines().skip_while(|l| !l.starts_with("@@")).collect();
             file.truncated = body.len() > MAX_FILE_DIFF_LINES;
-            file.patch = body.into_iter().take(MAX_FILE_DIFF_LINES).collect::<Vec<_>>().join("\n");
+            file.patch = body
+                .into_iter()
+                .take(MAX_FILE_DIFF_LINES)
+                .collect::<Vec<_>>()
+                .join("\n");
         }
     }
 
@@ -356,7 +474,14 @@ mod tests {
     use super::*;
 
     fn c(h: &str, parents: &[&str]) -> (String, Vec<String>, String, i64, Vec<String>, String) {
-        (h.into(), parents.iter().map(|s| s.to_string()).collect(), "a".into(), 0, vec![], h.into())
+        (
+            h.into(),
+            parents.iter().map(|s| s.to_string()).collect(),
+            "a".into(),
+            0,
+            vec![],
+            h.into(),
+        )
     }
 
     #[test]
@@ -368,7 +493,15 @@ mod tests {
         //   A |
         //   |/
         //   R
-        let g = layout(vec![c("M", &["A", "B"]), c("B", &["R"]), c("A", &["R"]), c("R", &[])], false);
+        let g = layout(
+            vec![
+                c("M", &["A", "B"]),
+                c("B", &["R"]),
+                c("A", &["R"]),
+                c("R", &[]),
+            ],
+            false,
+        );
         let col = |h: &str| g.commits.iter().find(|x| x.hash == h).unwrap().column;
         assert_eq!(col("M"), 0);
         assert_eq!(col("B"), 1);
@@ -421,7 +554,13 @@ mod live_tests {
         let dir = Path::new(r"F:\Projects\hxim");
         let g = log(dir, 300).unwrap();
         let merges = g.commits.iter().filter(|c| c.parents.len() > 1).count();
-        eprintln!("{} commits, {} fusions, largeur {}, tronqué {}", g.commits.len(), merges, g.width, g.truncated);
+        eprintln!(
+            "{} commits, {} fusions, largeur {}, tronqué {}",
+            g.commits.len(),
+            merges,
+            g.width,
+            g.truncated
+        );
         // Chaque segment doit relier des colonnes existantes, et chaque parent visible doit être relié.
         for (r, c) in g.commits.iter().enumerate() {
             for e in &c.edges {
@@ -429,17 +568,39 @@ mod live_tests {
             }
             if let Some(next) = g.commits.get(r + 1) {
                 if c.parents.contains(&next.hash) {
-                    assert!(c.edges.iter().any(|e| e.from == c.column && e.to == next.column), "parent non relié ligne {r}");
+                    assert!(
+                        c.edges
+                            .iter()
+                            .any(|e| e.from == c.column && e.to == next.column),
+                        "parent non relié ligne {r}"
+                    );
                 }
             }
         }
         let merge = g.commits.iter().find(|c| c.parents.len() > 1).unwrap();
         let d = commit(dir, &merge.hash).unwrap();
-        eprintln!("fusion {} : {} fichiers +{} -{}", merge.short, d.files.len(), d.additions, d.deletions);
+        eprintln!(
+            "fusion {} : {} fichiers +{} -{}",
+            merge.short,
+            d.files.len(),
+            d.additions,
+            d.deletions
+        );
         let normal = g.commits.iter().find(|c| c.parents.len() == 1).unwrap();
         let d = commit(dir, &normal.hash).unwrap();
-        eprintln!("commit {} « {} » : {} fichiers, premier : {} ({}), patch {} lignes", normal.short, d.subject, d.files.len(),
-            d.files[0].path, d.files[0].status, d.files[0].patch.lines().count());
-        assert!(d.files.iter().any(|f| !f.patch.is_empty() || f.status == "binary"));
+        eprintln!(
+            "commit {} « {} » : {} fichiers, premier : {} ({}), patch {} lignes",
+            normal.short,
+            d.subject,
+            d.files.len(),
+            d.files[0].path,
+            d.files[0].status,
+            d.files[0].patch.lines().count()
+        );
+        assert!(
+            d.files
+                .iter()
+                .any(|f| !f.patch.is_empty() || f.status == "binary")
+        );
     }
 }
