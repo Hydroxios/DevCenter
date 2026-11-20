@@ -30,6 +30,7 @@ import type {
   CcusageReport,
   CcusageDayDetail,
   CcusageTotal,
+  TimeStats,
   GitLog,
   CommitDetails,
   ChangedFile,
@@ -155,6 +156,8 @@ export const api = {
     ccusageTotal: (force = false) => invoke<CcusageTotal>("ccusage_total", { force }),
     ccusageDay: (date: string) => invoke<CcusageDayDetail>("ccusage_day", { date }),
     ccusage: (days = 30, force = false) => invoke<CcusageReport>("ccusage_daily", { days, force }),
+    /** Temps par workspace et par projet, commits par projet. */
+    timeStats: (days = 30) => invoke<TimeStats>("time_stats", { days }),
   },
   git: {
     log: (projectId: number, limit = 300) => invoke<GitLog>("git_log", { projectId, limit }),

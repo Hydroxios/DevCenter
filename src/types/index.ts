@@ -505,6 +505,38 @@ export interface CommitActivity {
   repos: number;
 }
 
+/** Temps passé par workspace et par projet sur une période (statistiques). */
+export interface TimeStats {
+  days: number;
+  /** Début (minuit local) et fin de la période, Unix secondes. */
+  from: number;
+  to: number;
+  /** Union de toutes les sessions et exécutions de scripts. */
+  totalSeconds: number;
+  /** Jours ayant de l'activité (`AAAA-MM-JJ`). */
+  daily: { date: string; seconds: number }[];
+  workspaces: WorkspaceTime[];
+  projects: ProjectTime[];
+}
+
+export interface WorkspaceTime {
+  /** null : workspace supprimé depuis. */
+  id: number | null;
+  name: string;
+  seconds: number;
+  sessions: number;
+}
+
+export interface ProjectTime {
+  id: number;
+  name: string;
+  /** Union des sessions de workspaces l'incluant et de ses scripts (sans double compte). */
+  seconds: number;
+  sessions: number;
+  runs: number;
+  commits: number;
+}
+
 /** Un commit de l'utilisateur, pour le détail d'un jour de la grille. */
 export interface DayCommit {
   projectId: number;

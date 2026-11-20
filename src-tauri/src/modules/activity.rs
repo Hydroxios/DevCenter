@@ -1,7 +1,7 @@
 //! Activité du développeur pour le tableau de bord : commits de tous les projets
 //! (grille façon profil GitHub) et consommation Claude Code relevée par `ccusage`.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -82,6 +82,23 @@ pub fn commits(project_paths: Vec<String>, days: u32) -> CommitActivity {
         total,
         repos: repos.len(),
     }
+}
+
+/// Nombre de commits de l'utilisateur par projet (id, chemin) sur les `days` derniers jours.
+/// Un commit présent dans deux dossiers compte pour chacun des deux projets.
+pub fn commits_by_project(projects: Vec<(i64, String)>, days: u32) -> HashMap<i64, u32> {
+    let since = format!("{} days ago", days.clamp(1, 800));
+    let repos: Vec<(i64, String)> = projects.into_iter().filter(|(_, p)| Path::new(p).join(".git").exists()).collect();
+    std::thread::scope(|s| {
+        let handles: Vec<_> = repos
+            .iter()
+            .map(|(id, p)| {
+                let since = &since;
+                s.spawn(move || (*id, repo_commits(Path::new(p), since).len() as u32))
+            })
+            .collect();
+        handles.into_iter().filter_map(|h| h.join().ok()).collect()
+    })
 }
 
 #[derive(Debug, Serialize)]

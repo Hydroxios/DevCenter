@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { CircleAlert, CircleCheck, CopyPlus, ExternalLink, History, Layers, LayoutList, Loader2, Pencil, Play, Plus, Square, Star, StarOff, Trash2 } from "lucide-react";
+import { BarChart3, CircleAlert, CircleCheck, CopyPlus, ExternalLink, History, Layers, LayoutList, Loader2, Pencil, Play, Plus, Square, Star, StarOff, Trash2 } from "lucide-react";
 
 import { EmptyState, ListItem, ListPane, Page, PageBar, PageBody, PageMain, PageNotice, PageTabs, TauriOnly } from "@/components/layout/Page";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +22,7 @@ import { api, isTauri } from "@/services/tauri";
 import { useRuns } from "@/stores/runs";
 import { useWorkspaces } from "@/stores/workspaces";
 import type { SessionRecord, SessionStatus, Workspace } from "@/types";
+import { TimeStatsView } from "@/modules/stats/TimeStats";
 import { stepIcon, stepLabel } from "./steps";
 import { WorkspaceEditor } from "./WorkspaceEditor";
 
@@ -114,6 +116,8 @@ type Tab = "overview" | "history";
 /** Dernier onglet ouvert par workspace (le temps de la session de l'app). */
 const lastTab = new Map<number, Tab>();
 let lastSelected: number | null = null;
+/** Section « Statistiques » ouverte à la place d'un workspace. */
+let lastStats = false;
 
 function SessionHistory({ workspaceId, version }: { workspaceId: number; version: string }) {
   const [sessions, setSessions] = useState<SessionRecord[] | null>(null);
@@ -250,10 +254,26 @@ export function WorkspacesPage() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [selectedId, setSelectedIdState] = useState<number | null>(lastSelected);
   const [filter, setFilter] = useState("");
+  const [params, setParams] = useSearchParams();
+  const [showStats, setShowStatsState] = useState(() => lastStats || params.get("view") === "stats");
+  const setShowStats = (v: boolean) => {
+    lastStats = v;
+    setShowStatsState(v);
+  };
   const setSelectedId = (id: number) => {
     lastSelected = id;
     setSelectedIdState(id);
+    setShowStats(false);
   };
+  // Lien « Détail » du widget du tableau de bord : `/workspaces?view=stats`.
+  useEffect(() => {
+    if (params.get("view") !== "stats") return;
+    setShowStats(true);
+    setParams((p) => {
+      p.delete("view");
+      return p;
+    }, { replace: true });
+  }, [params, setParams]);
 
   useEffect(() => {
     init();
@@ -320,8 +340,15 @@ export function WorkspacesPage() {
         filter={filter}
         onFilter={sorted.length > 6 ? setFilter : undefined}
       >
+        <ListItem active={showStats} onClick={() => setShowStats(true)}>
+          <span className="flex items-center gap-2">
+            <BarChart3 className={cn("size-3.5 shrink-0", showStats ? "text-primary" : "text-muted-foreground")} />
+            <span className={cn("truncate text-sm", showStats ? "text-foreground" : "text-foreground/85")}>Statistiques</span>
+          </span>
+          <span className="meta truncate">Temps par projet et par workspace</span>
+        </ListItem>
         {shown.map((w) => {
-          const active = selected?.id === w.id;
+          const active = !showStats && selected?.id === w.id;
           return (
             <ListItem key={w.id} active={active} onClick={() => setSelectedId(w.id)} onContextMenu={workspaceMenu(w)}>
               <span className="flex items-center gap-2">
@@ -343,7 +370,14 @@ export function WorkspacesPage() {
         {shown.length === 0 && sorted.length > 0 && <p className="px-3 py-2 text-sm text-muted-foreground">Aucun résultat.</p>}
       </ListPane>
 
-      {workspaces && workspaces.length === 0 ? (
+      {showStats ? (
+        <PageMain>
+          <PageBar title="Statistiques" meta="Temps passé par projet et par workspace, commits par projet" />
+          <PageBody>
+            <TimeStatsView onSelectWorkspace={setSelectedId} />
+          </PageBody>
+        </PageMain>
+      ) : workspaces && workspaces.length === 0 ? (
         <PageMain>
           {error && !editorOpen && <PageNotice onDismiss={clearError}>{error}</PageNotice>}
           <EmptyState

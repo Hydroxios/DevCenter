@@ -104,6 +104,16 @@ const MIGRATIONS: &[&str] = &[
         auth       TEXT NOT NULL,
         created_at INTEGER NOT NULL
     );",
+    // 9 — historique des exécutions de scripts (statistiques de temps par projet)
+    "CREATE TABLE script_runs (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        script     TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        ended_at   INTEGER,
+        status     TEXT NOT NULL
+    );
+    CREATE INDEX idx_script_runs_started ON script_runs(started_at);",
 ];
 
 pub struct Database {

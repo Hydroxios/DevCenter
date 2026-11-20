@@ -1,10 +1,10 @@
 // Catalogue des widgets du tableau de bord (séparé des composants pour le Fast Refresh de Vite).
 
-import { Activity, Bot, Clock, Cpu, GitCommitHorizontal, Gpu, HardDrive, Layers, ListOrdered, MemoryStick, Play } from "lucide-react";
+import { Activity, Bot, Clock, Cpu, GitCommitHorizontal, Gpu, HardDrive, Layers, ListOrdered, MemoryStick, Play, Timer } from "lucide-react";
 
 import { hasHistory, windowOf } from "./config";
 import type { WidgetDef } from "./config";
-import { CcusageWidget, CommitsBody, CoresBody, CpuBody, HardwareBody, MemoryBody, ProcessesBody, RunsBody, StorageBody, SystemBody, WidgetLink, WorkspacesBody } from "./widgets";
+import { CcusageWidget, CommitsBody, CoresBody, CpuBody, HardwareBody, MemoryBody, ProcessesBody, RunsBody, StorageBody, SystemBody, TimeStatsWidget, WidgetLink, WorkspacesBody } from "./widgets";
 
 /* ------------------------------------------------------------------ */
 /* Catalogue                                                           */
@@ -102,6 +102,14 @@ export const WIDGETS = {
     aside: () => <WidgetLink to="/projects">Projets</WidgetLink>,
     render: () => <CommitsBody />,
     fit: "fill",
+  },
+  timeStats: {
+    title: "Temps par projet",
+    description: "Temps passé par projet (workspaces et scripts) et commits",
+    icon: Timer,
+    size: { w: 4, h: 5, minW: 3, minH: 3 },
+    aside: () => <WidgetLink to="/workspaces?view=stats">Détail</WidgetLink>,
+    render: () => <TimeStatsWidget />,
   },
   ccusage: {
     title: "Claude Code",
