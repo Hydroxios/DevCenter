@@ -68,10 +68,11 @@ export function PtyTerminal({
 }
 
 /** Terminal SSH interactif sur un serveur enregistré ; la session reste ouverte en arrière-plan. */
-export function SshTerminal({ server, className }: { server: Server; className?: string }) {
+export function SshTerminal({ server, className, autoConnect = false }: { server: Server; className?: string; autoConnect?: boolean }) {
   return (
     <PtyTerminal
       className={className}
+      autoStart={autoConnect}
       persistKey={sshKey(server.id)}
       open={(cols, rows) => api.terminal.open(server.id, cols, rows)}
       intro={`Connexion à ${server.user ? `${server.user}@` : ""}${server.host}:${server.port}…`}

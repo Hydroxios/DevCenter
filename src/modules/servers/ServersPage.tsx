@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router";
 import { Box, Copy, Gauge, Pencil, Plus, Server as ServerIcon, Settings2, TerminalSquare, Trash2, Zap } from "lucide-react";
 
 import { EmptyState, ListItem, ListPane, Page, PageBar, PageBody, PageMain, PageNotice, PageTabs, TauriOnly } from "@/components/layout/Page";
@@ -86,12 +87,15 @@ function ServerView({
   onTest,
   onEdit,
   onDeleted,
+  autoConnect = false,
 }: {
   server: Server;
   status: Status | undefined;
   onTest: () => void;
   onEdit: () => void;
   onDeleted: (list: Server[]) => void;
+  /** Ouvre la session SSH dès l'affichage (lien depuis la palette de commandes). */
+  autoConnect?: boolean;
 }) {
   const [tab, setTabState] = useState<Tab>(() => lastTab.get(server.id) ?? "overview");
   const setTab = (t: Tab) => {
@@ -137,7 +141,9 @@ function ServerView({
         {tab === "services" && <ServicesPanel server={server} />}
         {tab === "docker" && <DockerPanel server={server} />}
         {/* La session SSH vit dans terminalManager : quitter l'onglet ou la page ne la coupe pas. */}
-        {tab === "terminal" && <SshTerminal server={server} className="h-[max(320px,calc(100vh-260px))]" />}
+        {tab === "terminal" && (
+          <SshTerminal server={server} autoConnect={autoConnect} className="h-[max(320px,calc(100vh-260px))]" />
+        )}
       </PageBody>
     </PageMain>
   );
@@ -165,6 +171,11 @@ function ServersView() {
   const [dialog, setDialog] = useState<{ open: boolean; server: Server | null }>({ open: false, server: null });
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  // `?server=<id>&terminal=1` (palette de commandes) : sélectionne le serveur sur l'onglet Terminal et s'y connecte.
+  const [params, setParams] = useSearchParams();
+  const linked = Number(params.get("server")) || null;
+  const linkedTerminal = params.get("terminal") === "1";
+  const [link, setLink] = useState<{ id: number; nonce: number } | null>(null);
   useTerminalsVersion();
 
   const setServers = (list: Server[]) => {
@@ -215,6 +226,24 @@ function ServersView() {
   useEffect(() => {
     api.servers.list().then(apply).catch((e) => setError(String(e)));
   }, [apply]);
+
+  useEffect(() => {
+    if (linked === null) return;
+    setSelectedId(linked);
+    if (linkedTerminal) {
+      lastTab.set(linked, "terminal");
+      // Nouvelle clé : la vue du serveur est recréée sur l'onglet Terminal, même s'il était déjà affiché.
+      setLink((l) => ({ id: linked, nonce: (l?.nonce ?? 0) + 1 }));
+    }
+    setParams(
+      (p) => {
+        p.delete("server");
+        p.delete("terminal");
+        return p;
+      },
+      { replace: true },
+    );
+  }, [linked, linkedTerminal, setParams]);
 
   // Statut rafraîchi toutes les 2 minutes, uniquement fenêtre visible.
   useEffect(() => {
@@ -319,8 +348,9 @@ function ServersView() {
       ) : (
         selected && (
           <ServerView
-            key={selected.id}
+            key={link?.id === selected.id ? `${selected.id}:${link.nonce}` : selected.id}
             server={selected}
+            autoConnect={link?.id === selected.id}
             status={status[selected.id]}
             onTest={() => {
               setStatus(selected.id, "checking");

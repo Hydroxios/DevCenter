@@ -1,5 +1,6 @@
 import { Outlet, useLocation } from "react-router";
 
+import { CommandPalette } from "@/components/CommandPalette";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useFullscreen } from "@/stores/fullscreen";
 import { Dock } from "./Dock";
@@ -27,6 +28,7 @@ export function AppLayout() {
         </main>
       </div>
       {fullscreen && <Dock />}
+      <CommandPalette />
     </div>
   );
 }

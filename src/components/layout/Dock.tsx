@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 import type { LucideIcon } from "lucide-react";
-import { ArrowUpCircle, Minimize2, PanelBottomClose, Pin } from "lucide-react";
+import { ArrowUpCircle, Minimize2, PanelBottomClose, Pin, Search } from "lucide-react";
 
 import { footerNav, mainNav } from "@/app/navigation";
 import { cn } from "@/lib/utils";
 import { useFullscreen } from "@/stores/fullscreen";
+import { PALETTE_SHORTCUT, usePalette } from "@/stores/palette";
 import { useUpdates } from "@/stores/updates";
 
 /** Taille d'une tuile au repos, agrandie au maximum, et rayon d'influence du curseur (px). */
@@ -201,6 +202,7 @@ export function Dock() {
           ))}
           {updateLabel && <Tile label={updateLabel} icon={ArrowUpCircle} to="/settings?tab=about" accent register={register} />}
           <Separator />
+          <Tile label={`Rechercher (${PALETTE_SHORTCUT})`} icon={Search} onClick={() => usePalette.getState().setOpen(true)} register={register} />
           <Tile
             label={collapsed ? "Épingler le dock (Ctrl+B)" : "Masquer le dock (Ctrl+B)"}
             icon={collapsed ? Pin : PanelBottomClose}
