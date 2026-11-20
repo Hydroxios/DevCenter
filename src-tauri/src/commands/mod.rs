@@ -19,6 +19,7 @@ use crate::modules::projects::{self, Project, ProjectDetails, ScanCandidate};
 use crate::modules::runner::RunInfo;
 use crate::modules::servers::remote::{self, Container, RemoteMetrics, RemoteService};
 use crate::modules::servers::agent::KeyStatus;
+use crate::modules::servers::files::{self, RemoteListing, TransferInfo};
 use crate::modules::servers::{self, Server, ServerInput};
 use crate::modules::workspaces::{self, ActiveInfo, SessionRecord, Workspace, WorkspaceInput};
 use crate::modules::settings::{Settings, SettingsService};
@@ -382,6 +383,74 @@ pub fn terminal_resize(state: State<'_, AppState>, id: u64, cols: u16, rows: u16
 #[tauri::command]
 pub fn terminal_close(state: State<'_, AppState>, id: u64) -> AppResult<()> {
     state.terminals.close(id)
+}
+
+// ---------------------------------------------------------------- Fichiers distants
+
+#[tauri::command]
+pub async fn server_list_dir(app: AppHandle, id: i64, path: Option<String>) -> AppResult<RemoteListing> {
+    blocking(move || files::list(&server_of(&app, id)?, path.as_deref())).await
+}
+
+#[tauri::command]
+pub async fn server_make_dir(app: AppHandle, id: i64, dir: String, name: String) -> AppResult<()> {
+    blocking(move || files::make_dir(&server_of(&app, id)?, &dir, &name)).await
+}
+
+#[tauri::command]
+pub async fn server_rename_path(app: AppHandle, id: i64, path: String, new_name: String) -> AppResult<()> {
+    blocking(move || files::rename(&server_of(&app, id)?, &path, &new_name)).await
+}
+
+#[tauri::command]
+pub async fn server_delete_path(app: AppHandle, id: i64, path: String, recursive: bool) -> AppResult<()> {
+    blocking(move || files::delete(&server_of(&app, id)?, &path, recursive)).await
+}
+
+#[tauri::command]
+pub async fn server_download(app: AppHandle, id: i64, remote_path: String, size: u64, dest_dir: String) -> AppResult<TransferInfo> {
+    blocking(move || {
+        let server = server_of(&app, id)?;
+        app.state::<AppState>().transfers.download(&app, &server, &remote_path, size, &dest_dir)
+    })
+    .await
+}
+
+/// Un transfert par fichier ; les fichiers refusés (dossier, introuvable) sont signalés ensemble.
+#[tauri::command]
+pub async fn server_upload(app: AppHandle, id: i64, local_paths: Vec<String>, remote_dir: String) -> AppResult<Vec<TransferInfo>> {
+    blocking(move || {
+        let server = server_of(&app, id)?;
+        let state = app.state::<AppState>();
+        let mut started = Vec::new();
+        let mut errors = Vec::new();
+        for path in &local_paths {
+            match state.transfers.upload(&app, &server, path, &remote_dir) {
+                Ok(t) => started.push(t),
+                Err(e) => errors.push(e.to_string()),
+            }
+        }
+        if started.is_empty() && !errors.is_empty() {
+            return Err(AppError::InvalidInput(errors.join(" · ")));
+        }
+        Ok(started)
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn server_transfers(state: State<'_, AppState>) -> Vec<TransferInfo> {
+    state.transfers.list()
+}
+
+#[tauri::command]
+pub fn server_transfer_cancel(state: State<'_, AppState>, id: u64) -> AppResult<()> {
+    state.transfers.cancel(id)
+}
+
+#[tauri::command]
+pub fn server_transfer_dismiss(state: State<'_, AppState>, id: Option<u64>) -> AppResult<()> {
+    state.transfers.dismiss(id)
 }
 
 #[tauri::command]

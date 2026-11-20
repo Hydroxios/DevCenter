@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Box, Copy, Gauge, Pencil, Plus, Server as ServerIcon, Settings2, TerminalSquare, Trash2, Zap } from "lucide-react";
+import { Box, Copy, FolderOpen, Gauge, Pencil, Plus, Server as ServerIcon, Settings2, TerminalSquare, Trash2, Zap } from "lucide-react";
 
 import { EmptyState, ListItem, ListPane, Page, PageBar, PageBody, PageMain, PageNotice, PageTabs, TauriOnly } from "@/components/layout/Page";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import { api, isTauri } from "@/services/tauri";
 import type { Server } from "@/types";
+import { FilesPanel } from "./FilesPanel";
 import { KeyHelp } from "./KeyHelp";
 import { DockerPanel, OverviewPanel, ServicesPanel } from "./RemotePanels";
 import { ServerDialog } from "./ServerDialog";
@@ -23,13 +24,14 @@ import { SshTerminal, sshKey } from "./SshTerminal";
 import { remoteCache } from "./remoteCache";
 import { terminals, useTerminalsVersion } from "./terminalManager";
 
-type Tab = "overview" | "terminal" | "services" | "docker";
+type Tab = "overview" | "terminal" | "files" | "services" | "docker";
 
 /** Dernier onglet ouvert par serveur (conservé le temps de la session de l'app). */
 const lastTab = new Map<number, Tab>();
 const TABS: { id: Tab; label: string; icon: typeof Gauge }[] = [
   { id: "overview", label: "Aperçu", icon: Gauge },
   { id: "terminal", label: "Terminal", icon: TerminalSquare },
+  { id: "files", label: "Fichiers", icon: FolderOpen },
   { id: "services", label: "Services", icon: Settings2 },
   { id: "docker", label: "Docker", icon: Box },
 ];
@@ -134,6 +136,7 @@ function ServerView({
       <PageBody>
         {offline && <KeyHelp server={server} onFixed={onTest} />}
         {tab === "overview" && <OverviewPanel server={server} />}
+        {tab === "files" && <FilesPanel server={server} />}
         {tab === "services" && <ServicesPanel server={server} />}
         {tab === "docker" && <DockerPanel server={server} />}
         {/* La session SSH vit dans terminalManager : quitter l'onglet ou la page ne la coupe pas. */}

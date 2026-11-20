@@ -276,6 +276,40 @@ export interface Container {
 
 export type RemoteAction = "start" | "stop" | "restart";
 
+export interface RemoteEntry {
+  name: string;
+  /** Chemin absolu sur le serveur. */
+  path: string;
+  kind: "file" | "dir" | "link" | "other";
+  /** Dossier, ou lien symbolique vers un dossier. */
+  isDir: boolean;
+  size: number;
+  /** Horodatage Unix (secondes). */
+  modified: number;
+  /** Permissions façon `ls -l`. */
+  mode: string;
+}
+
+export interface RemoteListing {
+  path: string;
+  entries: RemoteEntry[];
+}
+
+export interface FileTransfer {
+  id: number;
+  serverId: number;
+  direction: "upload" | "download";
+  name: string;
+  remotePath: string;
+  localPath: string;
+  /** Taille attendue en octets (0 = inconnue). */
+  total: number;
+  transferred: number;
+  status: "running" | "done" | "error" | "cancelled";
+  error: string | null;
+  startedAt: number;
+}
+
 export interface KeyStatus {
   agent: "running" | "unavailable";
   loaded: string[];
