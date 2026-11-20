@@ -150,6 +150,43 @@ export interface ProjectDetails {
   git: GitStatus | null;
 }
 
+/** Fichier `.env*` à la racine d'un projet. */
+export interface EnvFileInfo {
+  name: string;
+  entries: number;
+  /** Modèle (`.env.example`…) : référence des clés attendues. */
+  isExample: boolean;
+}
+
+export interface EnvOverview {
+  files: EnvFileInfo[];
+  /** Fichier injecté dans les scripts lancés depuis DevCenter. */
+  active: string | null;
+}
+
+export interface EnvEntry {
+  /** Rang dans le fichier, à renvoyer tel quel à l'enregistrement. */
+  index: number;
+  key: string;
+  value: string;
+}
+
+export interface EnvFile {
+  name: string;
+  entries: EnvEntry[];
+  /** Clés du modèle absentes de ce fichier. */
+  missing: string[];
+  example: string | null;
+  revision: string;
+}
+
+/** Entrée envoyée à l'enregistrement : `index` null pour une nouvelle clé. */
+export interface EnvUpdate {
+  index: number | null;
+  key: string;
+  value: string;
+}
+
 export interface ScanCandidate {
   path: string;
   name: string;

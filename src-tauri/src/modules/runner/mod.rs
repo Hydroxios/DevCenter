@@ -205,8 +205,27 @@ impl Runner {
             }
         }
 
+        // Profil .env actif du projet : variables injectées dans l'environnement du script.
+        // Seuls le nom du fichier et le nombre de variables sont affichés, jamais les valeurs.
+        let (env_vars, env_line) = {
+            use tauri::Manager;
+            let state = app.state::<crate::state::AppState>();
+            match crate::modules::projects::env::script_env(&state.db, project_id, dir) {
+                Ok(Some((name, vars))) => {
+                    let line = format!("[DevCenter] {} variable(s) chargée(s) depuis {name}", vars.len());
+                    (vars, Some(line))
+                }
+                Ok(None) => (Vec::new(), None),
+                Err(e) => {
+                    log::warn!(target: "runner", "profil .env non chargé pour le projet {project_id} : {e}");
+                    (Vec::new(), Some(format!("[DevCenter] profil .env non chargé : {e}")))
+                }
+            }
+        };
+
         let mut child = shell::command(&program)
             .args(&args)
+            .envs(env_vars)
             .current_dir(dir)
             .env("FORCE_COLOR", "0")
             .env("NO_COLOR", "1")
@@ -231,7 +250,7 @@ impl Runner {
         };
 
         let batch = Arc::new(LogBatch {
-            lines: Mutex::new(Vec::new()),
+            lines: Mutex::new(env_line.iter().cloned().collect()),
             open_readers: AtomicUsize::new(0),
             subscribers: Mutex::new(Vec::new()),
         });
@@ -245,7 +264,7 @@ impl Runner {
                 id,
                 Run {
                     info: info.clone(),
-                    logs: VecDeque::new(),
+                    logs: env_line.into_iter().collect(),
                     stop_requested: false,
                     url_pending: false,
                     open_browser,
