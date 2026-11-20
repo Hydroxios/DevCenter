@@ -1,7 +1,8 @@
 // Catalogue des widgets du tableau de bord (séparé des composants pour le Fast Refresh de Vite).
 
-import { Activity, Bot, Clock, Cpu, GitCommitHorizontal, Gpu, HardDrive, Layers, ListOrdered, MemoryStick, Play } from "lucide-react";
+import { Activity, Bot, CalendarClock, Clock, Cpu, GitCommitHorizontal, Gpu, HardDrive, Layers, ListOrdered, MemoryStick, Play } from "lucide-react";
 
+import { ClockBody } from "./clock";
 import { hasHistory, windowOf } from "./config";
 import type { WidgetDef } from "./config";
 import { CcusageWidget, CommitsBody, CoresBody, CpuBody, HardwareBody, MemoryBody, ProcessesBody, RunsBody, StorageBody, SystemBody, WidgetLink, WorkspacesBody } from "./widgets";
@@ -101,6 +102,15 @@ export const WIDGETS = {
     size: { w: 8, h: 4, minW: 3, minH: 2 },
     aside: () => <WidgetLink to="/projects">Projets</WidgetLink>,
     render: () => <CommitsBody />,
+    fit: "fill",
+  },
+  clock: {
+    title: "Horloge",
+    description: "Heure et date, éléments affichés au choix",
+    icon: CalendarClock,
+    size: { w: 3, h: 3, minW: 2, minH: 2 },
+    render: (_d, s) => <ClockBody settings={s} />,
+    options: ["clock"],
     fit: "fill",
   },
   ccusage: {

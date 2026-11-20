@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { ACCENTS, hasHistory } from "./config";
-import type { Accent, ChartStyle, HistoryWindow, ProcessSort, WidgetSettings } from "./config";
+import { ACCENTS, DEFAULT_CLOCK, clockOf, hasHistory } from "./config";
+import type { Accent, ChartStyle, ClockSettings, HistoryWindow, ProcessSort, WidgetSettings } from "./config";
 import { WIDGETS } from "./registry";
 import type { WidgetType } from "./registry";
 import { HistoryChart } from "./widgets";
@@ -97,6 +97,86 @@ function ChartPicker({ value, onChange }: { value: ChartStyle; onChange: (v: Cha
         );
       })}
     </div>
+  );
+}
+
+type ClockToggle = { [K in keyof ClockSettings]: ClockSettings[K] extends boolean ? K : never }[keyof ClockSettings];
+
+/** Cases à cocher sous forme de pastilles (choix multiple). */
+function Toggles({ items, onToggle }: { items: { key: ClockToggle; label: string; on: boolean; disabled?: boolean }[]; onToggle: (k: ClockToggle) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {items.map((it) => (
+        <button
+          key={it.key}
+          type="button"
+          role="checkbox"
+          aria-checked={it.on}
+          disabled={it.disabled}
+          onClick={() => onToggle(it.key)}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-colors disabled:pointer-events-none disabled:opacity-40",
+            it.on ? "border-primary bg-primary/10 text-primary" : "text-muted-foreground hover:border-primary/50 hover:text-foreground",
+          )}
+        >
+          {it.on && <Check className="size-3" />}
+          {it.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Réglages du widget Horloge ; seules les valeurs différentes du défaut sont enregistrées. */
+function ClockOptions({ settings, onChange }: { settings: WidgetSettings; onChange: (patch: Partial<WidgetSettings>) => void }) {
+  const c = clockOf(settings);
+  const set = (patch: Partial<ClockSettings>) => {
+    const next = { ...c, ...patch };
+    const diff: Partial<ClockSettings> = {};
+    for (const k of Object.keys(next) as (keyof ClockSettings)[]) {
+      if (next[k] !== DEFAULT_CLOCK[k]) (diff as Record<string, unknown>)[k] = next[k];
+    }
+    onChange({ clock: Object.keys(diff).length ? diff : undefined });
+  };
+  const toggle = (k: ClockToggle) => set({ [k]: !c[k] });
+
+  return (
+    <>
+      <Field label="Heure">
+        <Toggles
+          onToggle={toggle}
+          items={[
+            { key: "time", label: "Heure", on: c.time },
+            { key: "seconds", label: "Secondes", on: c.seconds, disabled: !c.time },
+            { key: "hour12", label: "Format 12 h", on: c.hour12, disabled: !c.time },
+          ]}
+        />
+      </Field>
+      <Field label="Date">
+        <Toggles
+          onToggle={toggle}
+          items={[
+            { key: "date", label: "Date", on: c.date },
+            { key: "weekday", label: "Jour de la semaine", on: c.weekday },
+            { key: "year", label: "Année", on: c.year, disabled: !c.date },
+            { key: "week", label: "N° de semaine", on: c.week },
+            { key: "zone", label: "Fuseau horaire", on: c.zone },
+          ]}
+        />
+      </Field>
+      {c.date && (
+        <Field label="Format de la date">
+          <Segmented<ClockSettings["dateStyle"]>
+            value={c.dateStyle}
+            options={[
+              { value: "long", label: "20 novembre 2026" },
+              { value: "short", label: "20/11/2026" },
+            ]}
+            onChange={(v) => set({ dateStyle: v })}
+          />
+        </Field>
+      )}
+    </>
   );
 }
 
@@ -224,6 +304,8 @@ export function WidgetSettingsDialog({
               />
             </Field>
           )}
+
+          {options.includes("clock") && <ClockOptions settings={settings} onChange={onChange} />}
 
           {options.includes("count") && (
             <Field label="Nombre de processus">

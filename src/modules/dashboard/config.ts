@@ -39,10 +39,38 @@ export interface WidgetSettings {
   chart?: ChartStyle;
   count?: number;
   sort?: ProcessSort;
+  clock?: Partial<ClockSettings>;
 }
 
+/** Éléments affichés par le widget Horloge. */
+export interface ClockSettings {
+  time: boolean;
+  seconds: boolean;
+  hour12: boolean;
+  date: boolean;
+  weekday: boolean;
+  year: boolean;
+  dateStyle: "long" | "short";
+  week: boolean;
+  zone: boolean;
+}
+
+export const DEFAULT_CLOCK: ClockSettings = {
+  time: true,
+  seconds: true,
+  hour12: false,
+  date: true,
+  weekday: true,
+  year: true,
+  dateStyle: "long",
+  week: false,
+  zone: false,
+};
+
+export const clockOf = (s: WidgetSettings): ClockSettings => ({ ...DEFAULT_CLOCK, ...s.clock });
+
 /** Réglages propres à certains widgets (en plus du titre, de la couleur et de l'en-tête). */
-export type OptionKey = "window" | "chart" | "count" | "sort";
+export type OptionKey = "window" | "chart" | "count" | "sort" | "clock";
 
 export const windowOf = (s: WidgetSettings) => s.window ?? 2;
 /** Nombre de mesures affichées pour la fenêtre choisie. */
