@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ArrowUpRight, Loader2, Play, Square, Star, X } from "lucide-react";
+import { ArrowUpRight, Globe, Loader2, Play, Square, Star, X } from "lucide-react";
 
 import { Progress } from "@/components/ui/progress";
 import { usePolling } from "@/hooks/usePolling";
@@ -10,6 +10,7 @@ import { api, isTauri } from "@/services/tauri";
 import { useRuns } from "@/stores/runs";
 import { useWorkspaces } from "@/stores/workspaces";
 import { WorkspaceToggle } from "@/modules/workspaces/WorkspacesPage";
+import { portKey, portUrl, useRunLabel } from "@/modules/system/ports";
 import { ActivityView, ContributionGrid, GRID_GAP, GRID_LEFT, GridLegend, RefreshButton, dayKey, streaks } from "./activity";
 import { UsageBars, UsageView, compact, rangeLabel, usageDays, usd } from "./usage";
 import { USAGE_RANGES, hasHistory, pointsOf } from "./config";
@@ -657,6 +658,46 @@ export function ProcessesBody({ count = 8, sort = "cpu" }: { count?: number; sor
         ))}
       </tbody>
     </table>
+  );
+}
+
+/** Ports de développement : 3000–9999 ou ouverts par un script DevCenter. */
+const isDevPort = (p: { port: number; run: unknown }) => p.run !== null || (p.port >= 3000 && p.port <= 9999);
+
+/** Ports en écoute « de dev » (TCP) : interrogé seulement quand le widget est affiché. */
+export function PortsBody() {
+  const { data, error } = usePolling(api.processes.ports, 5000, isTauri());
+  const runLabel = useRunLabel();
+  if (error) return <p className="text-sm text-destructive">{error}</p>;
+  if (!data) return <Empty>Chargement…</Empty>;
+  const ports = data
+    .filter((p) => p.protocol === "tcp" && isDevPort(p))
+    .sort((a, b) => Number(b.run !== null) - Number(a.run !== null) || a.port - b.port);
+  if (ports.length === 0) return <Empty>Aucun port de développement ouvert.</Empty>;
+  return (
+    <ul className="grid gap-1">
+      {ports.map((p) => {
+        const label = runLabel(p);
+        return (
+          <li key={portKey(p)} className="flex items-center gap-3 rounded-lg px-2 py-1 transition-colors hover:bg-foreground/[0.03]">
+            <span className={cn("size-2 shrink-0 rounded-full", label ? "bg-success" : "bg-muted-foreground/40")} />
+            <span className="w-12 shrink-0 font-mono text-sm tabular-nums">{p.port}</span>
+            <span className="min-w-0 flex-1 truncate text-sm" title={p.processName ?? undefined}>
+              {label ?? <span className="text-muted-foreground">{p.processName ?? `PID ${p.pid}`}</span>}
+            </span>
+            <button
+              type="button"
+              onClick={() => openUrl(portUrl(p.port)).catch(() => {})}
+              title={`Ouvrir ${portUrl(p.port)}`}
+              aria-label={`Ouvrir ${portUrl(p.port)}`}
+              className={cn(rowBtn, "-mr-1 hover:bg-primary/15 hover:text-primary")}
+            >
+              <Globe className="size-3.5" />
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

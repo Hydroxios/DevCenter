@@ -121,6 +121,7 @@ pub fn run() {
             commands::get_hardware,
             commands::list_processes,
             commands::kill_process,
+            commands::list_listening_ports,
             commands::list_apps,
             commands::add_app,
             commands::remove_app,

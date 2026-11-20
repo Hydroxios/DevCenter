@@ -23,7 +23,7 @@ use crate::modules::servers::{self, Server, ServerInput};
 use crate::modules::workspaces::{self, ActiveInfo, SessionRecord, Workspace, WorkspaceInput};
 use crate::modules::settings::{Settings, SettingsService};
 use crate::modules::apps::{self, AppShortcut};
-use crate::modules::system::{HardwareSnapshot, KillOutcome, ProcessInfo, ProcessSort, SystemInfo, SystemSnapshot};
+use crate::modules::system::{HardwareSnapshot, KillOutcome, ListeningPort, ProcessInfo, ProcessSort, SystemInfo, SystemSnapshot};
 use crate::state::AppState;
 
 // ---------------------------------------------------------------- Journal
@@ -107,6 +107,17 @@ pub async fn list_processes(app: AppHandle, sort: Option<ProcessSort>, limit: Op
 #[tauri::command]
 pub async fn kill_process(app: AppHandle, pid: u32, start_time: u64) -> AppResult<KillOutcome> {
     blocking(move || app.state::<AppState>().system.kill_process(pid, start_time)).await
+}
+
+/// Ports TCP/UDP en écoute (`netstat -ano`), avec le script DevCenter propriétaire s'il y en a un.
+#[tauri::command]
+pub async fn list_listening_ports(app: AppHandle) -> AppResult<Vec<ListeningPort>> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        let runs = state.runner.list()?;
+        state.system.listening_ports(&runs)
+    })
+    .await
 }
 
 #[tauri::command]

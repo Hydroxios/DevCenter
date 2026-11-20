@@ -4,6 +4,7 @@ import type {
   AppShortcut,
   HardwareSnapshot,
   KillOutcome,
+  ListeningPort,
   ProcessInfo,
   Project,
   ProjectDetails,
@@ -66,6 +67,8 @@ export const api = {
     list: (sort?: "cpu" | "memory", limit?: number) => invoke<ProcessInfo[]>("list_processes", { sort, limit }),
     /** `startTime` garantit qu'on arrête bien le processus affiché (PID non réattribué). */
     kill: (pid: number, startTime: number) => invoke<KillOutcome>("kill_process", { pid, startTime }),
+    /** Sockets TCP/UDP en écoute ; l'arrêt passe par `kill` (mêmes protections). */
+    ports: () => invoke<ListeningPort[]>("list_listening_ports"),
   },
   apps: {
     list: () => invoke<AppShortcut[]>("list_apps"),
