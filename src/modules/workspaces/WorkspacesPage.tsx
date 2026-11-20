@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { CircleAlert, CircleCheck, CopyPlus, ExternalLink, History, Layers, LayoutList, Loader2, Pencil, Play, Plus, Square, Star, StarOff, Trash2 } from "lucide-react";
 
@@ -258,6 +259,19 @@ export function WorkspacesPage() {
   useEffect(() => {
     init();
   }, [init]);
+
+  // `?workspace=<id>` (clic sur une notification) : sélectionne ce workspace, onglet Aperçu.
+  const [params, setParams] = useSearchParams();
+  const linked = Number(params.get("workspace")) || null;
+  useEffect(() => {
+    if (linked === null) return;
+    lastTab.set(linked, "overview");
+    setSelectedId(linked);
+    setParams((p) => {
+      p.delete("workspace");
+      return p;
+    }, { replace: true });
+  }, [linked, setParams]);
 
   if (!isTauri()) return <TauriOnly title="Workspaces" />;
 

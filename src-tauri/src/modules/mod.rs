@@ -5,6 +5,7 @@ pub mod automations;
 pub mod backup;
 pub mod editor;
 pub mod github;
+pub mod notify;
 pub mod projects;
 pub mod push;
 pub mod remote;

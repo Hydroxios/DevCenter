@@ -28,6 +28,8 @@ pub struct Settings {
     pub remote_port: u16,
     /// Dossier où cloner les nouveaux projets (sinon : déduit des projets existants).
     pub projects_root: Option<String>,
+    /// Canaux (Windows / téléphone) par catégorie de notification.
+    pub notifications: crate::modules::notify::NotificationPrefs,
 }
 
 impl Default for Settings {
@@ -39,6 +41,7 @@ impl Default for Settings {
             remote_enabled: false,
             remote_port: crate::modules::remote::DEFAULT_PORT,
             projects_root: None,
+            notifications: Default::default(),
         }
     }
 }
@@ -97,6 +100,11 @@ impl SettingsService {
                             settings.projects_root = p;
                         }
                     }
+                    "notifications" => {
+                        if let Ok(n) = serde_json::from_str(&value) {
+                            settings.notifications = n;
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -137,6 +145,9 @@ impl SettingsService {
                         return Err(AppError::InvalidInput(format!("dossier introuvable : {p}")));
                     }
                 }
+            }
+            "notifications" => {
+                serde_json::from_value::<crate::modules::notify::NotificationPrefs>(value.clone()).map_err(invalid)?;
             }
             other => return Err(AppError::InvalidInput(format!("clé inconnue « {other} »"))),
         }

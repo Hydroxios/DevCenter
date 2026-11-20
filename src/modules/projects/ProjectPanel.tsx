@@ -230,9 +230,12 @@ export function ProjectPanel({
   onRefresh,
   onRemoved,
   onDetails,
+  focusRun,
 }: {
   project: Project;
   details: ProjectDetails | undefined;
+  /** Exécution à afficher (clic sur une notification) ; un nouvel objet relance l'affichage. */
+  focusRun?: { id: number } | null;
   onRefresh: () => void;
   onRemoved: (list: Project[]) => void;
   onDetails: (d: ProjectDetails) => void;
@@ -320,6 +323,13 @@ export function ProjectPanel({
   const activeTab: PanelTab = tab === "history" && !hasGit ? "overview" : tab;
   /** Commit à mettre en avant à l'ouverture de l'historique (clic sur le dernier commit). */
   const [focusCommit, setFocusCommit] = useState<string | null>(null);
+  // Déclaré après la remise à zéro ci-dessus : l'emporte au montage.
+  useEffect(() => {
+    if (!focusRun) return;
+    setSelectedRun(focusRun.id);
+    setTab("overview");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusRun]);
   const runningCount = runs.filter((r) => r.status === "running").length;
   const [branchOpen, setBranchOpen] = useState(false);
   const [commitOpen, setCommitOpen] = useState(false);

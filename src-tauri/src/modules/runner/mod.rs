@@ -282,13 +282,16 @@ impl Runner {
             };
             // Un script qui plante (sans avoir été arrêté) prévient les téléphones abonnés.
             if info.status == RunStatus::Failed {
-                crate::modules::push::notify_all(
+                crate::modules::notify::dispatch(
                     &app,
-                    crate::modules::push::Notification {
+                    crate::modules::notify::Event {
+                        category: crate::modules::notify::Category::Script,
                         title: format!("Script arrêté · {}", info.script),
                         body: format!("Code de sortie {}", info.exit_code.map(|c| c.to_string()).unwrap_or_else(|| "?".into())),
                         tab: Some("scripts".into()),
                         tag: Some(format!("run-{}-{}", info.project_id, info.script)),
+                        target: Some(crate::modules::notify::Target::Run { project_id: info.project_id, run_id: info.id }),
+                        retry: Some(crate::modules::notify::Retry::Script { project_id: info.project_id, script: info.script.clone() }),
                     },
                 );
             }

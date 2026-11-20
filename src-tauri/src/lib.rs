@@ -68,6 +68,8 @@ pub fn run() {
                 git_watcher: Default::default(),
             });
             modules::automations::spawn_scheduler(app.handle().clone());
+            // Notifications Windows : boutons « Relancer » / « Voir les logs » et clics.
+            modules::notify::init(app.handle());
 
             // Statut Git en direct ; la liste suivie est réalignée à chaque changement de projets
             // (ajout, retrait, clonage, import depuis le téléphone).

@@ -6,7 +6,6 @@ use std::time::{Duration, Instant};
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
-use tauri_plugin_notification::NotificationExt;
 
 use crate::database::Database;
 use crate::error::{AppError, AppResult};
@@ -351,7 +350,8 @@ fn evaluate(app: &AppHandle, c: &Condition) -> AppResult<(bool, bool)> {
     })
 }
 
-pub fn run(app: &AppHandle, step: &Step, deadline: Instant) -> AppResult<Flow> {
+/// `ctx` : automatisation et exécution en cours (cible des notifications).
+pub fn run(app: &AppHandle, step: &Step, deadline: Instant, ctx: (i64, i64)) -> AppResult<Flow> {
     let state = app.state::<AppState>();
     let db = &state.db;
     match step {
@@ -409,16 +409,18 @@ pub fn run(app: &AppHandle, step: &Step, deadline: Instant) -> AppResult<Flow> {
             tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| AppError::InvalidInput(e.to_string()))?;
         }
         Step::Notify { title, body } => {
-            app.notification()
-                .builder()
-                .title(title)
-                .body(body)
-                .show()
-                .map_err(|e| AppError::InvalidInput(format!("notification : {e}")))?;
-            // Aussi sur les téléphones appairés qui ont activé les notifications.
-            crate::modules::push::notify_all(
+            // Windows et/ou téléphones appairés, selon les préférences de notification.
+            crate::modules::notify::dispatch(
                 app,
-                crate::modules::push::Notification { title: title.clone(), body: body.clone(), tab: Some("auto".into()), tag: None },
+                crate::modules::notify::Event {
+                    category: crate::modules::notify::Category::Step,
+                    title: title.clone(),
+                    body: body.clone(),
+                    tab: Some("auto".into()),
+                    tag: None,
+                    target: Some(crate::modules::notify::Target::Automation { automation_id: ctx.0, run_id: Some(ctx.1) }),
+                    retry: None,
+                },
             );
         }
         Step::Wait { seconds } => {

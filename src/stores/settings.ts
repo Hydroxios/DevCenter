@@ -3,7 +3,16 @@ import { create } from "zustand";
 import { api, isTauri } from "@/services/tauri";
 import type { Settings } from "@/types";
 
-const DEFAULTS: Settings = { theme: "dark", closeToTray: true, editorPath: null, remoteEnabled: false, remotePort: 47820, projectsRoot: null };
+const ALL = { desktop: true, mobile: true };
+const DEFAULTS: Settings = {
+  theme: "dark",
+  closeToTray: true,
+  editorPath: null,
+  remoteEnabled: false,
+  remotePort: 47820,
+  projectsRoot: null,
+  notifications: { automation: ALL, script: ALL, workspace: ALL, step: ALL, skipWhenFocused: true },
+};
 
 interface SettingsState {
   settings: Settings;

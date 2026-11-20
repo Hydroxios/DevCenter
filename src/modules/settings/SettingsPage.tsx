@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useSearchParams } from "react-router";
-import { Code2, FolderOpen, HardDriveDownload, Info, Monitor, Moon, SlidersHorizontal, Smartphone, Sun } from "lucide-react";
+import { Bell, Code2, FolderOpen, HardDriveDownload, Info, Monitor, Moon, SlidersHorizontal, Smartphone, Sun } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { GithubStatus } from "@/types";
 
@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { useSettings } from "@/stores/settings";
 import { AboutSettings } from "./AboutSettings";
 import { BackupSettings } from "./BackupSettings";
+import { NotificationSettings } from "./NotificationSettings";
 import { RemoteSettings } from "./RemoteSettings";
 import type { Theme } from "@/types";
 
@@ -181,8 +182,8 @@ function ProjectsRootSetting() {
   );
 }
 
-type SettingsTab = "general" | "remote" | "backup" | "about";
-const TABS: SettingsTab[] = ["general", "remote", "backup", "about"];
+type SettingsTab = "general" | "notifications" | "remote" | "backup" | "about";
+const TABS: SettingsTab[] = ["general", "notifications", "remote", "backup", "about"];
 let lastSettingsTab: SettingsTab = "general";
 
 export function SettingsPage() {
@@ -212,6 +213,7 @@ export function SettingsPage() {
         <PageTabs
           tabs={[
             { id: "general", label: "Général", icon: SlidersHorizontal },
+            { id: "notifications", label: "Notifications", icon: Bell },
             { id: "remote", label: "Accès mobile", icon: Smartphone },
             { id: "backup", label: "Sauvegarde", icon: HardDriveDownload },
             { id: "about", label: "À propos", icon: Info },
@@ -262,6 +264,7 @@ export function SettingsPage() {
         {tauri && <GithubSetting />}
       </Card>
       )}
+      {tauri && tab === "notifications" && <NotificationSettings />}
       {tauri && tab === "remote" && <RemoteSettings />}
       {tauri && tab === "backup" && <BackupSettings />}
       {tauri && tab === "about" && <AboutSettings />}
