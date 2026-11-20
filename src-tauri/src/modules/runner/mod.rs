@@ -11,11 +11,14 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use rusqlite::params;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
+use crate::database::Database;
 use crate::error::{AppError, AppResult};
 use crate::modules::shell;
+use crate::state::AppState;
 
 const MAX_LOG_LINES: usize = 2000;
 /// Les lignes de log sont envoyées à l'interface par lots, au plus une fois par intervalle :
@@ -273,6 +276,7 @@ impl Runner {
             );
         }
         let _ = app.emit(EVENT_STATUS, &info);
+        let history_id = app.try_state::<AppState>().and_then(|s| record_start(&s.db, &info));
 
         if let Some(out) = child.stdout.take() {
             self.spawn_reader(Arc::clone(&batch), id, out);
@@ -299,6 +303,9 @@ impl Runner {
                 };
                 run.info.clone()
             };
+            if let (Some(row), Some(state)) = (history_id, app.try_state::<AppState>()) {
+                record_end(&state.db, row, info.status);
+            }
             // Un script qui plante (sans avoir été arrêté) prévient les téléphones abonnés.
             if info.status == RunStatus::Failed {
                 crate::modules::push::notify_all(
@@ -400,6 +407,57 @@ impl Runner {
             kill_tree(pid);
         }
     }
+}
+
+// ------------------------------------------------------------------ Historique (statistiques)
+
+fn unix_now() -> i64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+}
+
+/// Enregistre le début d'une exécution ; un échec d'écriture n'empêche pas le script de tourner.
+fn record_start(db: &Database, info: &RunInfo) -> Option<i64> {
+    db.with(|conn| {
+        conn.execute(
+            "INSERT INTO script_runs (project_id, script, started_at, status) VALUES (?1, ?2, ?3, 'running')",
+            params![info.project_id, info.script, info.started_at as i64],
+        )?;
+        Ok(conn.last_insert_rowid())
+    })
+    .map_err(|e| log::warn!("historique du script {} non enregistré : {e}", info.script))
+    .ok()
+}
+
+fn record_end(db: &Database, row: i64, status: RunStatus) {
+    let status = match status {
+        RunStatus::Running => "running",
+        RunStatus::Exited => "exited",
+        RunStatus::Failed => "failed",
+        RunStatus::Stopped => "stopped",
+    };
+    let _ = db.with(|conn| {
+        conn.execute(
+            "UPDATE script_runs SET ended_at = COALESCE(ended_at, ?1), status = ?2 WHERE id = ?3",
+            params![unix_now(), status, row],
+        )?;
+        Ok(())
+    });
+}
+
+/// Fermeture de DevCenter : les exécutions encore ouvertes se terminent maintenant.
+pub fn close_history(db: &Database) {
+    let _ = db.with(|conn| {
+        conn.execute("UPDATE script_runs SET ended_at = ?1, status = 'stopped' WHERE ended_at IS NULL", params![unix_now()])?;
+        Ok(())
+    });
+}
+
+/// Au démarrage : une exécution restée ouverte date d'un arrêt brutal, sa fin est inconnue.
+pub fn mark_interrupted(db: &Database) -> AppResult<()> {
+    db.with(|conn| {
+        conn.execute("UPDATE script_runs SET ended_at = started_at, status = 'interrupted' WHERE ended_at IS NULL", [])?;
+        Ok(())
+    })
 }
 
 pub fn kill_tree(pid: u32) {

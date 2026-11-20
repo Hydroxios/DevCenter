@@ -13,6 +13,7 @@ pub mod runner;
 pub mod servers;
 pub mod settings;
 pub mod shell;
+pub mod stats;
 pub mod system;
 pub mod tailscale;
 pub mod workspaces;

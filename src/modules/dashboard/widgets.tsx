@@ -13,6 +13,8 @@ import { WorkspaceToggle } from "@/modules/workspaces/WorkspacesPage";
 import { portKey, portUrl, useRunLabel } from "@/modules/system/ports";
 import { ActivityView, ContributionGrid, GRID_GAP, GRID_LEFT, GridLegend, RefreshButton, dayKey, streaks } from "./activity";
 import { UsageBars, UsageView, compact, rangeLabel, usageDays, usd } from "./usage";
+import { DailyTimeBars, Share, TimeRangePicker, hm as hmDuration, readTimeRange, saveTimeRange } from "@/modules/stats/TimeStats";
+import type { TimeRange } from "@/modules/stats/TimeStats";
 import { USAGE_RANGES, hasHistory, pointsOf } from "./config";
 import type { ChartStyle, DashboardData, ProcessSort, UsageRange, WidgetSettings } from "./config";
 
@@ -947,6 +949,65 @@ function CcusageBody({ points, onRange }: { points: UsageRange; onRange: (r: Usa
         <UsageBars days={days} onSelect={setOpenDay} className={cn("transition-opacity", loading && "animate-pulse opacity-50")} />
       </div>
       <UsageView report={data} total={total} onRefresh={refresh} refreshing={loading || totalPoll.loading} covered={covered} initialRange={points} day={openDay} onDayChange={setOpenDay} onClose={() => setOpenDay(null)} />
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Temps par projet                                                    */
+/* ------------------------------------------------------------------ */
+
+/** Temps d'activité sur la période et projets les plus travaillés (détail : page Workspaces). */
+export function TimeStatsWidget() {
+  const [range, setRange] = useState<TimeRange>(readTimeRange);
+  const change = (r: TimeRange) => {
+    setRange(r);
+    saveTimeRange(r);
+  };
+  const { data, error, loading, refresh } = useCachedPolling(`time:${range}`, () => api.activity.timeStats(range));
+  if (error && !data) return <p className="text-sm text-destructive">{error}</p>;
+  if (!data) return <Empty>Calcul des statistiques…</Empty>;
+
+  const top = data.projects.slice(0, 5);
+  const max = Math.max(0, ...top.map((p) => p.seconds));
+  const commits = data.projects.reduce((a, p) => a + p.commits, 0);
+  const points = data.days;
+
+  return (
+    <>
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+        <BigValue value={hmDuration(data.totalSeconds)} sub={`sur ${points} jours`} />
+        <div className="flex shrink-0 gap-5">
+          <Stat label="Projets" value={String(data.projects.filter((p) => p.seconds > 0).length)} />
+          <Stat label="Commits" value={String(commits)} />
+        </div>
+      </div>
+      <div className="flex items-center justify-end gap-2">
+        {loading && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
+        <TimeRangePicker value={range} onChange={change} compact />
+        <RefreshButton onClick={refresh} loading={loading} label="Actualiser les statistiques" className="size-5" />
+      </div>
+      <DailyTimeBars stats={data} points={points} className={cn("h-12 flex-none", loading && "opacity-50")} />
+      {top.length === 0 ? (
+        <Empty>Aucune activité sur la période.</Empty>
+      ) : (
+        <ul className="grid gap-2">
+          {top.map((p) => (
+            <li key={p.id} className="grid gap-0.5">
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <Link to={`/projects?project=${p.id}`} className="truncate hover:text-primary">
+                  {p.name}
+                </Link>
+                <span className="shrink-0 font-mono tabular-nums">
+                  {p.seconds ? hmDuration(p.seconds) : "—"}
+                  <span className="ml-2 text-muted-foreground">{p.commits} c.</span>
+                </span>
+              </div>
+              <Share value={p.seconds} max={max} />
+            </li>
+          ))}
+        </ul>
+      )}
     </>
   );
 }

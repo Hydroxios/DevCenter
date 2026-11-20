@@ -1,11 +1,11 @@
 // Catalogue des widgets du tableau de bord (séparé des composants pour le Fast Refresh de Vite).
 
-import { Activity, Bot, CalendarClock, Clock, Cpu, GitCommitHorizontal, GitPullRequest, Gpu, HardDrive, Layers, ListOrdered, MemoryStick, Network, NotebookPen, Play, Server, Workflow } from "lucide-react";
+import { Activity, Bot, CalendarClock, Clock, Cpu, GitCommitHorizontal, GitPullRequest, Gpu, HardDrive, Layers, ListOrdered, MemoryStick, Network, NotebookPen, Play, Server, Timer, Workflow } from "lucide-react";
 
 import { ClockBody } from "./clock";
 import { hasHistory, windowOf } from "./config";
 import type { WidgetDef } from "./config";
-import { CcusageWidget, CommitsBody, CoresBody, CpuBody, HardwareBody, MemoryBody, PortsBody, ProcessesBody, RunsBody, StorageBody, SystemBody, WidgetLink, WorkspacesBody } from "./widgets";
+import { CcusageWidget, CommitsBody, CoresBody, CpuBody, HardwareBody, MemoryBody, PortsBody, ProcessesBody, RunsBody, StorageBody, SystemBody, TimeStatsWidget, WidgetLink, WorkspacesBody } from "./widgets";
 import { AutomationsBody } from "./widgets/automations";
 import { GithubBody } from "./widgets/github";
 import { NotesBody } from "./widgets/notes";
@@ -124,6 +124,14 @@ export const WIDGETS = {
     render: (_d, s) => <ClockBody settings={s} />,
     options: ["clock"],
     fit: "fill",
+  },
+  timeStats: {
+    title: "Temps par projet",
+    description: "Temps passé par projet (workspaces et scripts) et commits",
+    icon: Timer,
+    size: { w: 4, h: 5, minW: 3, minH: 3 },
+    aside: () => <WidgetLink to="/workspaces?view=stats">Détail</WidgetLink>,
+    render: () => <TimeStatsWidget />,
   },
   ccusage: {
     title: "Claude Code",

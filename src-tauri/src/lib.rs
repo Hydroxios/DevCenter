@@ -53,6 +53,7 @@ pub fn run() {
             let db = Database::open(&db_path)?;
             let settings = SettingsService::new(&db)?;
             modules::workspaces::mark_interrupted(&db)?;
+            modules::runner::mark_interrupted(&db)?;
             modules::automations::startup_cleanup(&db)?;
             app.manage(AppState {
                 db,
@@ -204,6 +205,7 @@ pub fn run() {
             commands::ccusage_daily,
             commands::ccusage_day,
             commands::ccusage_total,
+            commands::time_stats,
             commands::commits_on_day,
             commands::git_log,
             commands::git_commit,
@@ -233,6 +235,7 @@ pub fn run() {
                     state.terminals.close_all();
                     state.remote.stop();
                     state.runner.stop_all();
+                    modules::runner::close_history(&state.db);
                 }
             }
         });

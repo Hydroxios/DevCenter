@@ -711,6 +711,12 @@ pub async fn ccusage_daily(days: Option<u32>, force: Option<bool>) -> AppResult<
     blocking(move || crate::modules::activity::ccusage(days.unwrap_or(30), force.unwrap_or(false))).await
 }
 
+/// Temps passé par workspace et par projet, et commits par projet, sur les `days` derniers jours.
+#[tauri::command]
+pub async fn time_stats(app: AppHandle, days: Option<u32>) -> AppResult<crate::modules::stats::TimeStats> {
+    blocking(move || crate::modules::stats::time_stats(&app.state::<AppState>().db, days.unwrap_or(30))).await
+}
+
 // ---------------------------------------------------------------- Historique Git
 
 #[tauri::command]
