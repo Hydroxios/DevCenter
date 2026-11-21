@@ -527,14 +527,14 @@ fn read_text(path: &Path) -> AppResult<String> {
     String::from_utf8(bytes).map_err(|_| AppError::InvalidInput("fichier .env non UTF-8".into()))
 }
 
-fn revision(text: &str) -> String {
+pub(crate) fn revision(text: &str) -> String {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     text.hash(&mut h);
     format!("{:016x}", h.finish())
 }
 
 /// Écrit via un fichier temporaire du même dossier puis le renomme : jamais de fichier à moitié écrit.
-fn write_atomic(path: &Path, text: &str) -> AppResult<()> {
+pub(crate) fn write_atomic(path: &Path, text: &str) -> AppResult<()> {
     use std::io::Write;
     let dir = path
         .parent()

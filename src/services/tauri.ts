@@ -10,6 +10,8 @@ import type {
   Project,
   ProjectDetails,
   EnvOverview,
+  NodeScript,
+  NodeScripts,
   EnvFile,
   EnvUpdate,
   RunInfo,
@@ -108,6 +110,12 @@ export const api = {
     /** Lit les vraies tâches Gradle (`gradlew tasks --all`) ; plusieurs secondes la première fois. */
     gradleTasks: (id: number) => invoke<ProjectDetails>("gradle_tasks", { id }),
     detectEditor: () => invoke<string | null>("detect_editor"),
+  },
+  nodeScripts: {
+    read: (projectId: number) => invoke<NodeScripts>("node_scripts_read", { projectId }),
+    /** Remplace tous les scripts du package.json ; refusé s'il a changé depuis la lecture (`revision`). */
+    save: (projectId: number, revision: string, scripts: NodeScript[]) =>
+      invoke<NodeScripts>("node_scripts_save", { projectId, revision, scripts }),
   },
   env: {
     overview: (projectId: number) => invoke<EnvOverview>("env_overview", { projectId }),

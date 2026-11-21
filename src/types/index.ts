@@ -138,6 +138,19 @@ export interface Project {
   exists: boolean;
 }
 
+/** Script du package.json, tel qu'édité depuis DevCenter. */
+export interface NodeScript {
+  name: string;
+  command: string;
+}
+
+export interface NodeScripts {
+  /** Empreinte du package.json lu. */
+  revision: string;
+  /** Dans l'ordre du fichier. */
+  scripts: NodeScript[];
+}
+
 export interface ProjectScript {
   name: string;
   command: string;

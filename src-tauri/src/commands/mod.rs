@@ -304,6 +304,35 @@ pub async fn open_project_terminal(app: AppHandle, id: i64) -> AppResult<()> {
     .await
 }
 
+// ---------------------------------------------------------------- Scripts package.json
+
+/// Scripts du package.json dans l'ordre du fichier, avec l'empreinte servant à la sauvegarde.
+#[tauri::command]
+pub async fn node_scripts_read(
+    app: AppHandle,
+    project_id: i64,
+) -> AppResult<projects::scripts::NodeScripts> {
+    blocking(move || {
+        projects::scripts::read(&projects::path_of(&app.state::<AppState>().db, project_id)?)
+    })
+    .await
+}
+
+/// Remplace tous les scripts ; refusé si le package.json a changé depuis la lecture.
+#[tauri::command]
+pub async fn node_scripts_save(
+    app: AppHandle,
+    project_id: i64,
+    revision: String,
+    scripts: Vec<projects::scripts::NodeScript>,
+) -> AppResult<projects::scripts::NodeScripts> {
+    blocking(move || {
+        let dir = projects::path_of(&app.state::<AppState>().db, project_id)?;
+        projects::scripts::save(&dir, &revision, &scripts)
+    })
+    .await
+}
+
 // ---------------------------------------------------------------- Fichiers .env
 
 /// Fichiers `.env*` du projet et profil actif. Les valeurs ne sont jamais journalisées.

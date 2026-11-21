@@ -10,6 +10,7 @@ pub mod gitcache;
 pub mod gradle;
 pub mod history;
 pub mod import;
+pub mod scripts;
 pub mod sync;
 pub mod watcher;
 

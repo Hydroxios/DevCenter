@@ -166,6 +166,8 @@ pub fn run() {
             commands::dependency_summaries,
             commands::check_dependencies,
             commands::detect_editor,
+            commands::node_scripts_read,
+            commands::node_scripts_save,
             commands::env_overview,
             commands::env_read,
             commands::env_save,

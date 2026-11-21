@@ -13,6 +13,7 @@ import {
   FolderOpen,
   GitBranch,
   GitCommitHorizontal,
+  Pencil,
   Loader2,
   Play,
   RefreshCw,
@@ -45,6 +46,7 @@ import { BranchDialog } from "./BranchDialog";
 import { CommitDialog } from "./CommitDialog";
 import { EnvPanel } from "./EnvPanel";
 import { GitHistory } from "./GitHistory";
+import { ScriptsDialog } from "./ScriptsDialog";
 import { StashDialog } from "./StashDialog";
 import { DependenciesPanel, useSevereVulns } from "./Dependencies";
 
@@ -502,6 +504,8 @@ export function ProjectPanel({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id, gradle, meta?.tasksLoaded]);
+  // Scripts package.json modifiables (pas les tâches Gradle).
+  const editableScripts = project.exists && !gradle && (meta?.languages.includes("Node") ?? false);
   const runnable = meta?.packageManager && ["npm", "pnpm", "yarn", "bun", "gradle"].includes(meta.packageManager);
 
   const hasGit = project.exists && (meta?.hasGit ?? false);
@@ -526,6 +530,7 @@ export function ProjectPanel({
   const [branchOpen, setBranchOpen] = useState(false);
   const [commitOpen, setCommitOpen] = useState(false);
   const [stashOpen, setStashOpen] = useState(false);
+  const [scriptsOpen, setScriptsOpen] = useState(false);
   const [syncing, setSyncing] = useState<{ id: number; op: "fetch" | PullMode } | null>(null);
   const [diverged, setDiverged] = useState<number | null>(null);
   useEffect(() => setDiverged(null), [project.id]);
@@ -617,6 +622,15 @@ export function ProjectPanel({
             onPushError={(e) => setActionError(`Commit créé, mais le push a échoué : ${e}`)}
           />
           <StashDialog projectId={project.id} git={details?.git} open={stashOpen} onOpenChange={setStashOpen} onChanged={onDetails} />
+          {editableScripts && (
+            <ScriptsDialog
+              projectId={project.id}
+              open={scriptsOpen}
+              onOpenChange={setScriptsOpen}
+              onSaved={onDetails}
+              runningScripts={runs.filter((r) => r.status === "running").map((r) => r.script)}
+            />
+          )}
         </>
       )}
       {!project.exists && <p className="border-b px-6 py-2 text-sm text-destructive">Dossier introuvable : il a été déplacé ou supprimé.</p>}
@@ -702,12 +716,22 @@ export function ProjectPanel({
               </Card>
             )}
 
-            {project.exists && allScripts.length > 0 && (
+            {project.exists && (allScripts.length > 0 || editableScripts) && (
               <Card>
                 <CardHeader>
                   <CardTitle>{gradle ? "Tâches Gradle" : "Scripts"}</CardTitle>
                   {!runnable && meta?.packageManager && (
                     <span className="text-xs text-muted-foreground">Exécution non prise en charge pour {meta.packageManager}</span>
+                  )}
+                  {editableScripts && (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"
+                      onClick={() => setScriptsOpen(true)}
+                      title="Modifier les scripts du package.json"
+                    >
+                      <Pencil className="size-3" /> Modifier
+                    </button>
                   )}
                   {gradle && (
                     <span className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -743,7 +767,11 @@ export function ProjectPanel({
                   />
                 )}
                 <ul className="divide-y rounded-lg border">
-                  {scripts.length === 0 && <li className="px-3 py-3 text-sm text-muted-foreground">Aucun résultat.</li>}
+                  {scripts.length === 0 && (
+                    <li className="px-3 py-3 text-sm text-muted-foreground">
+                      {allScripts.length === 0 ? "Aucun script dans le package.json." : "Aucun résultat."}
+                    </li>
+                  )}
                   {scripts.map((s, i) => {
                     const header = s.group && s.group !== scripts[i - 1]?.group ? s.group : null;
                     const run = runs.find((r) => r.script === s.name);
