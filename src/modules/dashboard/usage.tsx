@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { api } from "@/services/tauri";
 import type { CcusageDay, CcusageDayDetail, CcusageReport, CcusageTotal } from "@/types";
 import { RefreshButton, dayKey } from "./activity";
+import { readLocal, writeLocal } from "./widgets/polling";
 
 /* ------------------------------------------------------------------ */
 /* Formats                                                             */
@@ -137,8 +138,20 @@ export function UsageBars({
 /* Vue plein écran                                                     */
 /* ------------------------------------------------------------------ */
 
-/** Détails par jour, gardés pour la session (le jour en cours est toujours relu). */
-const detailCache = new Map<string, CcusageDayDetail>();
+/**
+ * Détails par jour, conservés d'une session à l'autre (le jour en cours est toujours relu) :
+ * un jour passé ne change plus, inutile de relancer ccusage pour le revoir.
+ */
+const DETAIL_KEY = "devcenter.dashboard.ccusageDays.v1";
+const DETAIL_MAX = 90;
+const detailCache = new Map<string, CcusageDayDetail>(readLocal<[string, CcusageDayDetail][]>(DETAIL_KEY, []));
+function storeDetail(key: string, data: CcusageDayDetail) {
+  detailCache.delete(key);
+  detailCache.set(key, data);
+  // Les plus récemment consultés en dernier : on écarte les plus anciens au-delà de la limite.
+  while (detailCache.size > DETAIL_MAX) detailCache.delete(detailCache.keys().next().value!);
+  writeLocal(DETAIL_KEY, [...detailCache]);
+}
 
 function useDayDetail(key: string | null, nonce = 0) {
   const [state, setState] = useState<{ key: string; data?: CcusageDayDetail; error?: string } | null>(null);
@@ -154,7 +167,7 @@ function useDayDetail(key: string | null, nonce = 0) {
     api.activity
       .ccusageDay(key)
       .then((data) => {
-        detailCache.set(key, data);
+        storeDetail(key, data);
         if (!cancelled) setState({ key, data });
       })
       .catch((e) => !cancelled && setState({ key, error: String(e) }));

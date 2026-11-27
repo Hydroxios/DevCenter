@@ -16,6 +16,7 @@ import { UsageBars, UsageView, compact, rangeLabel, usageDays, usd } from "./usa
 import { DailyTimeBars, Share, TimeRangePicker, hm as hmDuration, readTimeRange, saveTimeRange } from "@/modules/stats/TimeStats";
 import type { TimeRange } from "@/modules/stats/TimeStats";
 import { USAGE_RANGES, hasHistory, pointsOf } from "./config";
+import { readLocal, writeLocal } from "./widgets/polling";
 import type { ChartStyle, DashboardData, ProcessSort, UsageRange, WidgetSettings } from "./config";
 
 /* ------------------------------------------------------------------ */
@@ -717,6 +718,20 @@ const ACTIVITY_REFRESH_MS = 5 * 60_000;
 const pollCache = new Map<string, { at: number; data: unknown }>();
 
 /**
+ * Les relevés ccusage (plusieurs secondes à chaque lancement) sont aussi conservés d'une session à
+ * l'autre : au démarrage, le widget affiche le dernier relevé connu puis le relit en arrière-plan.
+ */
+const PERSIST_KEY = "devcenter.dashboard.ccusageCache.v1";
+const isPersisted = (key: string) => key.startsWith("ccusage:");
+for (const [k, v] of Object.entries(readLocal<Record<string, { at: number; data: unknown }>>(PERSIST_KEY, {}))) {
+  if (isPersisted(k) && v && typeof v.at === "number") pollCache.set(k, v);
+}
+function storePoll(key: string, data: unknown) {
+  pollCache.set(key, { at: Date.now(), data });
+  if (isPersisted(key)) writeLocal(PERSIST_KEY, Object.fromEntries([...pollCache].filter(([k]) => isPersisted(k))));
+}
+
+/**
  * Comme `usePolling`, avec le cache ci-dessus. Quand `key` change (autre période), les données
  * précédentes restent affichées pendant la lecture : `loading` le signale, sans écran d'attente.
  * `dataKey` indique à quelle clé correspondent les données affichées.
@@ -744,7 +759,7 @@ function useCachedPolling<T>(key: string, fetcher: (force: boolean) => Promise<T
       if (force || document.visibilityState === "visible") {
         try {
           const data = await fetcherRef.current(force);
-          pollCache.set(key, { at: Date.now(), data });
+          storePoll(key, data);
           if (!cancelled) setState({ data, dataKey: key, error: null, loading: false });
         } catch (e) {
           if (!cancelled) setState((s) => ({ ...s, error: String(e), loading: false }));
