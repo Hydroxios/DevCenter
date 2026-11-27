@@ -124,6 +124,9 @@ export function SpotifyWidget({ width, height }: { width: number; height: number
   const [seeking, setSeeking] = useState<number | null>(null);
   // Optimiste : le bouton lecture/pause répond tout de suite, la mesure suivante confirme.
   const [pending, setPending] = useState<boolean | null>(null);
+  // Pochette illisible : icône de remplacement plutôt qu'une image cassée.
+  const [broken, setBroken] = useState<string | null>(null);
+  const coverSrc = art && art !== broken ? art : null;
 
   const send = async (action: SpotifyControl) => {
     if (action === "toggle" && track) setPending(!track.playing);
@@ -238,8 +241,8 @@ export function SpotifyWidget({ width, height }: { width: number; height: number
   );
 
   const cover = (cls: string) =>
-    art ? (
-      <img src={art} alt="" draggable={false} className={cn("rounded-md object-cover shadow-lg", cls)} />
+    coverSrc ? (
+      <img src={coverSrc} alt="" draggable={false} onError={() => setBroken(coverSrc)} className={cn("rounded-md object-cover shadow-lg", cls)} />
     ) : (
       <div className={cn("flex items-center justify-center rounded-md bg-foreground/[0.06]", cls)}>
         <Music2 className="size-1/3 stroke-[1.25] text-muted-foreground" aria-hidden />
@@ -261,9 +264,9 @@ export function SpotifyWidget({ width, height }: { width: number; height: number
   return (
     <div className="relative h-full overflow-hidden">
       {/* Fond : la pochette floutée teinte le widget aux couleurs du morceau. */}
-      {art && (
+      {coverSrc && (
         <img
-          src={art}
+          src={coverSrc}
           alt=""
           aria-hidden
           draggable={false}
