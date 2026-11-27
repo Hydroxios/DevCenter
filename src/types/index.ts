@@ -930,3 +930,19 @@ export interface CcusageDayDetail {
 export interface CcusageReport {
   daily: CcusageDay[];
 }
+
+/** Morceau en cours dans Spotify (contrôles multimédias Windows). */
+export interface NowPlaying {
+  title: string;
+  artist: string;
+  album: string;
+  playing: boolean;
+  positionMs: number;
+  durationMs: number;
+  shuffle: boolean | null;
+  repeat: "none" | "track" | "list" | null;
+  canSeek: boolean;
+  trackKey: string;
+}
+
+export type SpotifyControl = "toggle" | "next" | "previous" | "shuffle" | "repeat";

@@ -26,6 +26,7 @@ use crate::modules::servers::tunnels::{self, Tunnel, TunnelInput};
 use crate::modules::servers::{self, Server, ServerInput};
 use crate::modules::settings::{Settings, SettingsService};
 use crate::modules::shell;
+use crate::modules::spotify::{self, NowPlaying};
 use crate::modules::system::{
     HardwareSnapshot, KillOutcome, ListeningPort, ProcessInfo, ProcessSort, SystemInfo,
     SystemSnapshot,
@@ -105,6 +106,31 @@ pub fn set_setting(
     value: serde_json::Value,
 ) -> AppResult<Settings> {
     state.settings.set(&state.db, &key, value)
+}
+
+// ---------------------------------------------------------------- Spotify
+
+/// `None` quand Spotify n'est pas ouvert.
+#[tauri::command]
+pub async fn spotify_now_playing() -> AppResult<Option<NowPlaying>> {
+    blocking(spotify::now_playing).await
+}
+
+/// Pochette brute (octets de l'image, vide s'il n'y en a pas) : pas de passage par JSON.
+#[tauri::command]
+pub async fn spotify_artwork() -> AppResult<tauri::ipc::Response> {
+    let bytes = blocking(spotify::artwork).await?.unwrap_or_default();
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+#[tauri::command]
+pub async fn spotify_control(action: spotify::Control) -> AppResult<()> {
+    blocking(move || spotify::control(action)).await
+}
+
+#[tauri::command]
+pub async fn spotify_seek(position_ms: u64) -> AppResult<()> {
+    blocking(move || spotify::seek(position_ms)).await
 }
 
 #[tauri::command]

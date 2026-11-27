@@ -60,5 +60,9 @@ incremental = false
 [profile.dev.package."*"]
 debug = false
 
+# Contrôles multimédias Windows (widget Spotify). Déjà présent via Tauri : seules les fonctionnalités s'ajoutent.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Media_Control", "Media", "Foundation", "Foundation_Collections", "Storage_Streams"] }
+
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

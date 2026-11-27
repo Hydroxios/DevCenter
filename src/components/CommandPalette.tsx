@@ -6,6 +6,7 @@ import {
   CircleStop,
   CodeXml,
   Eye,
+  EyeOff,
   FolderOpen,
   History,
   Layers,
@@ -28,6 +29,9 @@ import { reportError } from "@/lib/logger";
 import { cn } from "@/lib/utils";
 import { api, isTauri } from "@/services/tauri";
 import { PALETTE_SHORTCUT, usePalette } from "@/stores/palette";
+import { FLOATING, FLOATING_TYPES } from "@/modules/overlay/registry";
+import { OVERLAY_SHORTCUT } from "@/modules/overlay/FloatingLayer";
+import { useOverlay } from "@/stores/overlay";
 import { useRuns } from "@/stores/runs";
 import { useSettings } from "@/stores/settings";
 import { useWorkspaces } from "@/stores/workspaces";
@@ -278,6 +282,30 @@ function useCommands(open: boolean): Command[] {
         keywords: `ssh serveur terminal connexion ${s.host}`,
         icon: TerminalSquare,
         run: () => navigate(`/servers?server=${s.id}&terminal=1`),
+      });
+    }
+
+    const overlay = useOverlay.getState();
+    for (const t of FLOATING_TYPES) {
+      out.push({
+        id: `overlay:add:${t}`,
+        group: "Préférences",
+        label: `Widget flottant : ${FLOATING[t].title}`,
+        detail: "Ajouter au-dessus des pages",
+        keywords: "widget flottant overlay musique lecteur",
+        icon: FLOATING[t].icon,
+        run: () => overlay.add(t, FLOATING[t].size),
+      });
+    }
+    if (overlay.widgets.length > 0) {
+      out.push({
+        id: "overlay:toggle",
+        group: "Préférences",
+        label: overlay.hidden ? "Afficher les widgets flottants" : "Masquer les widgets flottants",
+        detail: OVERLAY_SHORTCUT,
+        keywords: "widget flottant overlay",
+        icon: overlay.hidden ? Eye : EyeOff,
+        run: overlay.toggleHidden,
       });
     }
 

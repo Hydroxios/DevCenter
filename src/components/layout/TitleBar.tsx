@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Maximize2 } from "lucide-react";
+import { AppWindow, Maximize2 } from "lucide-react";
+
+import { openContextMenu } from "@/components/ui/context-menu";
+import { overlayMenu } from "@/modules/overlay/FloatingLayer";
 
 import { cn } from "@/lib/utils";
 import { isTauri } from "@/services/tauri";
@@ -16,7 +19,7 @@ function WindowButton({
   children,
 }: {
   label: string;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
   danger?: boolean;
   children: React.ReactNode;
 }) {
@@ -67,6 +70,9 @@ export function TitleBar() {
       <div data-tauri-drag-region className="flex-1" />
       {win && (
         <div className="flex">
+          <WindowButton label="Widgets flottants" onClick={(e) => openContextMenu(e, overlayMenu())}>
+            <AppWindow className="size-3.5 stroke-[1.5]" aria-hidden />
+          </WindowButton>
           <WindowButton label="Plein écran (F11)" onClick={() => enterFullscreen(true)}>
             <Maximize2 className="size-3 stroke-[1.5]" aria-hidden />
           </WindowButton>

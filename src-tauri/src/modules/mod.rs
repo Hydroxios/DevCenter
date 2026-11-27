@@ -15,6 +15,7 @@ pub mod runner;
 pub mod servers;
 pub mod settings;
 pub mod shell;
+pub mod spotify;
 pub mod stats;
 pub mod system;
 pub mod tailscale;

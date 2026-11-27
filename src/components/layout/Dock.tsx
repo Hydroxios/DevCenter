@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 import type { LucideIcon } from "lucide-react";
-import { ArrowUpCircle, Minimize2, PanelBottomClose, Pin, Search } from "lucide-react";
+import { AppWindow, ArrowUpCircle, Minimize2, PanelBottomClose, Pin, Search } from "lucide-react";
 
 import { footerNav, mainNav } from "@/app/navigation";
+import { openContextMenu } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
+import { overlayMenu } from "@/modules/overlay/FloatingLayer";
 import { useFullscreen } from "@/stores/fullscreen";
 import { PALETTE_SHORTCUT, usePalette } from "@/stores/palette";
 import { useUpdates } from "@/stores/updates";
@@ -29,7 +31,7 @@ interface TileProps {
   active?: boolean;
   accent?: boolean;
   to?: string;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent) => void;
   register: (el: HTMLElement | null) => void;
 }
 
@@ -202,6 +204,7 @@ export function Dock() {
           ))}
           {updateLabel && <Tile label={updateLabel} icon={ArrowUpCircle} to="/settings?tab=about" accent register={register} />}
           <Separator />
+          <Tile label="Widgets flottants" icon={AppWindow} onClick={(e) => openContextMenu(e, overlayMenu())} register={register} />
           <Tile label={`Rechercher (${PALETTE_SHORTCUT})`} icon={Search} onClick={() => usePalette.getState().setOpen(true)} register={register} />
           <Tile
             label={collapsed ? "Épingler le dock (Ctrl+B)" : "Masquer le dock (Ctrl+B)"}

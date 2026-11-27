@@ -2,6 +2,7 @@ import { Outlet, useLocation } from "react-router";
 
 import { CommandPalette } from "@/components/CommandPalette";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { FloatingLayer } from "@/modules/overlay/FloatingLayer";
 import { useFullscreen } from "@/stores/fullscreen";
 import { Dock } from "./Dock";
 import { Sidebar } from "./Sidebar";
@@ -27,6 +28,7 @@ export function AppLayout() {
           </ErrorBoundary>
         </main>
       </div>
+      <FloatingLayer />
       {fullscreen && <Dock />}
       <CommandPalette />
     </div>

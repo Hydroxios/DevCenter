@@ -63,6 +63,8 @@ import type {
   SystemInfo,
   SystemSnapshot,
   UpdateInfo,
+  NowPlaying,
+  SpotifyControl,
 } from "@/types";
 
 /**
@@ -279,6 +281,14 @@ export const api = {
   push: {
     /** Notification de test vers tous les téléphones abonnés ; retourne le nombre d'envois réussis. */
     test: () => invoke<number>("push_test"),
+  },
+  spotify: {
+    /** `null` quand Spotify n'est pas ouvert. */
+    nowPlaying: () => invoke<NowPlaying | null>("spotify_now_playing"),
+    /** Octets de la pochette (vide s'il n'y en a pas). */
+    artwork: () => invoke<ArrayBuffer>("spotify_artwork"),
+    control: (action: SpotifyControl) => invoke<void>("spotify_control", { action }),
+    seek: (positionMs: number) => invoke<void>("spotify_seek", { positionMs: Math.round(positionMs) }),
   },
   updates: {
     version: () => invoke<string>("app_version"),
