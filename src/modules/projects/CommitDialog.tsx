@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Copy, FileDiff, GitCommitHorizontal, Loader2, Minus, Plus, RefreshCw } from "lucide-react";
+import { ArrowUp, Check, Copy, FileDiff, GitCommitHorizontal, Loader2, Minus, Plus, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { contextMenu, copyText } from "@/components/ui/context-menu";
@@ -169,6 +169,8 @@ export function CommitDialog({
   /** Action en cours : commit seul ou commit suivi d'un push. */
   const [committing, setCommitting] = useState<"commit" | "push" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Confirmation du dernier commit : la fenêtre reste ouverte pour enchaîner. */
+  const [notice, setNotice] = useState<string | null>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
 
   const setMessage = (m: string) => {
@@ -186,6 +188,7 @@ export function CommitDialog({
     setFiles(null);
     setSelection(null);
     setDiff(null);
+    setNotice(null);
     setMessageState(drafts.get(projectId) ?? "");
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -244,6 +247,7 @@ export function CommitDialog({
     if (!canCommit) return;
     setCommitting(andPush ? "push" : "commit");
     setError(null);
+    setNotice(null);
     let details: ProjectDetails;
     try {
       details = await api.git.createCommit(projectId, message, all);
@@ -256,16 +260,23 @@ export function CommitDialog({
     drafts.delete(projectId);
     setMessageState("");
     onCommitted(details);
+    const title = message.trim().split("\n")[0];
+    let pushed = false;
     if (andPush) {
-      // Le commit est fait : un échec du push est signalé dans le panneau du projet.
+      // Le commit est fait : un échec du push est signalé ici et dans le panneau du projet.
       try {
         onCommitted(await api.git.push(projectId));
+        pushed = true;
       } catch (e) {
+        setError(`Commit créé, mais le push a échoué : ${e}`);
         onPushError(String(e));
       }
     }
     setCommitting(null);
-    onOpenChange(false);
+    // La fenêtre reste ouverte : liste relue pour enchaîner un autre commit.
+    if (!andPush || pushed) setNotice(`${pushed ? "Commit créé et poussé" : "Commit créé"} : ${title}`);
+    load();
+    textRef.current?.focus();
   };
 
   const total = files?.length ?? 0;
@@ -356,6 +367,12 @@ export function CommitDialog({
             {conflicts} fichier{conflicts > 1 ? "s" : ""} en conflit : résolvez-les puis indexez-les avant de committer.
           </p>
         )}
+        {notice && !error && (
+          <p className="flex items-center gap-1.5 truncate text-sm text-success" title={notice}>
+            <Check className="size-4 shrink-0" />
+            <span className="truncate">{notice}</span>
+          </p>
+        )}
         {error && <p className="max-h-32 overflow-y-auto text-sm whitespace-pre-line text-destructive select-text">{error}</p>}
 
         <form
@@ -368,7 +385,10 @@ export function CommitDialog({
           <textarea
             ref={textRef}
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            onChange={(e) => {
+              setMessage(e.target.value);
+              setNotice(null);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
@@ -386,7 +406,7 @@ export function CommitDialog({
             </span>
             <div className="flex gap-2">
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-                Annuler
+                Fermer
               </Button>
               {canPush && (
                 <Button type="button" variant="outline" disabled={!canCommit} onClick={() => commit(true)}>
